@@ -1,0 +1,3 @@
+@echo off
+echo Starting SSM development server...
+npm run dev
