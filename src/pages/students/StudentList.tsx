@@ -43,20 +43,22 @@ export default function StudentList({
   return (
     <Table>
       <TableHeader>
-        <TableRow>
-          <TableHead>Full Name</TableHead>
-          <TableHead>Program</TableHead>
-          <TableHead>Phone</TableHead>
-          <TableHead>Email</TableHead>
-          <TableHead className="w-24">Actions</TableHead>
-        </TableRow>
+          <TableRow>
+            <TableHead>Full Name</TableHead>
+            <TableHead>Program</TableHead>
+            <TableHead>Training</TableHead>
+            <TableHead>Phone</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead className="w-24">Actions</TableHead>
+          </TableRow>
       </TableHeader>
       <TableBody>
         {students.map((s) => (
-          <TableRow key={s.id}>
-            <TableCell>{s.fullName}</TableCell>
-            <TableCell>{s.program}</TableCell>
-            <TableCell>{s.phone}</TableCell>
+            <TableRow key={s.id}>
+              <TableCell>{s.fullName}</TableCell>
+              <TableCell>{s.program}</TableCell>
+              <TableCell>{s.training}</TableCell>
+              <TableCell>{s.phone}</TableCell>
             <TableCell>{s.email}</TableCell>
             <TableCell>
               <div className="flex gap-1">
@@ -68,11 +70,13 @@ export default function StudentList({
                   <Pencil className="h-4 w-4" />
                 </Button>
                 <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </AlertDialogTrigger>
+                  <AlertDialogTrigger
+                    render={
+                      <Button variant="ghost" size="icon">
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    }
+                  />
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete student?</AlertDialogTitle>

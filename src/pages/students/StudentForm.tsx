@@ -14,9 +14,24 @@ export interface Student {
   id: string;
   fullName: string;
   program: "BTP" | "BTS" | "CAP";
+  training: string;
   phone: string;
   email: string;
 }
+
+const TRAININGS: Record<Student["program"], string[]> = {
+  CAP: ["Gestion caissier", "Photographe"],
+  BTP: [
+    "Gestion informatique",
+    "Développement web",
+    "Design infographique",
+  ],
+  BTS: [
+    "Réseaux sécurité informatique",
+    "Développement web mobile",
+    "Gestion et finance",
+  ],
+};
 
 interface StudentFormProps {
   initialData?: Student;
@@ -30,18 +45,26 @@ export default function StudentForm({
   onCancel,
 }: StudentFormProps) {
   const [fullName, setFullName] = useState(initialData?.fullName ?? "");
-  const [program, setProgram] = useState<Student["program"]>(
-    initialData?.program ?? "BTP"
+  const [program, setProgram] = useState<Student["program"] | null>(
+    initialData?.program ?? null,
   );
+  const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
 
+  const handleProgramChange = (value: string | null) => {
+    setProgram(value as Student["program"]);
+    setTraining("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!program || !training) return;
     onSave({
       id: initialData?.id ?? crypto.randomUUID(),
       fullName,
       program,
+      training,
       phone,
       email,
     });
@@ -64,15 +87,35 @@ export default function StudentForm({
         <Label>Program</Label>
         <Select
           value={program}
-          onValueChange={(v) => setProgram(v as Student["program"])}
+          onValueChange={handleProgramChange}
         >
           <SelectTrigger>
-            <SelectValue />
+            <SelectValue placeholder="Select program" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="BTP">BTP</SelectItem>
             <SelectItem value="BTS">BTS</SelectItem>
             <SelectItem value="CAP">CAP</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Training</Label>
+        <Select
+          value={training}
+          onValueChange={(value) => setTraining(value ?? "")}
+          disabled={!program}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select training" />
+          </SelectTrigger>
+          <SelectContent>
+            {(program ? TRAININGS[program] : []).map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -101,7 +144,7 @@ export default function StudentForm({
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit">
+        <Button type="submit" disabled={!program || !training}>
           {initialData ? "Update Student" : "Add Student"}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>

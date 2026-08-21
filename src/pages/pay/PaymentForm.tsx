@@ -57,7 +57,10 @@ export default function PaymentForm({ students, onSave }: PaymentFormProps) {
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
       <div className="space-y-2">
         <Label>Student</Label>
-        <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+        <Select
+          value={selectedStudentId}
+          onValueChange={(v) => setSelectedStudentId(v ?? "")}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select a student" />
           </SelectTrigger>
