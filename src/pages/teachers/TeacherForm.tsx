@@ -2,11 +2,21 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { Program } from "@/lib/trainings";
+import { TRAININGS } from "@/lib/trainings";
 
 export interface Teacher {
   id: string;
   fullName: string;
-  subject: string;
+  program: Program;
+  training: string;
   phone: string;
   email: string;
 }
@@ -23,16 +33,26 @@ export default function TeacherForm({
   onCancel,
 }: TeacherFormProps) {
   const [fullName, setFullName] = useState(initialData?.fullName ?? "");
-  const [subject, setSubject] = useState(initialData?.subject ?? "");
+  const [program, setProgram] = useState<Program | null>(
+    initialData?.program ?? null,
+  );
+  const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
 
+  const handleProgramChange = (value: string | null) => {
+    setProgram(value as Program);
+    setTraining("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!program || !training) return;
     onSave({
       id: initialData?.id ?? crypto.randomUUID(),
       fullName,
-      subject,
+      program,
+      training,
       phone,
       email,
     });
@@ -52,14 +72,37 @@ export default function TeacherForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="subject">Subject / Specialty</Label>
-        <Input
-          id="subject"
-          placeholder="Enter subject or specialty"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          required
-        />
+        <Label>Program</Label>
+        <Select value={program} onValueChange={handleProgramChange}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select program" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="BTP">BTP</SelectItem>
+            <SelectItem value="BTS">BTS</SelectItem>
+            <SelectItem value="CAP">CAP</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Training</Label>
+        <Select
+          value={training}
+          onValueChange={(value) => setTraining(value ?? "")}
+          disabled={!program}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select training" />
+          </SelectTrigger>
+          <SelectContent>
+            {(program ? TRAININGS[program] : []).map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">
@@ -86,7 +129,7 @@ export default function TeacherForm({
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit">
+        <Button type="submit" disabled={!program || !training}>
           {initialData ? "Update Teacher" : "Add Teacher"}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>

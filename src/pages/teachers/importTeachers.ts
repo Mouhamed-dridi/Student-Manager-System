@@ -11,19 +11,21 @@ export interface ImportResult {
   missingData: number;
 }
 
-type Field = "fullname" | "subject" | "phone" | "email";
+type Field = "fullname" | "program" | "training" | "phone" | "email";
 
 const HEADER_MAP: Record<string, Field> = {
   fullname: "fullname",
   name: "fullname",
-  subject: "subject",
-  specialty: "subject",
-  subjectspecialty: "subject",
+  program: "program",
+  training: "training",
+  formation: "training",
   phone: "phone",
   phonenumber: "phone",
   email: "email",
   emailaddress: "email",
 };
+
+const VALID_PROGRAMS = new Set(["BTP", "BTS", "CAP"]);
 
 function normalizeHeader(value: unknown): string {
   return String(value ?? "")
@@ -56,7 +58,7 @@ export async function parseTeacherFile(
   );
   const hasRequiredColumns =
     columns.includes("fullname") &&
-    columns.includes("subject") &&
+    columns.includes("program") &&
     columns.includes("phone") &&
     columns.includes("email");
   if (!hasRequiredColumns) return { rows: [], missingData: 0 };
@@ -75,11 +77,12 @@ export async function parseTeacherFile(
     });
 
     const fullName = record.get("fullname");
-    const subject = record.get("subject");
     const phone = record.get("phone");
     const email = record.get("email");
+    const program = cellToString(record.get("program")).toUpperCase();
+    const training = record.get("training") ?? "";
 
-    if (!fullName || !subject || !phone || !email) {
+    if (!fullName || !phone || !email || !VALID_PROGRAMS.has(program)) {
       result.missingData += 1;
       continue;
     }
@@ -88,7 +91,8 @@ export async function parseTeacherFile(
     const teacher: Teacher = {
       id: crypto.randomUUID(),
       fullName,
-      subject,
+      program: program as Teacher["program"],
+      training,
       phone,
       email,
     };

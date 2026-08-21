@@ -39,19 +39,21 @@ export default function TeacherImportPreview({
 
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Full Name</TableHead>
-            <TableHead>Subject</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead className="w-24">Status</TableHead>
-          </TableRow>
+        <TableRow>
+          <TableHead>Full Name</TableHead>
+          <TableHead>Program</TableHead>
+          <TableHead>Training</TableHead>
+          <TableHead>Phone</TableHead>
+          <TableHead>Email</TableHead>
+          <TableHead className="w-24">Status</TableHead>
+        </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map(({ teacher, duplicate }) => (
             <TableRow key={teacher.id}>
               <TableCell>{teacher.fullName}</TableCell>
-              <TableCell>{teacher.subject}</TableCell>
+              <TableCell>{teacher.program}</TableCell>
+              <TableCell>{teacher.training}</TableCell>
               <TableCell>{teacher.phone}</TableCell>
               <TableCell>{teacher.email}</TableCell>
               <TableCell

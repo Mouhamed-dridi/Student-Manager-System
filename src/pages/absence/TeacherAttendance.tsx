@@ -112,7 +112,8 @@ export default function TeacherAttendance({ teachers }: TeacherAttendanceProps) 
           <TableHeader>
             <TableRow>
               <TableHead>Full Name</TableHead>
-              <TableHead>Subject</TableHead>
+              <TableHead>Program</TableHead>
+              <TableHead>Training</TableHead>
               <TableHead className="w-32 text-center">Present</TableHead>
             </TableRow>
           </TableHeader>
@@ -129,7 +130,8 @@ export default function TeacherAttendance({ teachers }: TeacherAttendanceProps) 
                   >
                     {t.fullName}
                   </TableCell>
-                  <TableCell>{t.subject}</TableCell>
+                  <TableCell>{t.program}</TableCell>
+                  <TableCell>{t.training}</TableCell>
                   <TableCell className="text-center">
                     <Switch
                       checked={isPresent}

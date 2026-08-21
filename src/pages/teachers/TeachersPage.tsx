@@ -3,15 +3,22 @@ import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TeacherForm, { type Teacher } from "./TeacherForm";
-import TeacherList from "./TeacherList";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
 import TeacherImportPreview from "./TeacherImportPreview";
+import TeacherListView from "./TeacherListView";
 
 const STORAGE_KEY = "teachers";
 
 function loadTeachers(): Teacher[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const parsed: Teacher[] = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) ?? "[]",
+    );
+    return parsed.map((t) => ({
+      ...t,
+      program: (t.program ?? "") as Teacher["program"],
+      training: t.training ?? "",
+    }));
   } catch {
     return [];
   }
@@ -170,7 +177,7 @@ export default function TeachersPage() {
               {importSummary}
             </p>
           )}
-          <TeacherList
+          <TeacherListView
             teachers={teachers}
             onEdit={handleEdit}
             onDelete={handleDelete}

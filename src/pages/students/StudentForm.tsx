@@ -10,6 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { TRAININGS } from "@/lib/trainings";
+
 export interface Student {
   id: string;
   fullName: string;
@@ -18,20 +20,6 @@ export interface Student {
   phone: string;
   email: string;
 }
-
-const TRAININGS: Record<Student["program"], string[]> = {
-  CAP: ["Gestion caissier", "Photographe"],
-  BTP: [
-    "Gestion informatique",
-    "Développement web",
-    "Design infographique",
-  ],
-  BTS: [
-    "Réseaux sécurité informatique",
-    "Développement web mobile",
-    "Gestion et finance",
-  ],
-};
 
 interface StudentFormProps {
   initialData?: Student;

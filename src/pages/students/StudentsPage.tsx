@@ -3,9 +3,9 @@ import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StudentForm, { type Student } from "./StudentForm";
-import StudentList from "./StudentList";
 import { parseStudentFile, type ImportResult } from "./importStudents";
 import StudentImportPreview from "./StudentImportPreview";
+import StudentListView from "./StudentListView";
 
 const STORAGE_KEY = "students";
 
@@ -144,7 +144,7 @@ export default function StudentsPage() {
               {importSummary}
             </p>
           )}
-          <StudentList
+          <StudentListView
             students={students}
             onEdit={handleEdit}
             onDelete={handleDelete}
