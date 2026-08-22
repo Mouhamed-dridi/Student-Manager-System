@@ -17,6 +17,7 @@ import {
   resetPassword,
   toggleBlocked,
   type AccountKind,
+  type AccountRecord,
 } from "./userAccounts";
 
 type TabKey = Exclude<AccountKind, never>;
@@ -30,7 +31,7 @@ function toRows(records: ReturnType<typeof loadStudents>): AccountsTableRow[] {
   }));
 }
 
-function detailOf(record: ReturnType<typeof loadStudents>): string {
+function detailOf(record: AccountRecord): string {
   const program = typeof record.program === "string" ? record.program : "";
   const training = typeof record.training === "string" ? record.training : "";
   return [program, training].filter(Boolean).join(" — ");

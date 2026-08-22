@@ -41,8 +41,10 @@ Verification order for every change: `npm run lint`, then `npx tsc -b`. No test 
 | `role` | `"operator"` \| `"student"` | logins | route guards |
 | `isStudentLoggedIn` | `"true"` | student login | logout cleanup |
 | `currentStudentId` | student id | student login | session resolution |
-| `students` | `Student[]` (id, fullName, program BTP/BTS/CAP, training, phone, email + optional login fields `password`, `blocked`) | StudentsPage, UserManagementPage, boot seed | teachers/pay/absence pages, student portal |
-| `teachers` | `Teacher[]` | TeachersPage | absence page |
+| `students` | `Student[]` (id, fullName, program BTP/BTS/CAP, training, phone, email + optional login fields `password`, `blocked`, `accountInitialized`) | StudentsPage, UserManagementPage, boot seed | teachers/pay/absence pages, student portal |
+| `teachers` | `Teacher[]` (+ optional login fields `password`, `blocked`, `accountInitialized`) | TeachersPage, UserManagementPage, boot seed | absence page, teacher portal |
+| `exams` | `{id, teacherId, program, training, title, date, notes?}[]` (teacher-created, scoped to their class) | ExamsPage | GradesPage |
+| `grades` | `{id: "<examId>:<studentId>", examId, studentId, score}[]` | GradesPage | deleted with their exam |
 | `payments` | `Payment[]` (amount, planType one-time/semester/monthly, date) | PayPage | MyPaymentsPage |
 | `publications` | `Publication[]` (title, message, recipients, channels) | PublicationsPage | AnnouncementsPage |
 | `studentAttendance` | `{ [date]: { [studentId]: boolean } }` | AbsencePage | MyAttendancePage |
@@ -53,6 +55,6 @@ Programs/trainings/courses come from `src/lib/trainings.ts` (`PROGRAMS`, `TRAINI
 
 ## Current app state (keep updated)
 
-Implemented end-to-end: operator login (`admin`/`admin123`), dashboard shell, Students CRUD + Excel import, Teachers CRUD + import, Payments with printable ticket/receipt, student & teacher attendance grids, publications, User Management (create/block/reset/delete student accounts), student portal (per-student full-name + password login with blocked-account enforcement; Courses / My Payment / Announcements / Absence). Course cards show per-training thumbnails from `src/assets/img/courses/` (slugified names, gray placeholder when missing).
+Implemented end-to-end: operator login (`admin`/`admin123`), dashboard shell, Students CRUD + Excel import, Teachers CRUD + import, Payments with printable ticket/receipt, student & teacher attendance grids, publications, User Management (Students|Teachers tabs: create/block/reset/delete accounts), student portal (per-student full-name + password login with blocked-account enforcement; Courses / My Payment / Announcements / Absence), teacher portal (exact name + password login; Courses / Exams & Notes (tabs) / Class / Planning placeholder scoped to the teacher's own class). Course cards show per-training thumbnails from `src/assets/img/courses/` (slugified names, gray placeholder when missing).
 
 Known gap: `MyInfoPage.tsx` exists but is unwired (see `plan.md` backlog).

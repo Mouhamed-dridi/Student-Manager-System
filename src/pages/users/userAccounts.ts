@@ -54,7 +54,7 @@ export function loadTeachers(): AccountRecord[] {
   }));
 }
 
-export function hasAccount(record: AccountRecord): boolean {
+export function hasAccount(record: { password?: string }): boolean {
   return typeof record.password === "string" && record.password.length > 0;
 }
 

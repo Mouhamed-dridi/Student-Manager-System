@@ -42,6 +42,9 @@ export default function TeacherForm({
   const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
+  const [password, setPassword] = useState(
+    initialData?.password ?? DEFAULT_ACCOUNT_PASSWORD,
+  );
 
   const handleProgramChange = (value: string | null) => {
     setProgram(value as Program);
@@ -58,12 +61,12 @@ export default function TeacherForm({
       training,
       phone,
       email,
-      // New teachers start with the default password; edits leave login
-      // data untouched (TeachersPage merge-preserves it).
+      // New teachers get the operator-chosen login password; edits leave
+      // login data untouched (TeachersPage merge-preserves it).
       ...(initialData
         ? {}
         : {
-            password: DEFAULT_ACCOUNT_PASSWORD,
+            password: password.trim() || DEFAULT_ACCOUNT_PASSWORD,
             accountInitialized: true,
           }),
     });
@@ -138,6 +141,22 @@ export default function TeacherForm({
           required
         />
       </div>
+
+      {!initialData && (
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            placeholder="Enter password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <p className="text-xs text-muted-foreground">
+            Teachers log in with their full name and this password.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-2">
         <Button type="submit" disabled={!program || !training}>

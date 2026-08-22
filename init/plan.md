@@ -30,6 +30,6 @@
 14. **[ ] Data export/backup** — download/import JSON snapshots of all localStorage keys.
 15. **[ ] Dashboard stats** — counts/totals (students per program, payments total) on a real dashboard view instead of the bare shell.
 16. **[ ] Cleanup orphans** — deleting a student leaves their payments/attendance rows behind; cascade or surface them.
-17. **[ ] Teacher portal** — login page + routing scaffolding shipped (`/teacher/login`, `/teacher` placeholder, `teacher` role, session keys incl. `currentTeacherId`); pending: teacher account seeding/form defaults (Prompt 4.3), User Management Teachers tab, real dashboard layout with Courses / Exams / Grades / My Class sections.
+  17. **[x] Teacher portal** — login page + real dashboard (`/teacher`): My Courses (shared course-card grid), Exams CRUD scoped to the teacher's own class with grade-cascading delete, Grades entry (exam picker + roster, bulk upsert into `grades`), My Class roster; teacher accounts managed from User Management's Teachers tab (`src/pages/teacher-portal/`, `userAccounts.ts`).
 
 > Any future backend/sync work is explicitly out of scope for now (see PRD.md).
