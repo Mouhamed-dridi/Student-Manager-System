@@ -3,6 +3,8 @@ import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import StudentLoginPage from "@/pages/student-portal/StudentLoginPage";
 import StudentLayout from "@/pages/student-portal/StudentLayout";
+import TeacherLoginPage from "@/pages/teacher-portal/TeacherLoginPage";
+import TeacherLayout from "@/pages/teacher-portal/TeacherLayout";
 
 function getRole(): string | null {
   return localStorage.getItem("isLoggedIn") === "true"
@@ -11,7 +13,9 @@ function getRole(): string | null {
 }
 
 function homeFor(role: string | null) {
-  return role === "student" ? "/student" : "/dashboard";
+  if (role === "student") return "/student";
+  if (role === "teacher") return "/teacher";
+  return "/dashboard";
 }
 
 function OperatorRoute({ children }: { children: React.ReactNode }) {
@@ -29,6 +33,24 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
     <>{children}</>
   ) : (
     <Navigate to={role === "operator" ? "/dashboard" : "/student/login"} replace />
+  );
+}
+
+function TeacherRoute({ children }: { children: React.ReactNode }) {
+  const role = getRole();
+  return role === "teacher" ? (
+    <>{children}</>
+  ) : (
+    <Navigate
+      to={
+        role === "operator"
+          ? "/dashboard"
+          : role === "student"
+            ? "/student"
+            : "/teacher/login"
+      }
+      replace
+    />
   );
 }
 
@@ -72,9 +94,36 @@ export default function App() {
         }
       />
       <Route
+        path="/teacher/login"
+        element={
+          getRole() === null ? (
+            <TeacherLoginPage />
+          ) : (
+            <Navigate to={homeFor(getRole())} replace />
+          )
+        }
+      />
+      <Route
+        path="/teacher"
+        element={
+          <TeacherRoute>
+            <TeacherLayout />
+          </TeacherRoute>
+        }
+      />
+      <Route
         path="*"
         element={
-          <Navigate to={getRole() === "student" ? "/student" : "/login"} replace />
+          <Navigate
+            to={
+              getRole() === "student"
+                ? "/student"
+                : getRole() === "teacher"
+                  ? "/teacher"
+                  : "/login"
+            }
+            replace
+          />
         }
       />
     </Routes>

@@ -44,8 +44,9 @@ export default function TeachersPage() {
     setTeachers((prev) => {
       const exists = prev.findIndex((t) => t.id === teacher.id);
       if (exists >= 0) {
+        // Form fields don't carry login data — preserve it across edits.
         const updated = [...prev];
-        updated[exists] = teacher;
+        updated[exists] = { ...prev[exists], ...teacher };
         return updated;
       }
       return [...prev, teacher];

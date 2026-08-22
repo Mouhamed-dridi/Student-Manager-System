@@ -1,63 +1,126 @@
-import type { Student } from "@/pages/students/StudentForm";
+export const DEFAULT_ACCOUNT_PASSWORD = "std123";
 
-export const DEFAULT_STUDENT_PASSWORD = "std123";
+export type AccountKind = "students" | "teachers";
 
-export function loadStudents(): Student[] {
+// Structural view of any record that can own a login account. The index
+// signature keeps every other field (program, phone, ...) intact on write.
+export interface AccountRecord {
+  id: string;
+  fullName?: string;
+  password?: string;
+  blocked?: boolean;
+  accountInitialized?: boolean;
+  [key: string]: unknown;
+}
+
+const STORAGE_KEYS: Record<AccountKind, string> = {
+  students: "students",
+  teachers: "teachers",
+};
+
+function readRecords(kind: AccountKind): AccountRecord[] {
   try {
-    const parsed: Student[] = JSON.parse(
-      localStorage.getItem("students") ?? "[]",
-    );
-    return parsed.map((s) => ({ ...s, training: s.training ?? "" }));
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS[kind]) ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-function saveStudents(students: Student[]) {
-  localStorage.setItem("students", JSON.stringify(students));
+function writeRecords(kind: AccountKind, records: AccountRecord[]) {
+  localStorage.setItem(STORAGE_KEYS[kind], JSON.stringify(records));
 }
 
-function updateStudent(id: string, update: (s: Student) => Student) {
-  const students = loadStudents().map((s) => (s.id === id ? update(s) : s));
-  saveStudents(students);
+function updateRecord(
+  kind: AccountKind,
+  id: string,
+  update: (record: AccountRecord) => AccountRecord,
+) {
+  const records = readRecords(kind).map((r) => (r.id === id ? update(r) : r));
+  writeRecords(kind, records);
 }
 
-export function hasAccount(student: Student): boolean {
-  return typeof student.password === "string" && student.password.length > 0;
+export function loadStudents(): AccountRecord[] {
+  return readRecords("students").map((r) => ({
+    ...r,
+    training: r.training ?? "",
+  }));
 }
 
-export function toggleBlocked(id: string) {
-  updateStudent(id, (s) => ({ ...s, blocked: !s.blocked }));
+export function loadTeachers(): AccountRecord[] {
+  return readRecords("teachers").map((r) => ({
+    ...r,
+    training: r.training ?? "",
+  }));
 }
 
-export function resetPassword(id: string, password: string) {
-  updateStudent(id, (s) => ({ ...s, password }));
+export function hasAccount(record: AccountRecord): boolean {
+  return typeof record.password === "string" && record.password.length > 0;
 }
 
-export function createAccount(id: string, password: string) {
-  updateStudent(id, (s) => ({ ...s, password }));
+export function toggleBlocked(kind: AccountKind, id: string) {
+  updateRecord(kind, id, (r) => ({ ...r, blocked: !r.blocked }));
 }
 
-// Removes login access only — the rest of the student record stays intact.
-export function deleteAccount(id: string) {
-  updateStudent(id, (s) => {
-    const next = { ...s };
+export function resetPassword(
+  kind: AccountKind,
+  id: string,
+  password: string,
+) {
+  updateRecord(kind, id, (r) => ({
+    ...r,
+    password,
+    accountInitialized: true,
+  }));
+}
+
+export function createAccount(
+  kind: AccountKind,
+  id: string,
+  password: string,
+) {
+  updateRecord(kind, id, (r) => ({
+    ...r,
+    password,
+    accountInitialized: true,
+  }));
+}
+
+// Removes login access only — the rest of the record stays intact.
+// Deliberately KEEPS accountInitialized so the boot seed recognizes this
+// as "account deliberately removed" (never refills std123), not as
+// "never had an account".
+export function deleteAccount(kind: AccountKind, id: string) {
+  updateRecord(kind, id, (r) => {
+    const next = { ...r };
     delete next.password;
     delete next.blocked;
     return next;
   });
 }
 
-// Runs on every app start: fills in any student record whose password is
-// missing, undefined, or empty with the default. Never overwrites a
-// password that is already set, so Reset Password results survive.
+// Runs on every app start for both students and teachers. Fills in the
+// default password ONLY for records that never had one: blank password AND
+// accountInitialized never set. Records whose account was deleted keep the
+// initialized marker, so their blank password stays blank.
 export function ensureDefaultPasswords() {
-  const students = loadStudents();
-  if (!students.some((s) => !s.password)) return;
-  saveStudents(
-    students.map((s) => ({
-      ...s,
-      password: s.password || DEFAULT_STUDENT_PASSWORD,
-    })),
-  );
+  for (const kind of ["students", "teachers"] as const) {
+    const records = readRecords(kind);
+    const needsSeed = records.some(
+      (r) => !r.password && r.accountInitialized !== true,
+    );
+    if (!needsSeed) continue;
+    writeRecords(
+      kind,
+      records.map((r) =>
+        !r.password && r.accountInitialized !== true
+          ? {
+              ...r,
+              password: DEFAULT_ACCOUNT_PASSWORD,
+              accountInitialized: true,
+            }
+          : r,
+      ),
+    );
+  }
 }

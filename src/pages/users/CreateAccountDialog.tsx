@@ -10,29 +10,33 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Student } from "@/pages/students/StudentForm";
-import {
-  DEFAULT_STUDENT_PASSWORD,
-  createAccount,
-  hasAccount,
-} from "./userAccounts";
+import { DEFAULT_ACCOUNT_PASSWORD } from "./userAccounts";
+
+export interface AccountCandidate {
+  id: string;
+  fullName: string;
+  detail?: string;
+}
 
 interface CreateAccountDialogProps {
-  students: Student[];
+  entityLabel: "student" | "teacher";
+  candidates: AccountCandidate[];
+  onSubmit: (id: string, password: string) => void;
   onClose: () => void;
 }
 
 export default function CreateAccountDialog({
-  students,
+  entityLabel,
+  candidates,
+  onSubmit,
   onClose,
 }: CreateAccountDialogProps) {
-  const candidates = students.filter((s) => !hasAccount(s));
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [password, setPassword] = useState(DEFAULT_STUDENT_PASSWORD);
+  const [password, setPassword] = useState(DEFAULT_ACCOUNT_PASSWORD);
 
   const handleCreate = () => {
     if (!selectedId || !password.trim()) return;
-    createAccount(selectedId, password);
+    onSubmit(selectedId, password);
     onClose();
   };
 
@@ -40,36 +44,37 @@ export default function CreateAccountDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Student Account</DialogTitle>
+          <DialogTitle>Create {entityLabel} account</DialogTitle>
           <DialogDescription>
-            Pick a student who has no login yet and set their password.
+            Pick a {entityLabel} who has no login yet and set their password.
           </DialogDescription>
         </DialogHeader>
 
         {candidates.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Every current student already has an account. Students added later
-            will show up here.
+            Every current {entityLabel} already has an account. Records added
+            later will show up here.
           </p>
         ) : (
           <>
             <div className="max-h-56 space-y-2 overflow-auto">
-              {candidates.map((s) => (
+              {candidates.map((c) => (
                 <button
-                  key={s.id}
+                  key={c.id}
                   type="button"
-                  onClick={() => setSelectedId(s.id)}
+                  onClick={() => setSelectedId(c.id)}
                   className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
-                    selectedId === s.id
+                    selectedId === c.id
                       ? "border-foreground/30 bg-accent"
                       : "hover:bg-accent/50"
                   }`}
                 >
-                  <span className="text-sm font-medium">{s.fullName}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {s.program}
-                    {s.training ? ` — ${s.training}` : ""}
-                  </span>
+                  <span className="text-sm font-medium">{c.fullName}</span>
+                  {c.detail && (
+                    <span className="text-xs text-muted-foreground">
+                      {c.detail}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

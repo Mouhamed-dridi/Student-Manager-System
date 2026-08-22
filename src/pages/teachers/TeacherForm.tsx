@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
 import { TRAININGS } from "@/lib/trainings";
+import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Teacher {
   id: string;
@@ -19,6 +20,8 @@ export interface Teacher {
   training: string;
   phone: string;
   email: string;
+  password?: string;
+  blocked?: boolean;
 }
 
 interface TeacherFormProps {
@@ -55,6 +58,14 @@ export default function TeacherForm({
       training,
       phone,
       email,
+      // New teachers start with the default password; edits leave login
+      // data untouched (TeachersPage merge-preserves it).
+      ...(initialData
+        ? {}
+        : {
+            password: DEFAULT_ACCOUNT_PASSWORD,
+            accountInitialized: true,
+          }),
     });
   };
 

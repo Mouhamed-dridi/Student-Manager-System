@@ -10,23 +10,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Student } from "@/pages/students/StudentForm";
-import { DEFAULT_STUDENT_PASSWORD, resetPassword } from "./userAccounts";
+import { DEFAULT_ACCOUNT_PASSWORD } from "./userAccounts";
 
 interface ResetPasswordDialogProps {
-  student: Student;
+  fullName: string;
+  onSubmit: (password: string) => void;
   onClose: () => void;
 }
 
 export default function ResetPasswordDialog({
-  student,
+  fullName,
+  onSubmit,
   onClose,
 }: ResetPasswordDialogProps) {
-  const [password, setPassword] = useState(DEFAULT_STUDENT_PASSWORD);
+  const [password, setPassword] = useState(DEFAULT_ACCOUNT_PASSWORD);
 
   const handleSave = () => {
     if (!password.trim()) return;
-    resetPassword(student.id, password);
+    onSubmit(password);
     onClose();
   };
 
@@ -36,7 +37,7 @@ export default function ResetPasswordDialog({
         <DialogHeader>
           <DialogTitle>Reset Password</DialogTitle>
           <DialogDescription>
-            Set a new password for {student.fullName}.
+            Set a new password for {fullName}.
           </DialogDescription>
         </DialogHeader>
 
