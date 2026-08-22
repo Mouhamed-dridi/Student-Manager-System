@@ -1,16 +1,7 @@
 import { Pencil, Trash2 } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -23,12 +14,18 @@ import type { Student } from "./StudentForm";
 
 interface StudentListProps {
   students: Student[];
+  selectedIds: ReadonlySet<string>;
+  onToggleRow: (id: string) => void;
+  onToggleAll: () => void;
   onEdit: (student: Student) => void;
   onDelete: (id: string) => void;
 }
 
 export default function StudentList({
   students,
+  selectedIds,
+  onToggleRow,
+  onToggleAll,
   onEdit,
   onDelete,
 }: StudentListProps) {
@@ -40,10 +37,19 @@ export default function StudentList({
     );
   }
 
+  const allSelected = students.every((s) => selectedIds.has(s.id));
+
   return (
     <Table>
       <TableHeader>
           <TableRow>
+            <TableHead className="w-10">
+              <Checkbox
+                checked={allSelected}
+                onCheckedChange={() => onToggleAll()}
+                aria-label="Select all visible students"
+              />
+            </TableHead>
             <TableHead>Full Name</TableHead>
             <TableHead>Program</TableHead>
             <TableHead>Training</TableHead>
@@ -54,7 +60,14 @@ export default function StudentList({
       </TableHeader>
       <TableBody>
         {students.map((s) => (
-            <TableRow key={s.id}>
+            <TableRow key={s.id} data-selected={selectedIds.has(s.id)}>
+              <TableCell>
+                <Checkbox
+                  checked={selectedIds.has(s.id)}
+                  onCheckedChange={() => onToggleRow(s.id)}
+                  aria-label={`Select ${s.fullName}`}
+                />
+              </TableCell>
               <TableCell>{s.fullName}</TableCell>
               <TableCell>{s.program}</TableCell>
               <TableCell>{s.training}</TableCell>

@@ -88,8 +88,18 @@ export default function StudentLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <span className="text-sm font-medium text-muted-foreground">
-            {student ? student.fullName : "Student Portal"}
+          <span className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
+            {student ? (
+              <>
+                {student.fullName}
+                <span className="text-xs font-normal">
+                  · {student.program}
+                  {student.training ? ` — ${student.training}` : ""}
+                </span>
+              </>
+            ) : (
+              "Student Portal"
+            )}
           </span>
           <Button variant="outline" size="sm" onClick={handleLogout}>
             Logout

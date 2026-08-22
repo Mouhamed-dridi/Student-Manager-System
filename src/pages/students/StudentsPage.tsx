@@ -40,8 +40,9 @@ export default function StudentsPage() {
     setStudents((prev) => {
       const exists = prev.findIndex((s) => s.id === student.id);
       if (exists >= 0) {
+        // Form fields don't carry login data — preserve it across edits.
         const updated = [...prev];
-        updated[exists] = student;
+        updated[exists] = { ...prev[exists], ...student };
         return updated;
       }
       return [...prev, student];
@@ -53,6 +54,12 @@ export default function StudentsPage() {
 
   const handleDelete = (id: string) => {
     setStudents((prev) => prev.filter((s) => s.id !== id));
+    setImportSummary(null);
+  };
+
+  // One state update — the persistence effect writes localStorage once.
+  const handleDeleteMany = (ids: string[]) => {
+    setStudents((prev) => prev.filter((s) => !ids.includes(s.id)));
     setImportSummary(null);
   };
 
@@ -148,6 +155,7 @@ export default function StudentsPage() {
             students={students}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onDeleteMany={handleDeleteMany}
           />
         </TabsContent>
 

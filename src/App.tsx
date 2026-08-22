@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import StudentLoginPage from "@/pages/student-portal/StudentLoginPage";
-import StudentPickerPage from "@/pages/student-portal/StudentPickerPage";
 import StudentLayout from "@/pages/student-portal/StudentLayout";
 
 function getRole(): string | null {
@@ -62,14 +61,6 @@ export default function App() {
           ) : (
             <Navigate to={homeFor(getRole())} replace />
           )
-        }
-      />
-      <Route
-        path="/student/pick"
-        element={
-          <StudentRoute>
-            <StudentPickerPage />
-          </StudentRoute>
         }
       />
       <Route

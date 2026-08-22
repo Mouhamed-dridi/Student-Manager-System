@@ -6,6 +6,7 @@ import {
   DollarSign,
   CalendarX,
   BookOpen,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +15,7 @@ import TeachersPage from "@/pages/teachers/TeachersPage";
 import PayPage from "@/pages/pay/PayPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
+import UserManagementPage from "@/pages/users/UserManagementPage";
 
 const menuItems = [
   { key: "students", label: "Students", icon: Users },
@@ -21,6 +23,7 @@ const menuItems = [
   { key: "pay", label: "Pay", icon: DollarSign },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "publications", label: "Publications", icon: BookOpen },
+  { key: "users", label: "User Management", icon: UserCog },
 ] as const;
 
 type MenuKey = (typeof menuItems)[number]["key"];
@@ -31,6 +34,7 @@ const pages: Record<MenuKey, React.ReactNode> = {
   pay: <PayPage />,
   absence: <AbsencePage />,
   publications: <PublicationsPage />,
+  users: <UserManagementPage />,
 };
 
 export default function Layout() {

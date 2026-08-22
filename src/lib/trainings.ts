@@ -3,16 +3,20 @@ export const PROGRAMS = ["BTP", "BTS", "CAP"] as const;
 export type Program = (typeof PROGRAMS)[number];
 
 export const TRAININGS: Record<Program, string[]> = {
-  CAP: ["Gestion caissier", "Photographe"],
+  CAP: ["Agent d'entrepôt", "Vendeur caissier étalagiste"],
   BTP: [
-    "Gestion informatique",
-    "Développement web",
-    "Design infographique",
+    "Préparateur en Pharmacie",
+    "Technicien de Soutien en Informatique de Gestion",
+    "Comptable d'entreprise",
+    "Décoration et Design d'intérieur",
   ],
   BTS: [
-    "Réseaux sécurité informatique",
-    "Développement web mobile",
-    "Gestion et finance",
+    "Maintenance industrielle",
+    "Commerce international",
+    "Contrôle qualité",
+    "Comptable d'entreprise",
+    "Développement web",
+    "Réseaux et sécurité informatique",
   ],
 };
 
