@@ -11,8 +11,11 @@ Frontend-only React 19 + Vite 8 + TypeScript SPA ("SSM"). No backend, no tests, 
 
 ## Architecture
 
-- Only two router routes exist: `/login` and `/dashboard` (`src/App.tsx`). The five sections — students, teachers, pay, absence, publications — are NOT routes; they swap via `useState` inside `src/components/Layout.tsx`. To add a section, update its `menuItems` and `pages` maps.
-- All persistence is browser localStorage: fake auth via `isLoggedIn`/`role` keys (read by route guards in `src/App.tsx`), and entity lists keyed by simple names (e.g. `students` in `src/pages/students/StudentsPage.tsx`). Clearing site data resets everything.
+- Five router routes exist (`src/App.tsx`): operator `/login` and `/dashboard`, student-portal `/student/login`, `/student/pick`, and `/student`. Guards are role-aware via the localStorage `role` key (`operator`/`student`). Within each side, the sections — operator: students, teachers, pay, absence, publications; student: Courses, My Payment, Announcements, Absence — are NOT routes; they swap via `useState` inside `src/components/Layout.tsx` and `src/pages/student-portal/StudentLayout.tsx`. To add a section, update that layout's `menuItems` and `pages` maps. (`MyInfoPage.tsx` still exists in the student-portal folder but is not wired into any menu.)
+- All persistence is browser localStorage: fake auth via `isLoggedIn`/`role` keys (read by route guards in `src/App.tsx`) plus `currentStudentId` for student sessions; entity lists keyed by simple names (e.g. `students` in `src/pages/students/StudentsPage.tsx`, attendance as date maps in `studentAttendance`). Clearing site data resets everything.
+- Logins are hardcoded: operator `admin`/`admin123` (`src/pages/LoginPage.tsx`), students `std`/`std123` (`src/pages/student-portal/StudentLoginPage.tsx`, also sets an `isStudentLoggedIn` key). The student login is a shared gate: after it, `/student/pick` lists all saved students and clicking one sets `currentStudentId` for the session (auto-skipped when only one student exists).
+- `src/lib/trainings.ts` is the single source of truth for `PROGRAMS`, `TRAININGS`, and the static `COURSES` schedule data (keyed by program → training); students, teachers, pay, absence, and the student Courses page all import from it. Add a program/training/course only there.
+- Bulk import parses uploaded `.xlsx`/`.csv` client-side with SheetJS (`importStudents.ts` / `importTeachers.ts`).
 - Feature folders live in `src/pages/<feature>/` as `<Feature>Page.tsx` plus list/form subcomponents.
 
 ## Stack quirks

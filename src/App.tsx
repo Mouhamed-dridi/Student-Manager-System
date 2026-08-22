@@ -1,15 +1,36 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
+import StudentLoginPage from "@/pages/student-portal/StudentLoginPage";
+import StudentPickerPage from "@/pages/student-portal/StudentPickerPage";
+import StudentLayout from "@/pages/student-portal/StudentLayout";
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-  return isLoggedIn ? <>{children}</> : <Navigate to="/login" replace />;
+function getRole(): string | null {
+  return localStorage.getItem("isLoggedIn") === "true"
+    ? localStorage.getItem("role")
+    : null;
 }
 
-function PublicRoute({ children }: { children: React.ReactNode }) {
-  const isLoggedIn = localStorage.getItem("isLoggedIn") === "true";
-  return isLoggedIn ? <Navigate to="/dashboard" replace /> : <>{children}</>;
+function homeFor(role: string | null) {
+  return role === "student" ? "/student" : "/dashboard";
+}
+
+function OperatorRoute({ children }: { children: React.ReactNode }) {
+  const role = getRole();
+  return role === "operator" ? (
+    <>{children}</>
+  ) : (
+    <Navigate to={role === "student" ? "/student" : "/login"} replace />
+  );
+}
+
+function StudentRoute({ children }: { children: React.ReactNode }) {
+  const role = getRole();
+  return role === "student" ? (
+    <>{children}</>
+  ) : (
+    <Navigate to={role === "operator" ? "/dashboard" : "/student/login"} replace />
+  );
 }
 
 export default function App() {
@@ -18,20 +39,53 @@ export default function App() {
       <Route
         path="/login"
         element={
-          <PublicRoute>
+          getRole() === null ? (
             <LoginPage />
-          </PublicRoute>
+          ) : (
+            <Navigate to={homeFor(getRole())} replace />
+          )
         }
       />
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute>
+          <OperatorRoute>
             <DashboardPage />
-          </ProtectedRoute>
+          </OperatorRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/student/login"
+        element={
+          getRole() === null ? (
+            <StudentLoginPage />
+          ) : (
+            <Navigate to={homeFor(getRole())} replace />
+          )
+        }
+      />
+      <Route
+        path="/student/pick"
+        element={
+          <StudentRoute>
+            <StudentPickerPage />
+          </StudentRoute>
+        }
+      />
+      <Route
+        path="/student"
+        element={
+          <StudentRoute>
+            <StudentLayout />
+          </StudentRoute>
+        }
+      />
+      <Route
+        path="*"
+        element={
+          <Navigate to={getRole() === "student" ? "/student" : "/login"} replace />
+        }
+      />
     </Routes>
   );
 }

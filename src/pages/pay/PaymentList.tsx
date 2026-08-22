@@ -55,6 +55,8 @@ export default function PaymentList({
           <TableHeader>
             <TableRow>
               <TableHead>Student Name</TableHead>
+              <TableHead>Program</TableHead>
+              <TableHead>Training</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Plan Type</TableHead>
               <TableHead>Date</TableHead>
@@ -65,6 +67,8 @@ export default function PaymentList({
             {filtered.map((p) => (
               <TableRow key={p.id}>
                 <TableCell>{p.studentName}</TableCell>
+                <TableCell>{p.studentProgram}</TableCell>
+                <TableCell>{p.studentTraining}</TableCell>
                 <TableCell>{p.amount.toFixed(2)}</TableCell>
                 <TableCell>{PLAN_LABELS[p.planType]}</TableCell>
                 <TableCell>{p.date}</TableCell>

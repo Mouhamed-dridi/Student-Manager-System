@@ -13,6 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Student } from "@/pages/students/StudentForm";
+import AttendanceFilters, {
+  type AttendanceFilterState,
+} from "./AttendanceFilters";
 
 const STORAGE_KEY = "studentAttendance";
 
@@ -32,30 +35,24 @@ function todayString() {
   return new Date().toISOString().split("T")[0];
 }
 
-function getDayAttendance(
-  map: Record<string, Record<string, boolean>>,
-  date: string,
-  studentIds: string[]
-): Record<string, boolean> {
-  if (map[date]) return map[date];
-  const all: Record<string, boolean> = {};
-  for (const id of studentIds) {
-    all[id] = true;
-  }
-  return all;
-}
-
 interface StudentAttendanceProps {
   students: Student[];
 }
 
-export default function StudentAttendance({ students }: StudentAttendanceProps) {
+export default function StudentAttendance({
+  students,
+}: StudentAttendanceProps) {
   const [attendanceMap, setAttendanceMap] = useState(loadAttendanceMap);
   const [date, setDate] = useState(todayString);
   const [saved, setSaved] = useState(false);
+  const [filters, setFilters] = useState<AttendanceFilterState>({
+    search: "",
+    program: "all",
+    training: "all",
+  });
 
-  const studentIds = students.map((s) => s.id);
-  const attendance = getDayAttendance(attendanceMap, date, studentIds);
+  // Only explicitly marked people count; an unsaved day starts all unmarked.
+  const attendance = attendanceMap[date] ?? {};
 
   const handleToggle = (id: string, checked: boolean) => {
     const updated = {
@@ -72,12 +69,23 @@ export default function StudentAttendance({ students }: StudentAttendanceProps) 
     setSaved(true);
   };
 
+  const query = filters.search.trim().toLowerCase();
+  const filtered = students.filter((s) => {
+    if (query && !s.fullName.toLowerCase().includes(query)) return false;
+    if (filters.program !== "all" && s.program !== filters.program)
+      return false;
+    if (filters.training !== "all" && s.training !== filters.training)
+      return false;
+    return true;
+  });
+
   const presentCount = Object.values(attendance).filter(Boolean).length;
-  const absentCount = students.length - presentCount;
+  const absentCount = Object.values(attendance).filter((v) => !v).length;
+  const unmarkedCount = students.length - presentCount - absentCount;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-4">
+      <div className="flex flex-wrap items-end gap-4">
         <div className="space-y-2">
           <Label htmlFor="date">Date</Label>
           <Input
@@ -90,9 +98,14 @@ export default function StudentAttendance({ students }: StudentAttendanceProps) 
             }}
           />
         </div>
+
+        <AttendanceFilters value={filters} onChange={setFilters} />
+
         <div className="text-sm text-muted-foreground">
           {presentCount} present, {absentCount} absent
+          {unmarkedCount > 0 ? `, ${unmarkedCount} unmarked` : ""}
         </div>
+
         <Button onClick={handleSave} className="ml-auto">
           <Save className="mr-2 h-4 w-4" />
           Save
@@ -107,6 +120,10 @@ export default function StudentAttendance({ students }: StudentAttendanceProps) 
         <p className="text-sm text-muted-foreground">
           No students registered yet.
         </p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No students match your search or filters.
+        </p>
       ) : (
         <Table>
           <TableHeader>
@@ -117,16 +134,15 @@ export default function StudentAttendance({ students }: StudentAttendanceProps) 
             </TableRow>
           </TableHeader>
           <TableBody>
-            {students.map((s) => {
-              const isPresent = attendance[s.id] !== false;
+            {filtered.map((s) => {
+              const isPresent = attendance[s.id] === true;
+              const isAbsent = attendance[s.id] === false;
               return (
                 <TableRow
                   key={s.id}
-                  className={isPresent ? "" : "text-muted-foreground"}
+                  className={isAbsent ? "text-muted-foreground" : ""}
                 >
-                  <TableCell
-                    className={isPresent ? "" : "line-through"}
-                  >
+                  <TableCell className={isAbsent ? "line-through" : ""}>
                     {s.fullName}
                   </TableCell>
                   <TableCell>{s.program}</TableCell>

@@ -15,9 +15,12 @@ export interface Payment {
   id: string;
   studentId: string;
   studentName: string;
+  studentProgram: string;
+  studentTraining: string;
   amount: number;
   planType: "one-time" | "semester" | "monthly";
   date: string;
+  status?: string;
 }
 
 interface PaymentFormProps {
@@ -30,25 +33,49 @@ function todayString() {
 }
 
 export default function PaymentForm({ students, onSave }: PaymentFormProps) {
-  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [nameInput, setNameInput] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [amount, setAmount] = useState("");
   const [planType, setPlanType] = useState<Payment["planType"]>("one-time");
   const [date, setDate] = useState(todayString);
 
+  const query = nameInput.trim().toLowerCase();
+  const matches =
+    !selectedStudent && query
+      ? students.filter((s) => s.fullName.toLowerCase().includes(query))
+      : [];
+
+  const handleNameChange = (value: string) => {
+    setNameInput(value);
+    if (
+      selectedStudent &&
+      value.toLowerCase() !== selectedStudent.fullName.toLowerCase()
+    ) {
+      setSelectedStudent(null);
+    }
+  };
+
+  const handlePickStudent = (student: Student) => {
+    setSelectedStudent(student);
+    setNameInput(student.fullName);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const student = students.find((s) => s.id === selectedStudentId);
-    if (!student) return;
+    if (!selectedStudent) return;
     onSave({
       id: crypto.randomUUID(),
-      studentId: student.id,
-      studentName: student.fullName,
+      studentId: selectedStudent.id,
+      studentName: selectedStudent.fullName,
+      studentProgram: selectedStudent.program,
+      studentTraining: selectedStudent.training,
       amount: parseFloat(amount),
       planType,
       date,
     });
     setAmount("");
-    setSelectedStudentId("");
+    setNameInput("");
+    setSelectedStudent(null);
     setPlanType("one-time");
     setDate(todayString());
   };
@@ -56,22 +83,52 @@ export default function PaymentForm({ students, onSave }: PaymentFormProps) {
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
       <div className="space-y-2">
-        <Label>Student</Label>
-        <Select
-          value={selectedStudentId}
-          onValueChange={(v) => setSelectedStudentId(v ?? "")}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select a student" />
-          </SelectTrigger>
-          <SelectContent>
-            {students.map((s) => (
-              <SelectItem key={s.id} value={s.id}>
-                {s.fullName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Label htmlFor="studentName">Student</Label>
+        <div className="relative">
+          <Input
+            id="studentName"
+            placeholder="Type a student name..."
+            value={nameInput}
+            onChange={(e) => handleNameChange(e.target.value)}
+            autoComplete="off"
+          />
+          {matches.length > 0 && (
+            <div className="absolute top-full z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border bg-popover py-1 shadow-md">
+              {matches.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => handlePickStudent(s)}
+                  className="flex w-full items-center px-3 py-1.5 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                >
+                  {s.fullName}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {!selectedStudent && query && matches.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            No students match "{nameInput.trim()}".
+          </p>
+        )}
+
+        {selectedStudent && (
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="space-y-1.5">
+              <Label>Program</Label>
+              <p className="flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm">
+                {selectedStudent.program}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Training</Label>
+              <p className="flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm">
+                {selectedStudent.training || "—"}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -116,7 +173,9 @@ export default function PaymentForm({ students, onSave }: PaymentFormProps) {
         />
       </div>
 
-      <Button type="submit">Add Payment</Button>
+      <Button type="submit" disabled={!selectedStudent}>
+        Add Payment
+      </Button>
     </form>
   );
 }

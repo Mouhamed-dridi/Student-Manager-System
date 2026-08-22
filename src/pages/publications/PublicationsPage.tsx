@@ -35,7 +35,7 @@ import {
 type RecipientType = "teachers" | "students";
 type Channel = "sms" | "email" | "notification";
 
-interface Publication {
+export interface Publication {
   id: string;
   title: string;
   message: string;
