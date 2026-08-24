@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,9 +8,10 @@ import {
   errorMessage,
   insertStudents,
   listStudents,
+  subscribeToTable,
   updateStudentProfile,
 } from "@/lib/api";
-import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
+import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 import StudentForm, { type Student } from "./StudentForm";
 import { parseStudentFile, type ImportResult } from "./importStudents";
 import StudentImportPreview from "./StudentImportPreview";
@@ -25,19 +26,26 @@ export default function StudentsPage() {
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       setStudents(await listStudents());
     } catch (err) {
       setError(errorMessage(err));
     }
-  };
+  }, []);
 
   useEffect(() => {
     listStudents()
       .then(setStudents)
       .catch((err) => setError(errorMessage(err)));
   }, []);
+
+  // Live updates: students added/edited/removed in another browser
+  // (e.g. by the operator) appear here without a manual refresh.
+  useEffect(
+    () => subscribeToTable("students", () => void refresh()),
+    [refresh],
+  );
 
   const handleSave = async (student: Student) => {
     try {
@@ -115,7 +123,7 @@ export default function StudentsPage() {
     // Imported students start with the default login password.
     const withLogins = imported.map((s) => ({
       ...s,
-      password: DEFAULT_ACCOUNT_PASSWORD,
+      password: DEFAULT_STUDENT_PASSWORD,
     }));
     try {
       setError(null);

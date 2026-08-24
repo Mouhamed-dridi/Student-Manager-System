@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import {
   AlertDialog,
@@ -29,6 +29,7 @@ import {
   errorMessage,
   listTeacherCourses,
   saveTeacherCourse,
+  subscribeToTable,
 } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type {
@@ -282,6 +283,23 @@ export default function MyCoursesPage() {
   const [records, setRecords] = useState<TeacherCourseRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const refresh = useCallback(
+    async (record: Teacher) => {
+      try {
+        setError(null);
+        const [list, allRecords] = await Promise.all([
+          loadScheduledCourses(record.program, record.training),
+          listTeacherCourses(),
+        ]);
+        setCourses(list);
+        setRecords(allRecords);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let cancelled = false;
     loadCurrentTeacher()
@@ -292,17 +310,7 @@ export default function MyCoursesPage() {
           return;
         }
         setTeacher(record);
-        try {
-          const [list, allRecords] = await Promise.all([
-            loadScheduledCourses(record.program, record.training),
-            listTeacherCourses(),
-          ]);
-          if (cancelled) return;
-          setCourses(list);
-          setRecords(allRecords);
-        } catch (err) {
-          if (!cancelled) setError(errorMessage(err));
-        }
+        await refresh(record);
       })
       .catch(() => {
         if (!cancelled) setTeacher(null);
@@ -310,7 +318,14 @@ export default function MyCoursesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refresh]);
+
+  // Live updates: courses added/edited/removed in another browser appear
+  // here without a manual refresh. Runs once the teacher record resolves.
+  useEffect(() => {
+    if (!teacher) return;
+    return subscribeToTable("courses", () => void refresh(teacher));
+  }, [teacher, refresh]);
 
   if (teacher === null) {
     return (
@@ -332,20 +347,6 @@ export default function MyCoursesPage() {
       </div>
     );
   }
-
-  const refresh = async () => {
-    try {
-      setError(null);
-      const [list, allRecords] = await Promise.all([
-        loadScheduledCourses(teacher.program, teacher.training),
-        listTeacherCourses(),
-      ]);
-      setCourses(list);
-      setRecords(allRecords);
-    } catch (err) {
-      setError(errorMessage(err));
-    }
-  };
 
   const handleViewChange = (value: string) => {
     const next = (value as ViewKey) ?? "my-courses";
@@ -381,7 +382,7 @@ export default function MyCoursesPage() {
     if (!ok) return false;
     setEditing(null);
     setView("my-courses");
-    await refresh();
+    await refresh(teacher);
     return true;
   };
 
@@ -390,7 +391,7 @@ export default function MyCoursesPage() {
     try {
       setError(null);
       await deleteTeacherCourse(deleteTarget.id);
-      await refresh();
+      await refresh(teacher);
     } catch (err) {
       setError(errorMessage(err));
     }

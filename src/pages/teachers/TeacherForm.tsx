@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
 import { TRAININGS } from "@/lib/trainings";
-import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
+import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Teacher {
   id: string;
@@ -43,7 +43,7 @@ export default function TeacherForm({
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
   const [password, setPassword] = useState(
-    initialData?.password ?? DEFAULT_ACCOUNT_PASSWORD,
+    initialData?.password ?? DEFAULT_TEACHER_PASSWORD,
   );
 
   const handleProgramChange = (value: string | null) => {
@@ -66,7 +66,7 @@ export default function TeacherForm({
       ...(initialData
         ? {}
         : {
-            password: password.trim() || DEFAULT_ACCOUNT_PASSWORD,
+            password: password.trim() || DEFAULT_TEACHER_PASSWORD,
           }),
     });
   };

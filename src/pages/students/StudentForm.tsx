@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select";
 
 import { TRAININGS } from "@/lib/trainings";
-import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
+import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Student {
   id: string;
@@ -60,7 +60,7 @@ export default function StudentForm({
       email,
       // New students start with the default password; edits leave login
       // data untouched (StudentsPage merge-preserves it).
-      ...(initialData ? { password: DEFAULT_ACCOUNT_PASSWORD } : {}),
+      ...(initialData ? { password: DEFAULT_STUDENT_PASSWORD } : {}),
     });
   };
 

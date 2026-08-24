@@ -678,3 +678,31 @@ export async function deletePlanning(id: string): Promise<void> {
   const { error } = await supabase.from("planning").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
+
+// -------------------------------------------------------------- realtime
+
+/**
+ * Subscribes to INSERT/UPDATE/DELETE events on one table and calls
+ * `onChange` after each event (callers normally refetch their list).
+ * Returns an unsubscribe function for useEffect cleanup. Only works for
+ * tables added to the supabase_realtime publication — see
+ * supabase/schema.sql.
+ */
+export function subscribeToTable(
+  table: string,
+  onChange: () => void,
+): () => void {
+  // Random suffix: two live subscriptions to the same table must not
+  // share a channel name within one client.
+  const channel = supabase
+    .channel(`ssm-${table}-${crypto.randomUUID()}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table },
+      onChange,
+    )
+    .subscribe();
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}

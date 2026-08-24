@@ -128,6 +128,28 @@ create table if not exists public.planning (
   created_at timestamptz not null default now()
 );
 
+-- ---------------------------------------------------------------- Realtime -
+-- Pages that stay open (operator Student List, teacher Class/Courses)
+-- subscribe to postgres_changes, which only fires for tables in the
+-- supabase_realtime publication. Idempotent: re-adding errors and is
+-- swallowed.
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array['students', 'courses']
+  loop
+    begin
+      execute format(
+        'alter publication supabase_realtime add table public.%I',
+        t
+      );
+    exception when duplicate_object then null;
+    end;
+  end loop;
+end $$;
+
 -- --------------------------------------------------------------------- RLS -
 -- The app has no Supabase Auth accounts; everyone shares the same data via
 -- the publishable/anon key, so these policies allow full access for `anon`.

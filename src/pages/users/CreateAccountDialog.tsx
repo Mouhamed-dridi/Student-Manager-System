@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_ACCOUNT_PASSWORD } from "./userAccounts";
+import {
+  DEFAULT_STUDENT_PASSWORD,
+  DEFAULT_TEACHER_PASSWORD,
+} from "./userAccounts";
 
 export interface AccountCandidate {
   id: string;
@@ -32,7 +35,11 @@ export default function CreateAccountDialog({
   onClose,
 }: CreateAccountDialogProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [password, setPassword] = useState(DEFAULT_ACCOUNT_PASSWORD);
+  const [password, setPassword] = useState(
+    entityLabel === "teacher"
+      ? DEFAULT_TEACHER_PASSWORD
+      : DEFAULT_STUDENT_PASSWORD,
+  );
 
   const handleCreate = () => {
     if (!selectedId || !password.trim()) return;

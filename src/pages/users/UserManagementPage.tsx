@@ -15,7 +15,7 @@ import {
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { AccountKind } from "./userAccounts";
-import { hasAccount } from "./userAccounts";
+import { defaultAccountPassword, hasAccount } from "./userAccounts";
 import type { AccountCandidate } from "./CreateAccountDialog";
 import AccountsTable, { type AccountsTableRow } from "./AccountsTable";
 import CreateAccountDialog from "./CreateAccountDialog";
@@ -194,6 +194,7 @@ export default function UserManagementPage() {
       {resetTarget && (
         <ResetPasswordDialog
           fullName={resetTarget.fullName}
+          defaultPassword={defaultAccountPassword(resetTarget.kind)}
           onSubmit={async (password) => {
             await updateAccount(resetTarget.kind, resetTarget.id, { password });
             await refresh();

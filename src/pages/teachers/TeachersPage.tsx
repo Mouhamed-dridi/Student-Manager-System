@@ -10,7 +10,7 @@ import {
   listTeachers,
   updateTeacherProfile,
 } from "@/lib/api";
-import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
+import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 import TeacherForm, { type Teacher } from "./TeacherForm";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
 import TeacherImportPreview from "./TeacherImportPreview";
@@ -116,7 +116,7 @@ export default function TeachersPage() {
     // Imported teachers start with the default login password.
     const imported = pendingImport.rows
       .filter((r) => !r.duplicate)
-      .map((r) => ({ ...r.teacher, password: DEFAULT_ACCOUNT_PASSWORD }));
+      .map((r) => ({ ...r.teacher, password: DEFAULT_TEACHER_PASSWORD }));
     const duplicates = pendingImport.rows.filter((r) => r.duplicate).length;
     const missing = pendingImport.missingData;
 

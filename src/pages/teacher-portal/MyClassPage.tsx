@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
-import { errorMessage, listStudents } from "@/lib/api";
+import { errorMessage, listStudents, subscribeToTable } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
@@ -49,6 +49,27 @@ export default function MyClassPage() {
       cancelled = true;
     };
   }, []);
+
+  // Live roster: students added/edited/removed by the operator in another
+  // browser appear here without a manual refresh. Runs once the teacher
+  // record resolves (undefined/null never subscribe).
+  useEffect(() => {
+    if (!teacher) return;
+    return subscribeToTable("students", async () => {
+      try {
+        const all = await listStudents();
+        setRoster(
+          all.filter(
+            (s) =>
+              s.program === teacher.program &&
+              s.training === teacher.training,
+          ),
+        );
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    });
+  }, [teacher]);
 
   if (teacher === null) {
     return (

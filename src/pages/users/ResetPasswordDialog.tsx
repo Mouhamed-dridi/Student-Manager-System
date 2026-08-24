@@ -10,20 +10,21 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { DEFAULT_ACCOUNT_PASSWORD } from "./userAccounts";
 
 interface ResetPasswordDialogProps {
   fullName: string;
+  defaultPassword: string;
   onSubmit: (password: string) => void;
   onClose: () => void;
 }
 
 export default function ResetPasswordDialog({
   fullName,
+  defaultPassword,
   onSubmit,
   onClose,
 }: ResetPasswordDialogProps) {
-  const [password, setPassword] = useState(DEFAULT_ACCOUNT_PASSWORD);
+  const [password, setPassword] = useState(defaultPassword);
 
   const handleSave = () => {
     if (!password.trim()) return;
