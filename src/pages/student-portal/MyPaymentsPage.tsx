@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -7,6 +7,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataError, DataLoading } from "@/components/DataState";
+import { errorMessage, listPayments } from "@/lib/api";
 import type { Payment } from "@/pages/pay/PaymentForm";
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
@@ -15,25 +17,28 @@ const PLAN_LABELS: Record<Payment["planType"], string> = {
   monthly: "Monthly",
 };
 
-function loadPayments(): Payment[] {
-  try {
-    const id = localStorage.getItem("currentStudentId");
-    if (!id) return [];
-    const payments: Payment[] = JSON.parse(
-      localStorage.getItem("payments") ?? "[]",
-    );
-    return payments
-      .filter((p) => p.studentId === id)
-      .sort((a, b) => b.date.localeCompare(a.date));
-  } catch {
-    return [];
-  }
-}
-
 export default function MyPaymentsPage() {
-  const [payments] = useState<Payment[]>(loadPayments);
+  // No session id means there is nothing to load — start with an empty list.
+  const [payments, setPayments] = useState<Payment[] | null>(() =>
+    localStorage.getItem("currentStudentId") ? null : [],
+  );
+  const [error, setError] = useState<string | null>(null);
 
-  const total = payments.reduce((sum, p) => sum + p.amount, 0);
+  useEffect(() => {
+    const id = localStorage.getItem("currentStudentId");
+    if (!id) return;
+    listPayments()
+      .then((all) =>
+        setPayments(
+          all
+            .filter((p) => p.studentId === id)
+            .sort((a, b) => b.date.localeCompare(a.date)),
+        ),
+      )
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
+
+  const total = (payments ?? []).reduce((sum, p) => sum + p.amount, 0);
 
   return (
     <div>
@@ -44,32 +49,40 @@ export default function MyPaymentsPage() {
         </span>
       </div>
 
-      {payments.length === 0 ? (
+      <div className="mt-4">
+        {error && (
+          <DataError message={error} />
+        )}
+      </div>
+
+      {payments === null ? (
+        !error && <DataLoading label="Loading payments…" />
+      ) : payments.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No payments recorded yet.
         </p>
       ) : (
         <div className="mt-4">
           <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Plan Type</TableHead>
-                <TableHead>Status</TableHead>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Date</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Plan Type</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {payments.map((p) => (
+              <TableRow key={p.id}>
+                <TableCell>{p.date}</TableCell>
+                <TableCell>{p.amount}</TableCell>
+                <TableCell>{PLAN_LABELS[p.planType]}</TableCell>
+                <TableCell>{p.status ?? "Completed"}</TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payments.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{p.date}</TableCell>
-                  <TableCell>{p.amount}</TableCell>
-                  <TableCell>{PLAN_LABELS[p.planType]}</TableCell>
-                  <TableCell>{p.status ?? "Completed"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+            ))}
+          </TableBody>
+        </Table>
         </div>
       )}
     </div>

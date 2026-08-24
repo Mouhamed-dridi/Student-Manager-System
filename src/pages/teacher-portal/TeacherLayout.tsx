@@ -8,6 +8,7 @@ import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import { loadCurrentTeacher } from "./currentTeacher";
+import type { Teacher } from "@/pages/teachers/TeacherForm";
 
 const menuItems = [
   { key: "courses", label: "Courses", icon: BookOpenCheck },
@@ -34,20 +35,31 @@ function clearTeacherSession() {
 
 export default function TeacherLayout() {
   const [active, setActive] = useState<MenuKey>("courses");
-  const [teacher] = useState(loadCurrentTeacher);
+  // undefined = still fetching the record; null = record is gone.
+  const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const navigate = useNavigate();
 
   useEffect(() => {
+    let cancelled = false;
+    loadCurrentTeacher().then((t) => {
+      if (!cancelled) setTeacher(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     // Record may have been deleted after login — end the session.
-    if (!teacher) {
+    if (teacher === null) {
       clearTeacherSession();
-      navigate("/teacher/login");
+      navigate("/login");
     }
   }, [teacher, navigate]);
 
   const handleLogout = () => {
     clearTeacherSession();
-    navigate("/teacher/login");
+    navigate("/login");
   };
 
   return (

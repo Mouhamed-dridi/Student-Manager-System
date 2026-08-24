@@ -2,34 +2,23 @@ import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DataError, DataLoading } from "@/components/DataState";
+import {
+  deleteTeachers,
+  errorMessage,
+  insertTeachers,
+  listTeachers,
+  updateTeacherProfile,
+} from "@/lib/api";
+import { DEFAULT_ACCOUNT_PASSWORD } from "@/pages/users/userAccounts";
 import TeacherForm, { type Teacher } from "./TeacherForm";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
 import TeacherImportPreview from "./TeacherImportPreview";
 import TeacherListView from "./TeacherListView";
 
-const STORAGE_KEY = "teachers";
-
-function loadTeachers(): Teacher[] {
-  try {
-    const parsed: Teacher[] = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) ?? "[]",
-    );
-    return parsed.map((t) => ({
-      ...t,
-      program: (t.program ?? "") as Teacher["program"],
-      training: t.training ?? "",
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function saveTeachers(teachers: Teacher[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(teachers));
-}
-
 export default function TeachersPage() {
-  const [teachers, setTeachers] = useState<Teacher[]>(loadTeachers);
+  const [teachers, setTeachers] = useState<Teacher[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [pendingImport, setPendingImport] = useState<ImportResult | null>(null);
@@ -37,27 +26,38 @@ export default function TeachersPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    saveTeachers(teachers);
-  }, [teachers]);
+    listTeachers()
+      .then(setTeachers)
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
 
-  const handleSave = (teacher: Teacher) => {
-    setTeachers((prev) => {
-      const exists = prev.findIndex((t) => t.id === teacher.id);
-      if (exists >= 0) {
-        // Form fields don't carry login data — preserve it across edits.
-        const updated = [...prev];
-        updated[exists] = { ...prev[exists], ...teacher };
-        return updated;
+  const handleSave = async (teacher: Teacher) => {
+    try {
+      setError(null);
+      if (teachers?.some((t) => t.id === teacher.id)) {
+        // Form fields don't carry login data — the API update only touches
+        // profile fields, so login data is preserved across edits.
+        await updateTeacherProfile(teacher.id, teacher);
+      } else {
+        await insertTeachers([teacher]);
       }
-      return [...prev, teacher];
-    });
+      setTeachers(await listTeachers());
+    } catch (err) {
+      setError(errorMessage(err));
+    }
     setEditingTeacher(null);
     setActiveTab("list");
     setImportSummary(null);
   };
 
-  const handleDelete = (id: string) => {
-    setTeachers((prev) => prev.filter((t) => t.id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      setError(null);
+      await deleteTeachers([id]);
+      setTeachers(await listTeachers());
+    } catch (err) {
+      setError(errorMessage(err));
+    }
     setImportSummary(null);
   };
 
@@ -78,9 +78,10 @@ export default function TeachersPage() {
     e.target.value = "";
     if (!file) return;
 
+    const current = teachers ?? [];
     const result = await parseTeacherFile(
       file,
-      teachers.map((t) => t.email),
+      current.map((t) => t.email),
     );
     const newCount = result.rows.filter((r) => !r.duplicate).length;
 
@@ -110,26 +111,33 @@ export default function TeachersPage() {
     setActiveTab("import");
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!pendingImport) return;
+    // Imported teachers start with the default login password.
     const imported = pendingImport.rows
       .filter((r) => !r.duplicate)
-      .map((r) => r.teacher);
+      .map((r) => ({ ...r.teacher, password: DEFAULT_ACCOUNT_PASSWORD }));
     const duplicates = pendingImport.rows.filter((r) => r.duplicate).length;
     const missing = pendingImport.missingData;
 
-    setTeachers((prev) => [...prev, ...imported]);
+    try {
+      setError(null);
+      await insertTeachers(imported);
+      setTeachers(await listTeachers());
+
+      const summary: string[] = [
+        `Added ${imported.length} teacher${imported.length === 1 ? "" : "s"}`,
+      ];
+      if (duplicates > 0)
+        summary.push(`skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}`);
+      if (missing > 0)
+        summary.push(`skipped ${missing} row${missing === 1 ? "" : "s"} with missing data`);
+      setImportSummary(summary.join(", ") + ".");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
     setPendingImport(null);
     setActiveTab("list");
-
-    const summary: string[] = [
-      `Added ${imported.length} teacher${imported.length === 1 ? "" : "s"}`,
-    ];
-    if (duplicates > 0)
-      summary.push(`skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}`);
-    if (missing > 0)
-      summary.push(`skipped ${missing} row${missing === 1 ? "" : "s"} with missing data`);
-    setImportSummary(summary.join(", ") + ".");
   };
 
   const handleCancelImport = () => {
@@ -173,19 +181,25 @@ export default function TeachersPage() {
         </div>
 
         <TabsContent value="list" className="mt-4 space-y-3">
+          {error && <DataError message={error} />}
           {importSummary && (
             <p className="rounded-md border bg-muted/50 px-3 py-2 text-sm">
               {importSummary}
             </p>
           )}
-          <TeacherListView
-            teachers={teachers}
-            onEdit={handleEdit}
-            onDelete={handleDelete}
-          />
+          {teachers === null ? (
+            <DataLoading label="Loading teachers…" />
+          ) : (
+            <TeacherListView
+              teachers={teachers}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="add" className="mt-4">
+          {error && <DataError message={error} />}
           <TeacherForm
             key={editingTeacher?.id ?? "new"}
             initialData={editingTeacher ?? undefined}

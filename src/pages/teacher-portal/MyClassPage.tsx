@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -8,34 +8,58 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataError, DataLoading } from "@/components/DataState";
+import { errorMessage, listStudents } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
+import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
-function loadRoster(program: string, training: string): Student[] {
-  try {
-    const students: Student[] = JSON.parse(
-      localStorage.getItem("students") ?? "[]",
-    );
-    return students.filter(
-      (s) => s.program === program && s.training === training,
-    );
-  } catch {
-    return [];
-  }
-}
-
 export default function MyClassPage() {
-  const [teacher] = useState(loadCurrentTeacher);
-  const [roster] = useState(() =>
-    teacher ? loadRoster(teacher.program, teacher.training) : [],
-  );
+  // undefined = session record still loading; null = record is gone.
+  const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
+  const [roster, setRoster] = useState<Student[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!teacher) {
+  useEffect(() => {
+    let cancelled = false;
+    loadCurrentTeacher()
+      .then(async (record) => {
+        if (cancelled) return;
+        if (!record) {
+          setTeacher(null);
+          return;
+        }
+        setTeacher(record);
+        try {
+          const all = await listStudents();
+          if (cancelled) return;
+          setRoster(
+            all.filter(
+              (s) => s.program === record.program && s.training === record.training,
+            ),
+          );
+        } catch (err) {
+          if (!cancelled) setError(errorMessage(err));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTeacher(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (teacher === null) {
     return (
       <p className="text-sm text-muted-foreground">
         Your teacher record could not be found.
       </p>
     );
+  }
+
+  if (teacher === undefined || roster === null) {
+    return <DataLoading label="Loading your class…" />;
   }
 
   const sorted = [...roster].sort((a, b) =>
@@ -49,6 +73,12 @@ export default function MyClassPage() {
         {sorted.length} student{sorted.length === 1 ? "" : "s"} in{" "}
         {teacher.training || "—"} ({teacher.program})
       </p>
+
+      {error && (
+        <div className="mt-4">
+          <DataError message={error} />
+        </div>
+      )}
 
       {sorted.length === 0 ? (
         <Card className="mt-4 max-w-xl">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,40 +18,65 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Student } from "@/pages/students/StudentForm";
-import { loadCurrentTeacher } from "./currentTeacher";
+import { DataError, DataLoading } from "@/components/DataState";
 import {
-  loadExams,
-  loadGrades,
-  saveGrades,
-  type ExamRecord,
-  type GradeRecord,
-} from "./exams";
-
-function loadRoster(program: string, training: string): Student[] {
-  try {
-    const students: Student[] = JSON.parse(
-      localStorage.getItem("students") ?? "[]",
-    );
-    return students.filter(
-      (s) => s.program === program && s.training === training,
-    );
-  } catch {
-    return [];
-  }
-}
+  errorMessage,
+  listExams,
+  listGrades,
+  listStudents,
+  saveGradesForExam,
+} from "@/lib/api";
+import type { Student } from "@/pages/students/StudentForm";
+import type { Teacher } from "@/pages/teachers/TeacherForm";
+import type { ExamRecord } from "./exams";
+import { loadCurrentTeacher } from "./currentTeacher";
 
 export default function GradesPage() {
-  const [teacher] = useState(loadCurrentTeacher);
-  const [exams] = useState(loadExams);
-  const [roster] = useState(() =>
-    teacher ? loadRoster(teacher.program, teacher.training) : [],
-  );
+  // undefined = session record still loading; null = record is gone.
+  const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
+  const [exams, setExams] = useState<ExamRecord[] | null>(null);
+  const [roster, setRoster] = useState<Student[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [selectedExamId, setSelectedExamId] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const myExams: ExamRecord[] = exams
+  useEffect(() => {
+    let cancelled = false;
+    loadCurrentTeacher()
+      .then(async (record) => {
+        if (cancelled || !record) {
+          if (!cancelled) setTeacher(record ?? null);
+          return;
+        }
+        setTeacher(record);
+        try {
+          const [allExams, allStudents] = await Promise.all([
+            listExams(),
+            listStudents(),
+          ]);
+          if (cancelled) return;
+          setExams(allExams);
+          setRoster(
+            allStudents.filter(
+              (s) =>
+                s.program === record.program && s.training === record.training,
+            ),
+          );
+        } catch (err) {
+          if (!cancelled) setError(errorMessage(err));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTeacher(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const myExams: ExamRecord[] = (exams ?? [])
     .filter(
       (e) =>
         e.program === teacher?.program && e.training === teacher?.training,
@@ -61,18 +86,24 @@ export default function GradesPage() {
   const selectedExam = myExams.find((e) => e.id === selectedExamId);
 
   // Prefill the score inputs whenever a different exam is picked.
-  const handleExamChange = (examId: string | null) => {
+  const handleExamChange = async (examId: string | null) => {
     setSelectedExamId(examId ?? "");
     const map: Record<string, string> = {};
     if (examId) {
-      for (const g of loadGrades()) {
-        if (g.examId === examId) map[g.studentId] = String(g.score);
+      try {
+        setError(null);
+        const grades = await listGrades();
+        for (const g of grades) {
+          if (g.examId === examId) map[g.studentId] = String(g.score);
+        }
+      } catch (err) {
+        setError(errorMessage(err));
       }
     }
     setScores(map);
   };
 
-  if (!teacher) {
+  if (teacher === null) {
     return (
       <p className="text-sm text-muted-foreground">
         Your teacher record could not be found.
@@ -80,27 +111,33 @@ export default function GradesPage() {
     );
   }
 
-  const handleSaveAll = () => {
+  if (teacher === undefined || exams === null) {
+    return <DataLoading label="Loading grades…" />;
+  }
+
+  const handleSaveAll = async () => {
     if (!selectedExam) return;
     // Upsert per (exam, student): blank inputs simply don't re-add a record,
     // so leaving a field empty clears that grade.
-    const kept = loadGrades().filter((g) => g.examId !== selectedExam.id);
-    const next: GradeRecord[] = [...kept];
+    const entries: { studentId: string; score: number }[] = [];
     for (const s of roster) {
       const raw = (scores[s.id] ?? "").trim();
       if (raw === "") continue;
       const score = Number(raw);
       if (!Number.isFinite(score)) continue;
-      next.push({
-        id: `${selectedExam.id}:${s.id}`,
-        examId: selectedExam.id,
-        studentId: s.id,
-        score,
-      });
+      entries.push({ studentId: s.id, score });
     }
-    saveGrades(next);
-    setJustSaved(true);
-    window.setTimeout(() => setJustSaved(false), 2000);
+    try {
+      setError(null);
+      setSaving(true);
+      await saveGradesForExam(selectedExam.id, entries);
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -123,10 +160,14 @@ export default function GradesPage() {
               ))}
             </SelectContent>
           </Select>
-          <Button onClick={handleSaveAll} disabled={!selectedExam}>
+          <Button onClick={handleSaveAll} disabled={!selectedExam || saving}>
             Save Grades
           </Button>
         </div>
+      </div>
+
+      <div className="mt-4">
+        {error && <DataError message={error} />}
       </div>
 
       {myExams.length === 0 ? (

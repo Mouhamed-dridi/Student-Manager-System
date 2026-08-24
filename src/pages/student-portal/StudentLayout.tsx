@@ -13,6 +13,7 @@ import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import { loadCurrentStudent } from "./currentStudent";
+import type { Student } from "@/pages/students/StudentForm";
 
 const menuItems = [
   { key: "courses", label: "Courses", icon: BookOpen },
@@ -30,28 +31,40 @@ const pages: Record<MenuKey, React.ReactNode> = {
   absence: <MyAttendancePage />,
 };
 
+function clearStudentSession() {
+  localStorage.removeItem("isLoggedIn");
+  localStorage.removeItem("role");
+  localStorage.removeItem("isStudentLoggedIn");
+  localStorage.removeItem("currentStudentId");
+}
+
 export default function StudentLayout() {
   const [active, setActive] = useState<MenuKey>("courses");
-  const [student] = useState(loadCurrentStudent);
+  // undefined = still fetching the record; null = record is gone.
+  const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
 
   useEffect(() => {
+    let cancelled = false;
+    loadCurrentStudent().then((s) => {
+      if (!cancelled) setStudent(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     // Record may have been deleted after login — end the session.
-    if (!student) {
-      localStorage.removeItem("isLoggedIn");
-      localStorage.removeItem("role");
-      localStorage.removeItem("isStudentLoggedIn");
-      localStorage.removeItem("currentStudentId");
-      navigate("/student/login");
+    if (student === null) {
+      clearStudentSession();
+      navigate("/login");
     }
   }, [student, navigate]);
 
   const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("role");
-    localStorage.removeItem("isStudentLoggedIn");
-    localStorage.removeItem("currentStudentId");
-    navigate("/student/login");
+    clearStudentSession();
+    navigate("/login");
   };
 
   return (

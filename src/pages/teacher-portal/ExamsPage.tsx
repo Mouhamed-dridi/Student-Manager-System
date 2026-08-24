@@ -1,15 +1,5 @@
-import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,9 +10,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -31,108 +29,173 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { loadCurrentTeacher } from "./currentTeacher";
+import { DataError, DataLoading } from "@/components/DataState";
 import {
   countGradesForExam,
-  loadExams,
-  loadGrades,
-  saveExams,
-  saveGrades,
-  type ExamRecord,
-} from "./exams";
+  deleteExamCascade,
+  errorMessage,
+  listExams,
+  upsertExam,
+} from "@/lib/api";
+import { loadScheduledCourses } from "@/lib/trainings";
+import type { Teacher } from "@/pages/teachers/TeacherForm";
+import type { ExamRecord } from "./exams";
+import { loadCurrentTeacher } from "./currentTeacher";
 
 interface ExamFormData {
   id: string;
   title: string;
+  course?: string;
   date: string;
-  notes?: string;
+  attachment?: string;
 }
 
-interface ExamFormDialogProps {
+interface ExamFormProps {
   initialData?: ExamRecord;
+  courses: string[];
   onSubmit: (data: ExamFormData) => void;
-  onClose: () => void;
+  onCancel: () => void;
 }
 
-function ExamFormDialog({ initialData, onSubmit, onClose }: ExamFormDialogProps) {
+function ExamForm({ initialData, courses, onSubmit, onCancel }: ExamFormProps) {
   const [title, setTitle] = useState(initialData?.title ?? "");
+  const [course, setCourse] = useState(initialData?.course ?? "");
   const [date, setDate] = useState(initialData?.date ?? "");
-  const [notes, setNotes] = useState(initialData?.notes ?? "");
+  const [attachment, setAttachment] = useState(initialData?.attachment ?? "");
 
-  const handleSave = () => {
-    if (!title.trim() || !date) return;
-    onSubmit({
-      id: initialData?.id ?? crypto.randomUUID(),
-      title: title.trim(),
-      date,
-      notes: notes.trim() || undefined,
-    });
-    onClose();
-  };
+  const valid = title.trim() !== "" && date !== "";
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{initialData ? "Edit Exam" : "Add Exam"}</DialogTitle>
-          <DialogDescription>
-            Exams are visible only to your class.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="exam-title">Title</Label>
-            <Input
-              id="exam-title"
-              placeholder="e.g. Final exam — Semester 1"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              required
+    <div className="max-w-xl space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="exam-title">Title</Label>
+        <Input
+          id="exam-title"
+          placeholder="e.g. Final exam — Semester 1"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label>Course</Label>
+        <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
+          <SelectTrigger className="w-full">
+            <SelectValue
+              placeholder={courses.length > 0 ? "Select course" : "No courses available"}
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="exam-date">Date</Label>
-            <Input
-              id="exam-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="exam-notes">Notes (optional)</Label>
-            <Textarea
-              id="exam-notes"
-              placeholder="Room, duration, materials…"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          </SelectTrigger>
+          <SelectContent>
+            {courses.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="exam-date">Date</Label>
+        <Input
+          id="exam-date"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="exam-file">Attachment</Label>
+        <Input
+          id="exam-file"
+          type="file"
+          onChange={(e) => setAttachment(e.target.files?.[0]?.name ?? "")}
+        />
+        {attachment ? (
+          <p className="text-xs text-muted-foreground">Selected file: {attachment}</p>
+        ) : null}
+      </div>
+      <div className="flex gap-2">
+        <Button
+          disabled={!valid}
+          onClick={() =>
+            onSubmit({
+              id: initialData?.id ?? crypto.randomUUID(),
+              title: title.trim(),
+              course: course || undefined,
+              date,
+              attachment: attachment || undefined,
+            })
+          }
+        >
+          {initialData ? "Save Changes" : "Add Exam"}
+        </Button>
+        {initialData ? (
+          <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!title.trim() || !date}>
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
 export default function ExamsPage() {
-  const [teacher] = useState(loadCurrentTeacher);
-  const [exams, setExams] = useState(loadExams);
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<ExamRecord | undefined>(undefined);
+  // undefined = session record still loading; null = record is gone.
+  const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
+  const [exams, setExams] = useState<ExamRecord[] | null>(null);
+  const [courses, setCourses] = useState<string[]>([]);
+  const [editing, setEditing] = useState<ExamRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ExamRecord | null>(null);
+  const [gradeCount, setGradeCount] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!teacher) {
+  useEffect(() => {
+    let cancelled = false;
+    loadCurrentTeacher()
+      .then(async (record) => {
+        if (cancelled || !record) {
+          if (!cancelled) setTeacher(record ?? null);
+          return;
+        }
+        setTeacher(record);
+        try {
+          const [all, scheduled] = await Promise.all([
+            listExams(),
+            loadScheduledCourses(record.program, record.training),
+          ]);
+          if (cancelled) return;
+          setExams(all);
+          setCourses([...new Set(scheduled.map((c) => c.name))]);
+        } catch (err) {
+          if (!cancelled) setError(errorMessage(err));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setTeacher(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The delete confirmation names the number of recorded grades.
+  useEffect(() => {
+    if (!deleteTarget) return;
+    let cancelled = false;
+    countGradesForExam(deleteTarget.id)
+      .then((count) => {
+        if (!cancelled) setGradeCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setGradeCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteTarget]);
+
+  if (teacher === null) {
     return (
       <p className="text-sm text-muted-foreground">
         Your teacher record could not be found.
@@ -140,63 +203,92 @@ export default function ExamsPage() {
     );
   }
 
+  if (teacher === undefined || exams === null) {
+    return <DataLoading label="Loading exams…" />;
+  }
+
   const myExams = exams
     .filter((e) => e.program === teacher.program && e.training === teacher.training)
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  const refreshExams = () => setExams(loadExams());
-
-  const handleSave = (data: ExamFormData) => {
-    const all = loadExams();
-    const idx = all.findIndex((e) => e.id === data.id);
-    if (idx >= 0) {
-      // Edits keep the exam scoped to its original class, even if the
-      // teacher's assignment has since changed.
-      all[idx] = { ...all[idx], ...data };
-    } else {
-      all.push({
-        ...data,
-        teacherId: teacher.id,
-        program: teacher.program,
-        training: teacher.training,
-      });
+  const refreshExams = async () => {
+    try {
+      setError(null);
+      setExams(await listExams());
+    } catch (err) {
+      setError(errorMessage(err));
     }
-    saveExams(all);
-    refreshExams();
   };
 
-  const confirmDelete = () => {
+  const handleSubmit = async (data: ExamFormData) => {
+    try {
+      setError(null);
+      const existing = exams.find((e) => e.id === data.id);
+      if (existing) {
+        // Edits keep the exam scoped to its original class, even if the
+        // teacher's assignment has since changed.
+        await upsertExam({ ...existing, ...data });
+      } else {
+        await upsertExam({
+          ...data,
+          teacherId: teacher.id,
+          program: teacher.program,
+          training: teacher.training,
+        });
+      }
+      setEditing(null);
+      await refreshExams();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    // Cascade: the exam's recorded grades are destroyed with it.
-    saveGrades(loadGrades().filter((g) => g.examId !== deleteTarget.id));
-    saveExams(loadExams().filter((e) => e.id !== deleteTarget.id));
-    refreshExams();
+    try {
+      setError(null);
+      // Cascade: the exam's recorded grades are destroyed with it.
+      await deleteExamCascade(deleteTarget.id);
+      await refreshExams();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
     setDeleteTarget(null);
   };
 
-  const gradeCount = deleteTarget ? countGradesForExam(deleteTarget.id) : 0;
-
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">Exams</h2>
-        <Button
-          onClick={() => {
-            setEditing(undefined);
-            setFormOpen(true);
-          }}
-        >
-          <Plus className="h-4 w-4" />
-          Add Exam
-        </Button>
+      <h3 className="text-lg font-semibold">
+        {editing ? "Edit Exam" : "Add Exam"}
+      </h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Exams are visible only to your class ({teacher.training || "—"} ·{" "}
+        {teacher.program}).
+      </p>
+
+      <div className="mt-4">
+        {error && (
+          <div className="mb-4">
+            <DataError message={error} />
+          </div>
+        )}
+        <ExamForm
+          key={editing?.id ?? "new"}
+          initialData={editing ?? undefined}
+          courses={courses}
+          onSubmit={handleSubmit}
+          onCancel={() => setEditing(null)}
+        />
       </div>
+
+      <h3 className="mt-8 text-lg font-semibold">Saved Exams</h3>
 
       {myExams.length === 0 ? (
         <Card className="mt-4 max-w-xl">
           <CardContent className="py-8 text-center">
             <p className="text-sm font-medium">No exams yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create your first exam to start recording grades.
+              Use the form above to create your first exam.
             </p>
           </CardContent>
         </Card>
@@ -206,8 +298,9 @@ export default function ExamsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Course</TableHead>
                 <TableHead>Date</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead>File</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -215,19 +308,17 @@ export default function ExamsPage() {
               {myExams.map((exam) => (
                 <TableRow key={exam.id}>
                   <TableCell className="font-medium">{exam.title}</TableCell>
+                  <TableCell>{exam.course || "—"}</TableCell>
                   <TableCell>{exam.date}</TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {exam.notes || "—"}
+                    {exam.attachment || "—"}
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center justify-end gap-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          setEditing(exam);
-                          setFormOpen(true);
-                        }}
+                        onClick={() => setEditing(exam)}
                       >
                         Edit
                       </Button>
@@ -246,14 +337,6 @@ export default function ExamsPage() {
             </TableBody>
           </Table>
         </div>
-      )}
-
-      {formOpen && (
-        <ExamFormDialog
-          initialData={editing}
-          onSubmit={handleSave}
-          onClose={() => setFormOpen(false)}
-        />
       )}
 
       <AlertDialog

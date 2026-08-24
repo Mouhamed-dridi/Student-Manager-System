@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,24 +12,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataError, DataLoading } from "@/components/DataState";
+import {
+  errorMessage,
+  loadAttendanceMap,
+  setAttendanceMark,
+} from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import AttendanceFilters, {
   type AttendanceFilterState,
 } from "./AttendanceFilters";
-
-const STORAGE_KEY = "teacherAttendance";
-
-function loadAttendanceMap(): Record<string, Record<string, boolean>> {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveAttendanceMap(map: Record<string, Record<string, boolean>>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
-}
 
 function todayString() {
   return new Date().toISOString().split("T")[0];
@@ -42,7 +34,11 @@ interface TeacherAttendanceProps {
 export default function TeacherAttendance({
   teachers,
 }: TeacherAttendanceProps) {
-  const [attendanceMap, setAttendanceMap] = useState(loadAttendanceMap);
+  const [attendanceMap, setAttendanceMap] = useState<Record<
+    string,
+    Record<string, boolean>
+  > | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [date, setDate] = useState(todayString);
   const [saved, setSaved] = useState(false);
   const [filters, setFilters] = useState<AttendanceFilterState>({
@@ -51,21 +47,29 @@ export default function TeacherAttendance({
     training: "all",
   });
 
-  // Only explicitly marked people count; an unsaved day starts all unmarked.
-  const attendance = attendanceMap[date] ?? {};
+  useEffect(() => {
+    loadAttendanceMap("teacher")
+      .then(setAttendanceMap)
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
+
+  // Only explicitly marked people count; an unmarked day starts all unmarked.
+  const attendance = attendanceMap?.[date] ?? {};
 
   const handleToggle = (id: string, checked: boolean) => {
-    const updated = {
+    if (attendanceMap === null) return;
+    setAttendanceMap({
       ...attendanceMap,
       [date]: { ...attendanceMap[date], [id]: checked },
-    };
-    setAttendanceMap(updated);
-    saveAttendanceMap(updated);
+    });
     setSaved(false);
+    setAttendanceMark("teacher", id, date, checked).catch((err) =>
+      setError(errorMessage(err)),
+    );
   };
 
   const handleSave = () => {
-    saveAttendanceMap(attendanceMap);
+    // Marks are written to Supabase as they are toggled; this confirms it.
     setSaved(true);
   };
 
@@ -82,6 +86,14 @@ export default function TeacherAttendance({
   const presentCount = Object.values(attendance).filter(Boolean).length;
   const absentCount = Object.values(attendance).filter((v) => !v).length;
   const unmarkedCount = teachers.length - presentCount - absentCount;
+
+  if (error && attendanceMap === null) {
+    return (
+      <div className="space-y-3">
+        <DataError message={error} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -115,8 +127,11 @@ export default function TeacherAttendance({
       {saved && (
         <p className="text-sm text-green-600">Attendance saved for {date}.</p>
       )}
+      {error && <DataError message={error} />}
 
-      {teachers.length === 0 ? (
+      {attendanceMap === null ? (
+        <DataLoading label="Loading attendance…" />
+      ) : teachers.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No teachers registered yet.
         </p>

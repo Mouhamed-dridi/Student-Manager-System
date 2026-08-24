@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -7,35 +7,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-type AttendanceMap = Record<string, Record<string, boolean>>;
+import { DataError, DataLoading } from "@/components/DataState";
+import { errorMessage, loadPersonAttendance } from "@/lib/api";
 
 interface AttendanceEntry {
   date: string;
   present: boolean;
 }
 
-function loadMyAttendance(): AttendanceEntry[] {
-  try {
-    const id = localStorage.getItem("currentStudentId");
-    if (!id) return [];
-    const map: AttendanceMap = JSON.parse(
-      localStorage.getItem("studentAttendance") ?? "{}",
-    );
-    return Object.entries(map)
-      .filter(([, day]) => typeof day[id] === "boolean")
-      .map(([date, day]) => ({ date, present: day[id] }))
-      .sort((a, b) => b.date.localeCompare(a.date));
-  } catch {
-    return [];
-  }
-}
-
 export default function MyAttendancePage() {
-  const [entries] = useState<AttendanceEntry[]>(loadMyAttendance);
+  // No session id means there is nothing to load — start with an empty list.
+  const [entries, setEntries] = useState<AttendanceEntry[] | null>(() =>
+    localStorage.getItem("currentStudentId") ? null : [],
+  );
+  const [error, setError] = useState<string | null>(null);
 
-  const presentCount = entries.filter((e) => e.present).length;
-  const absentCount = entries.length - presentCount;
+  useEffect(() => {
+    const id = localStorage.getItem("currentStudentId");
+    if (!id) return;
+    loadPersonAttendance("student", id)
+      .then(setEntries)
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
+
+  const presentCount = (entries ?? []).filter((e) => e.present).length;
+  const absentCount = (entries ?? []).length - presentCount;
 
   return (
     <div>
@@ -46,7 +42,15 @@ export default function MyAttendancePage() {
         </span>
       </div>
 
-      {entries.length === 0 ? (
+      {error && (
+        <div className="mt-4">
+          <DataError message={error} />
+        </div>
+      )}
+
+      {entries === null ? (
+        !error && <DataLoading label="Loading attendance…" />
+      ) : entries.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           No attendance records yet.
         </p>

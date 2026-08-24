@@ -31,6 +31,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DataError, DataLoading } from "@/components/DataState";
+import {
+  deletePublication,
+  errorMessage,
+  insertPublication,
+  listPublications,
+} from "@/lib/api";
 
 type RecipientType = "teachers" | "students";
 type Channel = "sms" | "email" | "notification";
@@ -44,8 +51,6 @@ export interface Publication {
   createdAt: string;
 }
 
-const STORAGE_KEY = "publications";
-
 const RECIPIENT_LABELS: Record<RecipientType, string> = {
   teachers: "Teachers",
   students: "Students",
@@ -57,17 +62,9 @@ const CHANNEL_LABELS: Record<Channel, string> = {
   notification: "Notification",
 };
 
-function loadPublications(): Publication[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
 export default function PublicationsPage() {
-  const [publications, setPublications] =
-    useState<Publication[]>(loadPublications);
+  const [publications, setPublications] = useState<Publication[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [recipients, setRecipients] = useState<RecipientType[]>([]);
@@ -76,8 +73,10 @@ export default function PublicationsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(publications));
-  }, [publications]);
+    listPublications()
+      .then(setPublications)
+      .catch((err) => setLoadError(errorMessage(err)));
+  }, []);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -88,11 +87,17 @@ export default function PublicationsPage() {
   const toggleValue = <T,>(list: T[], value: T, checked: boolean): T[] =>
     checked ? [...list, value] : list.filter((v) => v !== value);
 
-  const handleDelete = (id: string) => {
-    setPublications((prev) => prev.filter((p) => p.id !== id));
+  const handleDelete = async (id: string) => {
+    try {
+      setError(null);
+      await deletePublication(id);
+      setPublications(await listPublications());
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -114,26 +119,37 @@ export default function PublicationsPage() {
       createdAt: new Date().toISOString(),
     };
 
-    setPublications((prev) => [publication, ...prev]);
-    setTitle("");
-    setMessage("");
-    setRecipients([]);
-    setChannels([]);
+    try {
+      await insertPublication(publication);
+      setPublications(await listPublications());
+      setTitle("");
+      setMessage("");
+      setRecipients([]);
+      setChannels([]);
 
-    const recipientNames = publication.recipients
-      .map((r) => RECIPIENT_LABELS[r])
-      .join(", ");
-    const channelNames = publication.channels
-      .map((c) => CHANNEL_LABELS[c])
-      .join(", ");
-    setSuccessMessage(
-      `Announcement published to ${recipientNames} via ${channelNames}.`
-    );
+      const recipientNames = publication.recipients
+        .map((r) => RECIPIENT_LABELS[r])
+        .join(", ");
+      const channelNames = publication.channels
+        .map((c) => CHANNEL_LABELS[c])
+        .join(", ");
+      setSuccessMessage(
+        `Announcement published to ${recipientNames} via ${channelNames}.`
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   };
 
   return (
     <div>
       <h2 className="text-2xl font-semibold">Publications</h2>
+
+      {loadError && (
+        <div className="mt-4">
+          <DataError message={loadError} />
+        </div>
+      )}
 
       {successMessage && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
@@ -220,7 +236,9 @@ export default function PublicationsPage() {
 
       <h3 className="mt-8 text-lg font-medium">Publication History</h3>
 
-      {publications.length === 0 ? (
+      {publications === null ? (
+        !loadError && <DataLoading label="Loading publications…" />
+      ) : publications.length === 0 ? (
         <p className="mt-2 text-sm text-muted-foreground">
           No publications created yet.
         </p>

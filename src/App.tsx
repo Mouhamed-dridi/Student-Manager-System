@@ -1,9 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
-import StudentLoginPage from "@/pages/student-portal/StudentLoginPage";
 import StudentLayout from "@/pages/student-portal/StudentLayout";
-import TeacherLoginPage from "@/pages/teacher-portal/TeacherLoginPage";
 import TeacherLayout from "@/pages/teacher-portal/TeacherLayout";
 
 function getRole(): string | null {
@@ -32,7 +30,7 @@ function StudentRoute({ children }: { children: React.ReactNode }) {
   return role === "student" ? (
     <>{children}</>
   ) : (
-    <Navigate to={role === "operator" ? "/dashboard" : "/student/login"} replace />
+    <Navigate to={role === "operator" ? "/dashboard" : "/login"} replace />
   );
 }
 
@@ -47,7 +45,7 @@ function TeacherRoute({ children }: { children: React.ReactNode }) {
           ? "/dashboard"
           : role === "student"
             ? "/student"
-            : "/teacher/login"
+            : "/login"
       }
       replace
     />
@@ -76,31 +74,11 @@ export default function App() {
         }
       />
       <Route
-        path="/student/login"
-        element={
-          getRole() === null ? (
-            <StudentLoginPage />
-          ) : (
-            <Navigate to={homeFor(getRole())} replace />
-          )
-        }
-      />
-      <Route
         path="/student"
         element={
           <StudentRoute>
             <StudentLayout />
           </StudentRoute>
-        }
-      />
-      <Route
-        path="/teacher/login"
-        element={
-          getRole() === null ? (
-            <TeacherLoginPage />
-          ) : (
-            <Navigate to={homeFor(getRole())} replace />
-          )
         }
       />
       <Route

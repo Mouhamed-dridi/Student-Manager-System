@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { DataLoading } from "@/components/DataState";
 import type { Student } from "@/pages/students/StudentForm";
 import { loadCurrentStudent } from "./currentStudent";
 
@@ -19,7 +20,27 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function MyInfoPage() {
-  const [student] = useState<Student | null>(loadCurrentStudent);
+  // undefined = session record still loading; null = record is gone.
+  const [student, setStudent] = useState<Student | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCurrentStudent().then((record) => {
+      if (!cancelled) setStudent(record);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (student === undefined) {
+    return (
+      <div>
+        <h2 className="text-2xl font-semibold">My Info</h2>
+        <DataLoading label="Loading your info…" />
+      </div>
+    );
+  }
 
   if (!student) {
     return (

@@ -1,13 +1,12 @@
 import type { Teacher } from "@/pages/teachers/TeacherForm";
+import { getTeacherById } from "@/lib/api";
 
-export function loadCurrentTeacher(): Teacher | null {
+// The session id stays in localStorage; the record itself lives in Supabase.
+export async function loadCurrentTeacher(): Promise<Teacher | null> {
+  const id = localStorage.getItem("currentTeacherId");
+  if (!id) return null;
   try {
-    const id = localStorage.getItem("currentTeacherId");
-    if (!id) return null;
-    const teachers: Teacher[] = JSON.parse(
-      localStorage.getItem("teachers") ?? "[]",
-    );
-    return teachers.find((t) => t.id === id) ?? null;
+    return await getTeacherById(id);
   } catch {
     return null;
   }

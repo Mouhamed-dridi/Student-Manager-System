@@ -60,12 +60,7 @@ export default function StudentForm({
       email,
       // New students start with the default password; edits leave login
       // data untouched (StudentsPage merge-preserves it).
-      ...(initialData
-        ? {}
-        : {
-            password: DEFAULT_ACCOUNT_PASSWORD,
-            accountInitialized: true,
-          }),
+      ...(initialData ? { password: DEFAULT_ACCOUNT_PASSWORD } : {}),
     });
   };
 

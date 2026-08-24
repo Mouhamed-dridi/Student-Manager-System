@@ -4,23 +4,73 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { errorMessage, listStudents, listTeachers } from "@/lib/api";
+
+const BLOCKED_MESSAGE = "Access has been blocked by the center.";
+const INVALID_MESSAGE = "Incorrect name or password.";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (username === "admin" && password === "admin123") {
+    const query = name.trim();
+
+    if (query === "admin" && password === "admin123") {
       localStorage.setItem("isLoggedIn", "true");
       localStorage.setItem("role", "operator");
       navigate("/dashboard");
-    } else {
-      setError("Invalid username or password.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const [teachers, students] = await Promise.all([
+        listTeachers(),
+        listStudents(),
+      ]);
+
+      const teacher = teachers.find((t) => t.fullName.trim() === query);
+      if (teacher && teacher.password === password) {
+        if (teacher.blocked === true) {
+          setError(BLOCKED_MESSAGE);
+          return;
+        }
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("role", "teacher");
+        localStorage.setItem("isTeacherLoggedIn", "true");
+        localStorage.setItem("currentTeacherId", teacher.id);
+        navigate("/teacher");
+        return;
+      }
+
+      const student = students.find(
+        (s) => s.fullName.trim().toLowerCase() === query.toLowerCase(),
+      );
+      if (student && student.password === password) {
+        if (student.blocked === true) {
+          setError(BLOCKED_MESSAGE);
+          return;
+        }
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("role", "student");
+        localStorage.setItem("isStudentLoggedIn", "true");
+        localStorage.setItem("currentStudentId", student.id);
+        navigate("/student");
+        return;
+      }
+
+      setError(INVALID_MESSAGE);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -33,12 +83,12 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="name">Name</Label>
               <Input
-                id="username"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="name"
+                placeholder="Enter your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 required
               />
             </div>
@@ -56,8 +106,8 @@ export default function LoginPage() {
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
-            <Button type="submit" className="w-full">
-              Login
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Checking…" : "Login"}
             </Button>
           </form>
         </CardContent>

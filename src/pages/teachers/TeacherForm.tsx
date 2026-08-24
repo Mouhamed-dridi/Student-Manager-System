@@ -67,7 +67,6 @@ export default function TeacherForm({
         ? {}
         : {
             password: password.trim() || DEFAULT_ACCOUNT_PASSWORD,
-            accountInitialized: true,
           }),
     });
   };

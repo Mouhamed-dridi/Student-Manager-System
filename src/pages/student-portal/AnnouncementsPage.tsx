@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -6,6 +6,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DataError, DataLoading } from "@/components/DataState";
+import { errorMessage, listPublications } from "@/lib/api";
 import type { Publication } from "@/pages/publications/PublicationsPage";
 
 type Channel = Publication["channels"][number];
@@ -16,36 +18,44 @@ const CHANNEL_LABELS: Record<Channel, string> = {
   notification: "Notification",
 };
 
-function loadStudentAnnouncements(): Publication[] {
-  try {
-    const publications: Publication[] = JSON.parse(
-      localStorage.getItem("publications") ?? "[]",
-    );
-    return publications
-      .filter((p) => p.recipients.includes("students"))
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-  } catch {
-    return [];
-  }
-}
-
 export default function AnnouncementsPage() {
-  const [announcements] =
-    useState<Publication[]>(loadStudentAnnouncements);
+  const [announcements, setAnnouncements] = useState<Publication[] | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listPublications()
+      .then((all) =>
+        setAnnouncements(
+          all
+            .filter((p) => p.recipients.includes("students"))
+            .sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() -
+                new Date(a.createdAt).getTime(),
+            ),
+        ),
+      )
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
 
   return (
     <div>
       <h2 className="text-2xl font-semibold">Announcements</h2>
 
-      {announcements.length === 0 ? (
-        <p className="mt-4 text-sm text-muted-foreground">
+      <div className="mt-4">
+        {error && <DataError message={error} />}
+      </div>
+
+      {announcements === null ? (
+        !error && <DataLoading label="Loading announcements…" />
+      ) : announcements.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
           No announcements yet.
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="space-y-3">
           {announcements.map((p) => (
             <Card key={p.id}>
               <CardHeader>

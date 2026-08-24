@@ -1,3 +1,5 @@
+import { listTeacherCourses } from "@/lib/api";
+
 export const PROGRAMS = ["BTP", "BTS", "CAP"] as const;
 
 export type Program = (typeof PROGRAMS)[number];
@@ -75,3 +77,54 @@ export const COURSES: Record<Program, Partial<Record<string, ScheduledCourse[]>>
     ],
   },
 };
+
+export interface CourseMaterial {
+  name: string;
+  type: string;
+}
+
+export interface TeacherCourseRecord {
+  id: string;
+  teacherId: string;
+  program: string;
+  training: string;
+  name: string;
+  day: string;
+  time: string;
+  thumbnail?: string;
+  published?: string;
+  materials?: CourseMaterial[];
+}
+
+export interface ScheduledCourseView extends ScheduledCourse {
+  id?: string;
+  teacherId?: string;
+  thumbnail?: string;
+  published?: string;
+  materials?: CourseMaterial[];
+}
+
+// Seeded entries carry no id/teacherId; teacher-created ones do.
+// Teacher-created courses come from Supabase, so this is async now.
+export async function loadScheduledCourses(
+  program: string,
+  training: string,
+): Promise<ScheduledCourseView[]> {
+  const seeded: ScheduledCourseView[] =
+    COURSES[program as Program]?.[training] ?? [];
+  const added = (await listTeacherCourses())
+    .filter((c) => c.program === program && c.training === training)
+    .map(
+      ({ id, teacherId, name, day, time, thumbnail, published, materials }) => ({
+        id,
+        teacherId,
+        name,
+        day,
+        time,
+        thumbnail,
+        published,
+        materials,
+      }),
+    );
+  return [...seeded, ...added];
+}

@@ -1,13 +1,12 @@
 import type { Student } from "@/pages/students/StudentForm";
+import { getStudentById } from "@/lib/api";
 
-export function loadCurrentStudent(): Student | null {
+// The session id stays in localStorage; the record itself lives in Supabase.
+export async function loadCurrentStudent(): Promise<Student | null> {
+  const id = localStorage.getItem("currentStudentId");
+  if (!id) return null;
   try {
-    const id = localStorage.getItem("currentStudentId");
-    if (!id) return null;
-    const students: Student[] = JSON.parse(
-      localStorage.getItem("students") ?? "[]",
-    );
-    return students.find((s) => s.id === id) ?? null;
+    return await getStudentById(id);
   } catch {
     return null;
   }

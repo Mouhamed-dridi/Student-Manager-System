@@ -1,0 +1,9 @@
+Change "My Courses" from a table to a card grid, same visual style as the student side's course cards: a thumbnail image at the top of each card, title below it, day and time at the bottom. Keep the edit/delete actions on cards this teacher personally added, hidden on ones that came from elsewhere.
+
+ 3.2 — Thumbnail upload and category pickers on Add Course
+
+Two changes to the Add Course form. First, add an image upload field so the teacher can pick a thumbnail image file for the course directly, instead of relying only on the training-based filename matching — if the teacher uploads an image, save and use it as that specific course's thumbnail on its card; if they don't upload one, fall back to the existing training-based thumbnail. Second, replace the free-text Day and Time fields with dropdowns: Day is a dropdown of Monday through Friday, and Time is a dropdown of a fixed list of common class time slots (e.g. "08:00–10:00", "10:15–12:15", "13:00–15:00", "15:15–17:15") instead of typing a custom time range.
+
+ 3.3 — Auto-save the publish date
+
+When a teacher adds a course through Add Course, automatically stamp it with the current date and time as a "published" timestamp when it's saved — don't ask the teacher to enter this, set it by the system automatically. Store it with the course record. Optionally show it as small secondary text on the course card (e.g. "Added Aug 23, 2026").
