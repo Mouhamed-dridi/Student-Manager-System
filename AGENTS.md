@@ -34,7 +34,7 @@ Frontend-only React 19 + Vite 8 + TypeScript SPA ("SSM") backed by Supabase. No 
 
 ## Non-code folders
 
-- `supabase/schema.sql` is the executable source of truth for the DB (see Backend section). `init/` holds product specs (`PRD.md`, `plan.md`, `bugs.md`) and `claude/` the original build prompts — reference material, not app code. `README.md` is stock Vite boilerplate. Root `accessloginpage.md` documents portal logins: only `admin`/`admin123` works out of the box — teacher/student logins exist only after records are created from the operator side (password defaults to `tch123`/`std123` respectively). `superbase/` (extra "e") is a stray non-app folder — ignore it.
+- `supabase/schema.sql` is the executable source of truth for the DB (see Backend section). `init/` holds product specs (`PRD.md`, `plan.md`, `bugs.md`, `inti.md`) — reference material, not app code. `README.md` is stock Vite boilerplate. Root `accessloginpage.md` documents portal logins: only `admin`/`admin123` works out of the box — teacher/student logins exist only after records are created from the operator side (password defaults to `tch123`/`std123` respectively). `superbase/` (extra "e") is a stray non-app folder — ignore it.
 
 ## Stack quirks
 
