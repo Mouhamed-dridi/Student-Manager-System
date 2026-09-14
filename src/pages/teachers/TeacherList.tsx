@@ -45,8 +45,7 @@ export default function TeacherList({
       <TableHeader>
         <TableRow>
           <TableHead>Full Name</TableHead>
-          <TableHead>Program</TableHead>
-          <TableHead>Training</TableHead>
+          <TableHead>Specialty</TableHead>
           <TableHead>Phone</TableHead>
           <TableHead>Email</TableHead>
           <TableHead className="w-24">Actions</TableHead>
@@ -56,8 +55,7 @@ export default function TeacherList({
         {teachers.map((t) => (
           <TableRow key={t.id}>
             <TableCell>{t.fullName}</TableCell>
-            <TableCell>{t.program}</TableCell>
-            <TableCell>{t.training}</TableCell>
+            <TableCell>{t.specialty || "—"}</TableCell>
             <TableCell>{t.phone}</TableCell>
             <TableCell>{t.email}</TableCell>
             <TableCell>

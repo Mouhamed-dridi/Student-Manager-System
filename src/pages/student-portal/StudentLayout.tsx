@@ -14,6 +14,7 @@ import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
+import { clearSession } from "@/lib/session";
 
 const menuItems = [
   { key: "courses", label: "Courses", icon: BookOpen },
@@ -32,10 +33,7 @@ const pages: Record<MenuKey, React.ReactNode> = {
 };
 
 function clearStudentSession() {
-  localStorage.removeItem("isLoggedIn");
-  localStorage.removeItem("role");
-  localStorage.removeItem("isStudentLoggedIn");
-  localStorage.removeItem("currentStudentId");
+  clearSession();
 }
 
 export default function StudentLayout() {

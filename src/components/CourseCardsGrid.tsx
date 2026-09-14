@@ -60,7 +60,7 @@ function materialTypeLabel(type: string): string {
 
 interface CourseCardProps {
   course: ScheduledCourseView;
-  training: string;
+  training?: string;
   actions?: ReactNode;
   onOpenMaterials?: (course: ScheduledCourseView) => void;
 }
@@ -71,7 +71,7 @@ function CourseCard({
   actions,
   onOpenMaterials,
 }: CourseCardProps) {
-  const thumbnail = course.thumbnail ?? thumbnailFor(training);
+  const thumbnail = course.thumbnail ?? thumbnailFor(course.training ?? training ?? "");
   const materialCount = course.materials?.length ?? 0;
 
   return (
@@ -123,7 +123,7 @@ function CourseCard({
 
 interface CourseCardsGridProps {
   courses: ScheduledCourseView[];
-  training: string;
+  training?: string;
   renderActions?: (course: ScheduledCourseView) => ReactNode;
   showMaterials?: boolean;
 }

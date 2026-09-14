@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { errorMessage, listStudents, listTeachers } from "@/lib/api";
+import { setRole, setCurrentStudentId, setCurrentTeacherId } from "@/lib/session";
 
 const BLOCKED_MESSAGE = "Access has been blocked by the center.";
 const INVALID_MESSAGE = "Incorrect name or password.";
@@ -23,8 +24,7 @@ export default function LoginPage() {
     const query = name.trim();
 
     if (query === "admin" && password === "admin123") {
-      localStorage.setItem("isLoggedIn", "true");
-      localStorage.setItem("role", "operator");
+      setRole("operator");
       navigate("/dashboard");
       return;
     }
@@ -42,10 +42,8 @@ export default function LoginPage() {
           setError(BLOCKED_MESSAGE);
           return;
         }
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("role", "teacher");
-        localStorage.setItem("isTeacherLoggedIn", "true");
-        localStorage.setItem("currentTeacherId", teacher.id);
+        setRole("teacher");
+        setCurrentTeacherId(teacher.id);
         navigate("/teacher");
         return;
       }
@@ -58,10 +56,8 @@ export default function LoginPage() {
           setError(BLOCKED_MESSAGE);
           return;
         }
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("role", "student");
-        localStorage.setItem("isStudentLoggedIn", "true");
-        localStorage.setItem("currentStudentId", student.id);
+        setRole("student");
+        setCurrentStudentId(student.id);
         navigate("/student");
         return;
       }

@@ -16,6 +16,7 @@ import PayPage from "@/pages/pay/PayPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
 import UserManagementPage from "@/pages/users/UserManagementPage";
+import { clearSession } from "@/lib/session";
 
 const menuItems = [
   { key: "students", label: "Students", icon: Users },
@@ -42,8 +43,7 @@ export default function Layout() {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("role");
+    clearSession();
     navigate("/login");
   };
 

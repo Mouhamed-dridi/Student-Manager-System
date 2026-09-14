@@ -4,29 +4,44 @@
 -- It is idempotent: safe to run more than once.
 -- ============================================================================
 
+-- ----------------------------------------------------------- programs/trainings --
+
+create table if not exists public.programs (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.trainings (
+  id uuid primary key default gen_random_uuid(),
+  program_id uuid not null references programs(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------- people ---
 
 create table if not exists public.students (
   id uuid primary key default gen_random_uuid(),
-  full_name text,
-  program text,
-  training text,
+  full_name text not null,
+  program_id uuid references programs(id),
+  training_id uuid references trainings(id),
   phone text,
-  email text,
-  password text,          -- null = this student has no login account
-  blocked boolean default false,
+  email text unique,
+  password text not null default 'std123',
+  blocked boolean not null default false,
   created_at timestamptz not null default now()
 );
 
 create table if not exists public.teachers (
   id uuid primary key default gen_random_uuid(),
-  full_name text,
-  program text,
-  training text,
+  full_name text not null,
+  specialty text not null default '',
   phone text,
-  email text,
-  password text,          -- null = this teacher has no login account
-  blocked boolean default false,
+  email text unique,
+  password text not null default 'tch123',
+  blocked boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -69,8 +84,8 @@ create index if not exists attendance_person_day_idx
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
   title text not null,
-  program text,
-  training text,
+  program_id uuid references programs(id),
+  training_id uuid references trainings(id),
   day text,
   time text,
   teacher_id uuid,
@@ -81,8 +96,8 @@ create table if not exists public.courses (
 );
 
 -- ------------------------------------------------------------------ exams --
--- Scoped to the teacher's class (program/training); course stored by NAME
--- because seeded schedule courses have no database id.
+-- Owned by the teacher who created them; snapshots the course's program and
+-- training so the class roster for grading stays resolvable.
 
 create table if not exists public.exams (
   id uuid primary key default gen_random_uuid(),
@@ -138,7 +153,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['students', 'courses']
+  foreach t in array array['students', 'teachers', 'courses']
   loop
     begin
       execute format(

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,12 +8,13 @@ import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
   getBlocked,
-  listStudents,
-  listTeachers,
+  listStudentAccounts,
+  listTeacherAccounts,
+  subscribeToTable,
   updateAccount,
 } from "@/lib/api";
-import type { Student } from "@/pages/students/StudentForm";
-import type { Teacher } from "@/pages/teachers/TeacherForm";
+import type { AccountInfo } from "@/lib/api";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import type { AccountKind } from "./userAccounts";
 import { defaultAccountPassword, hasAccount } from "./userAccounts";
 import type { AccountCandidate } from "./CreateAccountDialog";
@@ -21,26 +22,27 @@ import AccountsTable, { type AccountsTableRow } from "./AccountsTable";
 import CreateAccountDialog from "./CreateAccountDialog";
 import ResetPasswordDialog from "./ResetPasswordDialog";
 
-type ManagedAccount = Student | Teacher;
-
-function toRows(records: ManagedAccount[]): AccountsTableRow[] {
+function toRows(records: AccountInfo[]): AccountsTableRow[] {
   return records.filter(hasAccount).map((r) => ({
     id: r.id,
     fullName: r.fullName ?? "(unnamed)",
+    program: r.program || r.specialty || "",
     password: r.password,
     blocked: r.blocked,
   }));
 }
 
-function detailOf(record: ManagedAccount): string {
+function detailOf(record: AccountInfo): string {
+  const specialty = typeof record.specialty === "string" ? record.specialty : "";
+  if (specialty) return specialty;
   const program = typeof record.program === "string" ? record.program : "";
   const training = typeof record.training === "string" ? record.training : "";
   return [program, training].filter(Boolean).join(" — ");
 }
 
 export default function UserManagementPage() {
-  const [students, setStudents] = useState<ManagedAccount[] | null>(null);
-  const [teachers, setTeachers] = useState<ManagedAccount[] | null>(null);
+  const [students, setStudents] = useState<AccountInfo[] | null>(null);
+  const [teachers, setTeachers] = useState<AccountInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<AccountKind>("students");
   const [query, setQuery] = useState("");
@@ -51,23 +53,23 @@ export default function UserManagementPage() {
     fullName: string;
   } | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
       setError(null);
       const [nextStudents, nextTeachers] = await Promise.all([
-        listStudents(),
-        listTeachers(),
+        listStudentAccounts(),
+        listTeacherAccounts(),
       ]);
       setStudents(nextStudents);
       setTeachers(nextTeachers);
     } catch (err) {
       setError(errorMessage(err));
     }
-  };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listStudents(), listTeachers()])
+    Promise.all([listStudentAccounts(), listTeacherAccounts()])
       .then(([nextStudents, nextTeachers]) => {
         if (cancelled) return;
         setStudents(nextStudents);
@@ -80,6 +82,22 @@ export default function UserManagementPage() {
       cancelled = true;
     };
   }, []);
+
+  // Live updates: account/people changes made anywhere (another browser,
+  // another tab) appear here without a manual refresh. Worksheets with both
+  // tables subscribed each refetch both lists so the tabs stay in sync.
+  useEffect(
+    () => subscribeToTable("students", () => void refresh()),
+    [refresh],
+  );
+  useEffect(
+    () => subscribeToTable("teachers", () => void refresh()),
+    [refresh],
+  );
+
+  // Quiet fallback: refetch once if the tab regains focus after a while, in
+  // case the realtime connection dropped while it was in the background.
+  useRefetchOnFocus(refresh);
 
   const kind = tab;
   const records = kind === "students" ? students ?? [] : teachers ?? [];
@@ -144,6 +162,7 @@ export default function UserManagementPage() {
           <AccountsTable
             rows={visible}
             emptyRowMessage={`No accounts match “${query}”.`}
+            classHeader={kind === "students" ? "Program" : "Specialty"}
             onToggleBlock={async (id) => {
               try {
                 setError(null);

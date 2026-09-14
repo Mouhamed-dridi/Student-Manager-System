@@ -24,7 +24,10 @@ export default function CoursesPage() {
         }
         setStudent(record);
         try {
-          const list = await loadScheduledCourses(record.program, record.training);
+          const list = await loadScheduledCourses(record.program, record.training, {
+            programId: record.programId,
+            trainingId: record.trainingId,
+          });
           if (!cancelled) setCourses(list);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));

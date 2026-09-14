@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,8 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-import { TRAININGS } from "@/lib/trainings";
+import { listPrograms, listTrainings } from "@/lib/api";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Student {
@@ -18,10 +17,23 @@ export interface Student {
   fullName: string;
   program: "BTP" | "BTS" | "CAP";
   training: string;
+  programId?: string;
+  trainingId?: string;
   phone: string;
   email: string;
   password?: string;
   blocked?: boolean;
+}
+
+interface ProgramOption {
+  id: string;
+  code: string;
+}
+
+interface TrainingOption {
+  id: string;
+  name: string;
+  programId: string;
 }
 
 interface StudentFormProps {
@@ -42,6 +54,31 @@ export default function StudentForm({
   const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
+
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
+
+  useEffect(() => {
+    listPrograms().then(setProgramOptions).catch(() => {});
+    listTrainings().then((rows) => {
+      setAllTrainings(
+        rows.map((r) => ({ id: r.id, name: r.name, programId: r.program_id })),
+      );
+    }).catch(() => {});
+  }, []);
+
+  const selectedProgramId = useMemo(
+    () => programOptions.find((p) => p.code === program)?.id,
+    [program, programOptions],
+  );
+
+  const trainingOptions = useMemo(
+    () =>
+      selectedProgramId
+        ? allTrainings.filter((t) => t.programId === selectedProgramId)
+        : [],
+    [selectedProgramId, allTrainings],
+  );
 
   const handleProgramChange = (value: string | null) => {
     setProgram(value as Student["program"]);
@@ -87,9 +124,11 @@ export default function StudentForm({
             <SelectValue placeholder="Select program" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="BTP">BTP</SelectItem>
-            <SelectItem value="BTS">BTS</SelectItem>
-            <SelectItem value="CAP">CAP</SelectItem>
+            {programOptions.map((p) => (
+              <SelectItem key={p.id} value={p.code}>
+                {p.code}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -105,9 +144,9 @@ export default function StudentForm({
             <SelectValue placeholder="Select training" />
           </SelectTrigger>
           <SelectContent>
-            {(program ? TRAININGS[program] : []).map((t) => (
-              <SelectItem key={t} value={t}>
-                {t}
+            {trainingOptions.map((t) => (
+              <SelectItem key={t.id} value={t.name}>
+                {t.name}
               </SelectItem>
             ))}
           </SelectContent>

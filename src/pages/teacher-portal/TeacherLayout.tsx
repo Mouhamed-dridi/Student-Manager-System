@@ -9,6 +9,7 @@ import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
+import { clearSession } from "@/lib/session";
 
 const menuItems = [
   { key: "courses", label: "Courses", icon: BookOpenCheck },
@@ -27,10 +28,7 @@ const pages: Record<MenuKey, React.ReactNode> = {
 };
 
 function clearTeacherSession() {
-  localStorage.removeItem("isLoggedIn");
-  localStorage.removeItem("role");
-  localStorage.removeItem("isTeacherLoggedIn");
-  localStorage.removeItem("currentTeacherId");
+  clearSession();
 }
 
 export default function TeacherLayout() {
@@ -101,8 +99,7 @@ export default function TeacherLayout() {
               <>
                 {teacher.fullName}
                 <span className="text-xs font-normal">
-                  · {teacher.program}
-                  {teacher.training ? ` — ${teacher.training}` : ""}
+                  · {teacher.specialty || "Teacher"}
                 </span>
               </>
             ) : (

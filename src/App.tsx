@@ -3,12 +3,7 @@ import LoginPage from "@/pages/LoginPage";
 import DashboardPage from "@/pages/DashboardPage";
 import StudentLayout from "@/pages/student-portal/StudentLayout";
 import TeacherLayout from "@/pages/teacher-portal/TeacherLayout";
-
-function getRole(): string | null {
-  return localStorage.getItem("isLoggedIn") === "true"
-    ? localStorage.getItem("role")
-    : null;
-}
+import { getRole } from "@/lib/session";
 
 function homeFor(role: string | null) {
   if (role === "student") return "/student";

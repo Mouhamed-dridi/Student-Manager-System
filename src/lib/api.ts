@@ -16,11 +16,15 @@ export function errorMessage(error: unknown): string {
   return "Could not reach the database. Check your connection and try again.";
 }
 
-async function rows<T>(table: string, query?: {
-  eq?: Record<string, string>;
-  order?: { column: string; ascending?: boolean };
-}): Promise<T[]> {
-  let builder = supabase.from(table).select("*");
+async function rows<T>(
+  table: string,
+  query?: {
+    eq?: Record<string, string>;
+    order?: { column: string; ascending?: boolean };
+  },
+  select = "*",
+): Promise<T[]> {
+  let builder = supabase.from(table).select(select);
   for (const [column, value] of Object.entries(query?.eq ?? {})) {
     builder = builder.eq(column, value);
   }
@@ -34,13 +38,66 @@ async function rows<T>(table: string, query?: {
   return (data ?? []) as T[];
 }
 
+// ---------------------------------------------------------------- programs
+
+interface ProgramRow {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface TrainingRow {
+  id: string;
+  name: string;
+  program_id: string;
+}
+
+export async function listPrograms(): Promise<ProgramRow[]> {
+  return rows<ProgramRow>("programs", { order: { column: "code" } });
+}
+
+export async function listTrainings(
+  programId?: string,
+): Promise<TrainingRow[]> {
+  return rows<TrainingRow>(
+    "trainings",
+    programId ? { eq: { program_id: programId } } : undefined,
+  );
+}
+
+async function resolveProgramTrainingIds(
+  programCode: string,
+  trainingName: string,
+): Promise<{ programId: string; trainingId: string }> {
+  const program = (
+    await supabase
+      .from("programs")
+      .select("id")
+      .eq("code", programCode)
+      .maybeSingle()
+  ).data;
+  const training = (
+    await supabase
+      .from("trainings")
+      .select("id")
+      .eq("name", trainingName)
+      .maybeSingle()
+  ).data;
+  return {
+    programId: program?.id ?? "",
+    trainingId: training?.id ?? "",
+  };
+}
+
 // ---------------------------------------------------------------- students
 
 interface StudentRow {
   id: string;
   full_name: string;
-  program: string;
-  training: string | null;
+  program_id: string | null;
+  training_id: string | null;
+  programs: { code: string } | null;
+  trainings: { name: string } | null;
   phone: string;
   email: string;
   password: string | null;
@@ -51,8 +108,10 @@ function studentFromRow(row: StudentRow): Student {
   return {
     id: row.id,
     fullName: row.full_name,
-    program: row.program as Student["program"],
-    training: row.training ?? "",
+    program: (row.programs?.code ?? "") as Student["program"],
+    training: row.trainings?.name ?? "",
+    programId: row.program_id ?? undefined,
+    trainingId: row.training_id ?? undefined,
     phone: row.phone ?? "",
     email: row.email ?? "",
     password: row.password ?? undefined,
@@ -60,12 +119,16 @@ function studentFromRow(row: StudentRow): Student {
   };
 }
 
-function studentToRow(student: Student) {
+async function studentToRow(student: Student) {
+  const { programId, trainingId } = await resolveProgramTrainingIds(
+    student.program,
+    student.training,
+  );
   return {
     id: student.id,
     full_name: student.fullName,
-    program: student.program,
-    training: student.training,
+    program_id: programId || null,
+    training_id: trainingId || null,
     phone: student.phone,
     email: student.email,
     password: student.password ?? null,
@@ -73,14 +136,18 @@ function studentToRow(student: Student) {
   };
 }
 
+const STUDENT_SELECT = "*, programs(code), trainings(name)";
+
 export async function listStudents(): Promise<Student[]> {
-  return (await rows<StudentRow>("students")).map(studentFromRow);
+  return (
+    await rows<StudentRow>("students", undefined, STUDENT_SELECT)
+  ).map(studentFromRow);
 }
 
 export async function getStudentById(id: string): Promise<Student | null> {
   const { data, error } = await supabase
     .from("students")
-    .select("*")
+    .select(STUDENT_SELECT)
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -89,10 +156,11 @@ export async function getStudentById(id: string): Promise<Student | null> {
 
 /** Inserts a student; login fields are included when present. */
 export async function insertStudent(student: Student): Promise<Student> {
+  const row = await studentToRow(student);
   const { data, error } = await supabase
     .from("students")
-    .insert(studentToRow(student))
-    .select()
+    .insert(row)
+    .select(STUDENT_SELECT)
     .single();
   if (error) throw new Error(error.message);
   return studentFromRow(data as StudentRow);
@@ -101,9 +169,8 @@ export async function insertStudent(student: Student): Promise<Student> {
 /** Bulk insert used by the Excel import flow. */
 export async function insertStudents(students: Student[]): Promise<void> {
   if (students.length === 0) return;
-  const { error } = await supabase
-    .from("students")
-    .insert(students.map(studentToRow));
+  const mapped = await Promise.all(students.map(studentToRow));
+  const { error } = await supabase.from("students").insert(mapped);
   if (error) throw new Error(error.message);
 }
 
@@ -115,12 +182,16 @@ export async function updateStudentProfile(
   id: string,
   profile: Pick<Student, "fullName" | "program" | "training" | "phone" | "email">,
 ): Promise<void> {
+  const { programId, trainingId } = await resolveProgramTrainingIds(
+    profile.program,
+    profile.training,
+  );
   const { error } = await supabase
     .from("students")
     .update({
       full_name: profile.fullName,
-      program: profile.program,
-      training: profile.training,
+      program_id: programId || null,
+      training_id: trainingId || null,
       phone: profile.phone,
       email: profile.email,
     })
@@ -134,13 +205,39 @@ export async function deleteStudents(ids: string[]): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Lightweight shape used by User Management: only the columns it needs,
+// selected explicitly so the password column is never lost to join syntax.
+export interface AccountInfo {
+  id: string;
+  fullName: string;
+  password?: string;
+  blocked?: boolean;
+  program: string;
+  training: string;
+  specialty?: string;
+}
+
+export async function listStudentAccounts(): Promise<AccountInfo[]> {
+  const { data, error } = await supabase
+    .from("students")
+    .select("id, full_name, password, blocked, programs(code), trainings(name)");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    fullName: (r.full_name as string) ?? "",
+    password: (r.password as string) ?? undefined,
+    blocked: r.blocked === true,
+    program: ((r.programs as { code: string } | null)?.code ?? "") as Student["program"],
+    training: (r.trainings as { name: string } | null)?.name ?? "",
+  }));
+}
+
 // ---------------------------------------------------------------- teachers
 
 interface TeacherRow {
   id: string;
   full_name: string;
-  program: string;
-  training: string | null;
+  specialty: string | null;
   phone: string;
   email: string;
   password: string | null;
@@ -151,8 +248,7 @@ function teacherFromRow(row: TeacherRow): Teacher {
   return {
     id: row.id,
     fullName: row.full_name,
-    program: row.program as Teacher["program"],
-    training: row.training ?? "",
+    specialty: row.specialty ?? "",
     phone: row.phone ?? "",
     email: row.email ?? "",
     password: row.password ?? undefined,
@@ -160,12 +256,11 @@ function teacherFromRow(row: TeacherRow): Teacher {
   };
 }
 
-function teacherToRow(teacher: Teacher) {
+async function teacherToRow(teacher: Teacher) {
   return {
     id: teacher.id,
     full_name: teacher.fullName,
-    program: teacher.program,
-    training: teacher.training,
+    specialty: teacher.specialty ?? "",
     phone: teacher.phone,
     email: teacher.email,
     password: teacher.password ?? null,
@@ -173,14 +268,18 @@ function teacherToRow(teacher: Teacher) {
   };
 }
 
+const TEACHER_SELECT = "*";
+
 export async function listTeachers(): Promise<Teacher[]> {
-  return (await rows<TeacherRow>("teachers")).map(teacherFromRow);
+  return (
+    await rows<TeacherRow>("teachers", undefined, TEACHER_SELECT)
+  ).map(teacherFromRow);
 }
 
 export async function getTeacherById(id: string): Promise<Teacher | null> {
   const { data, error } = await supabase
     .from("teachers")
-    .select("*")
+    .select(TEACHER_SELECT)
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -188,10 +287,11 @@ export async function getTeacherById(id: string): Promise<Teacher | null> {
 }
 
 export async function insertTeacher(teacher: Teacher): Promise<Teacher> {
+  const row = await teacherToRow(teacher);
   const { data, error } = await supabase
     .from("teachers")
-    .insert(teacherToRow(teacher))
-    .select()
+    .insert(row)
+    .select(TEACHER_SELECT)
     .single();
   if (error) throw new Error(error.message);
   return teacherFromRow(data as TeacherRow);
@@ -200,22 +300,20 @@ export async function insertTeacher(teacher: Teacher): Promise<Teacher> {
 /** Bulk insert used by the Excel import flow. */
 export async function insertTeachers(teachers: Teacher[]): Promise<void> {
   if (teachers.length === 0) return;
-  const { error } = await supabase
-    .from("teachers")
-    .insert(teachers.map(teacherToRow));
+  const mapped = await Promise.all(teachers.map(teacherToRow));
+  const { error } = await supabase.from("teachers").insert(mapped);
   if (error) throw new Error(error.message);
 }
 
 export async function updateTeacherProfile(
   id: string,
-  profile: Pick<Teacher, "fullName" | "program" | "training" | "phone" | "email">,
+  profile: Pick<Teacher, "fullName" | "specialty" | "phone" | "email">,
 ): Promise<void> {
   const { error } = await supabase
     .from("teachers")
     .update({
       full_name: profile.fullName,
-      program: profile.program,
-      training: profile.training,
+      specialty: profile.specialty ?? "",
       phone: profile.phone,
       email: profile.email,
     })
@@ -227,6 +325,22 @@ export async function deleteTeachers(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const { error } = await supabase.from("teachers").delete().in("id", ids);
   if (error) throw new Error(error.message);
+}
+
+export async function listTeacherAccounts(): Promise<AccountInfo[]> {
+  const { data, error } = await supabase
+    .from("teachers")
+    .select("id, full_name, password, blocked, specialty");
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: r.id as string,
+    fullName: (r.full_name as string) ?? "",
+    password: (r.password as string) ?? undefined,
+    blocked: r.blocked === true,
+    program: "",
+    training: "",
+    specialty: (r.specialty as string | null) ?? "",
+  }));
 }
 
 // -------------------------------------------------------- login accounts
@@ -400,11 +514,13 @@ export async function loadPersonAttendance(
 interface CourseRow {
   id: string;
   title: string;
-  program: string;
-  training: string;
+  program_id: string | null;
+  training_id: string | null;
+  teacher_id: string | null;
+  programs: { code: string } | null;
+  trainings: { name: string } | null;
   day: string;
   time: string;
-  teacher_id: string | null;
   thumbnail_url: string | null;
   published_at: string | null;
   materials: CourseMaterial[] | null;
@@ -414,8 +530,10 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
   return {
     id: row.id,
     teacherId: row.teacher_id ?? "",
-    program: row.program,
-    training: row.training,
+    program: row.programs?.code ?? "",
+    training: row.trainings?.name ?? "",
+    programId: row.program_id ?? undefined,
+    trainingId: row.training_id ?? undefined,
     name: row.title,
     day: row.day,
     time: row.time,
@@ -425,19 +543,27 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
   };
 }
 
+const COURSE_SELECT = "*, programs(code), trainings(name)";
+
 export async function listTeacherCourses(): Promise<TeacherCourseRecord[]> {
-  return (await rows<CourseRow>("courses")).map(courseFromRow);
+  return (await rows<CourseRow>("courses", undefined, COURSE_SELECT)).map(
+    courseFromRow,
+  );
 }
 
 /** Insert-or-update by id. Returns false when the write failed. */
 export async function saveTeacherCourse(
   record: TeacherCourseRecord,
 ): Promise<boolean> {
+  const { programId, trainingId } = await resolveProgramTrainingIds(
+    record.program,
+    record.training,
+  );
   const payload = {
     id: record.id,
     title: record.name,
-    program: record.program,
-    training: record.training,
+    program_id: programId || null,
+    training_id: trainingId || null,
     day: record.day,
     time: record.time,
     teacher_id: record.teacherId,
@@ -454,6 +580,38 @@ export async function saveTeacherCourse(
 export async function deleteTeacherCourse(id: string): Promise<boolean> {
   const { error } = await supabase.from("courses").delete().eq("id", id);
   return !error;
+}
+
+/**
+ * Students enrolled in any course this teacher teaches. A teacher owns a
+ * course through `courses.teacher_id`; each course's program/training is
+ * matched against the student's assignment (by FK ids, falling back to the
+ * joined names when the ids are missing). Returns the teacher's own courses
+ * plus the matched students so callers can distinguish "no courses yet".
+ */
+export async function classRosterForTeacher(
+  teacherId: string,
+): Promise<{ courses: TeacherCourseRecord[]; students: Student[] }> {
+  const [students, courses] = await Promise.all([
+    listStudents(),
+    listTeacherCourses(),
+  ]);
+  const ownCourses = courses.filter((c) => c.teacherId === teacherId);
+  if (ownCourses.length === 0) return { courses: ownCourses, students: [] };
+
+  const idPairs = new Set<string>();
+  const namePairs = new Set<string>();
+  for (const c of ownCourses) {
+    if (c.programId && c.trainingId) idPairs.add(`${c.programId}:${c.trainingId}`);
+    if (c.program && c.training) namePairs.add(`${c.program}:${c.training}`);
+  }
+  const studentsInClass = students.filter((s) => {
+    if (s.programId && s.trainingId) {
+      return idPairs.has(`${s.programId}:${s.trainingId}`);
+    }
+    return namePairs.has(`${s.program}:${s.training}`);
+  });
+  return { courses: ownCourses, students: studentsInClass };
 }
 
 // ------------------------------------------------------------------ exams

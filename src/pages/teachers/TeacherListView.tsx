@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Program } from "@/lib/trainings";
-import { PROGRAMS, TRAININGS } from "@/lib/trainings";
 import TeacherList from "./TeacherList";
 import type { Teacher } from "./TeacherForm";
-
-type ProgramFilter = Program | "all";
 
 interface TeacherListViewProps {
   teachers: Teacher[];
@@ -29,30 +25,29 @@ export default function TeacherListView({
   onDelete,
 }: TeacherListViewProps) {
   const [search, setSearch] = useState("");
-  const [program, setProgram] = useState<ProgramFilter>("all");
-  const [training, setTraining] = useState("all");
+  const [specialty, setSpecialty] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const hasActiveFilters =
-    search.trim() !== "" || program !== "all" || training !== "all";
+  const specialtyOptions = useMemo(
+    () =>
+      [...new Set(teachers.map((t) => t.specialty).filter((s) => s.trim() !== ""))]
+        .sort((a, b) => a.localeCompare(b)),
+    [teachers],
+  );
 
-  const trainingOptions =
-    program === "all"
-      ? [...new Set(Object.values(TRAININGS).flat())]
-      : TRAININGS[program];
+  const hasActiveFilters =
+    search.trim() !== "" || specialty !== "all";
 
   const query = search.trim().toLowerCase();
   const filtered = teachers.filter((t) => {
     if (query && !t.fullName.toLowerCase().includes(query)) return false;
-    if (program !== "all" && t.program !== program) return false;
-    if (training !== "all" && t.training !== training) return false;
+    if (specialty !== "all" && t.specialty !== specialty) return false;
     return true;
   });
 
   const handleClear = () => {
     setSearch("");
-    setProgram("all");
-    setTraining("all");
+    setSpecialty("all");
   };
 
   return (
@@ -85,42 +80,19 @@ export default function TeacherListView({
               />
               <div className="absolute right-0 top-full z-50 mt-2 w-64 space-y-3 rounded-lg border bg-popover p-4 shadow-md">
                 <div className="space-y-1.5">
-                  <Label>Program</Label>
+                  <Label>Specialty</Label>
                   <Select
-                    value={program}
-                    onValueChange={(value) => {
-                      setProgram((value ?? "all") as ProgramFilter);
-                      setTraining("all");
-                    }}
+                    value={specialty}
+                    onValueChange={(value) => setSpecialty(value ?? "all")}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      {PROGRAMS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>Training</Label>
-                  <Select
-                    value={training}
-                    onValueChange={(value) => setTraining(value ?? "all")}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      {trainingOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
+                      {specialtyOptions.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
                         </SelectItem>
                       ))}
                     </SelectContent>

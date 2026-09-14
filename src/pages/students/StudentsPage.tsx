@@ -11,6 +11,7 @@ import {
   subscribeToTable,
   updateStudentProfile,
 } from "@/lib/api";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 import StudentForm, { type Student } from "./StudentForm";
 import { parseStudentFile, type ImportResult } from "./importStudents";
@@ -46,6 +47,10 @@ export default function StudentsPage() {
     () => subscribeToTable("students", () => void refresh()),
     [refresh],
   );
+
+  // Quiet fallback: refetch once if the tab regains focus after a while, in
+  // case the realtime connection dropped while it was in the background.
+  useRefetchOnFocus(refresh);
 
   const handleSave = async (student: Student) => {
     try {

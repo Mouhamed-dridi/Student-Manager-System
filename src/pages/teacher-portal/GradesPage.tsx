@@ -20,10 +20,10 @@ import {
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
+  classRosterForTeacher,
   errorMessage,
   listExams,
   listGrades,
-  listStudents,
   saveGradesForExam,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
@@ -52,18 +52,13 @@ export default function GradesPage() {
         }
         setTeacher(record);
         try {
-          const [allExams, allStudents] = await Promise.all([
+          const [allExams, { students }] = await Promise.all([
             listExams(),
-            listStudents(),
+            classRosterForTeacher(record.id),
           ]);
           if (cancelled) return;
           setExams(allExams);
-          setRoster(
-            allStudents.filter(
-              (s) =>
-                s.program === record.program && s.training === record.training,
-            ),
-          );
+          setRoster(students);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -77,10 +72,7 @@ export default function GradesPage() {
   }, []);
 
   const myExams: ExamRecord[] = (exams ?? [])
-    .filter(
-      (e) =>
-        e.program === teacher?.program && e.training === teacher?.training,
-    )
+    .filter((e) => e.teacherId === teacher?.id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const selectedExam = myExams.find((e) => e.id === selectedExamId);
@@ -188,8 +180,7 @@ export default function GradesPage() {
           <CardContent className="py-8 text-center">
             <p className="text-sm font-medium">No students in your class</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Students appear here once they are assigned to your program and
-              training.
+              Students appear here once they are enrolled in a course you teach.
             </p>
           </CardContent>
         </Card>

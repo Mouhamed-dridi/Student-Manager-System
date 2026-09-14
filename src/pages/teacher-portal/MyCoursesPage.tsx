@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import {
   AlertDialog,
@@ -27,11 +27,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   deleteTeacherCourse,
   errorMessage,
+  listPrograms,
   listTeacherCourses,
+  listTrainings,
   saveTeacherCourse,
   subscribeToTable,
 } from "@/lib/api";
-import { loadScheduledCourses } from "@/lib/trainings";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import type {
   CourseMaterial,
   ScheduledCourseView,
@@ -80,10 +82,23 @@ type ViewKey = "my-courses" | "add-course";
 
 interface CourseFormValues {
   name: string;
+  program: string;
+  training: string;
   day: string;
   time: string;
   thumbnail?: string;
   materials?: CourseMaterial[];
+}
+
+interface ProgramOption {
+  id: string;
+  code: string;
+}
+
+interface TrainingOption {
+  id: string;
+  name: string;
+  programId: string;
 }
 
 interface CourseFormProps {
@@ -94,6 +109,8 @@ interface CourseFormProps {
 
 function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
   const [name, setName] = useState(initialData?.name ?? "");
+  const [program, setProgram] = useState(initialData?.program ?? "");
+  const [training, setTraining] = useState(initialData?.training ?? "");
   const [day, setDay] = useState(
     initialData?.day && DAY_OPTIONS.includes(initialData.day)
       ? initialData.day
@@ -113,13 +130,45 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
   );
   const [saveError, setSaveError] = useState(false);
 
-  const valid = name.trim() !== "";
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
+
+  useEffect(() => {
+    listPrograms().then(setProgramOptions).catch(() => {});
+    listTrainings()
+      .then((rows) =>
+        setAllTrainings(
+          rows.map((r) => ({ id: r.id, name: r.name, programId: r.program_id })),
+        ),
+      )
+      .catch(() => {});
+  }, []);
+
+  const selectedProgramId = useMemo(
+    () => programOptions.find((p) => p.code === program)?.id,
+    [program, programOptions],
+  );
+
+  const trainingOptions = useMemo(
+    () =>
+      selectedProgramId
+        ? allTrainings.filter((t) => t.programId === selectedProgramId)
+        : [],
+    [selectedProgramId, allTrainings],
+  );
+
+  const handleProgramChange = (value: string | null) => {
+    setProgram(value ?? "");
+    setTraining("");
+  };
+
+  const valid =
+    name.trim() !== "" && program !== "" && training !== "";
 
   return (
     <div className="max-w-xl">
       <p className="text-sm text-muted-foreground">
-        Program and Training are taken from your own assignment. This course
-        is visible to students in your class.
+        Choose the program and training that will see this course.
       </p>
 
       <div className="mt-4 space-y-4">
@@ -132,6 +181,40 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
             onChange={(e) => setName(e.target.value)}
             required
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Program</Label>
+          <Select value={program} onValueChange={handleProgramChange}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select program" />
+            </SelectTrigger>
+            <SelectContent>
+              {programOptions.map((p) => (
+                <SelectItem key={p.id} value={p.code}>
+                  {p.code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Training</Label>
+          <Select
+            value={training}
+            onValueChange={(value) => setTraining(value ?? "")}
+            disabled={!selectedProgramId}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select training" />
+            </SelectTrigger>
+            <SelectContent>
+              {trainingOptions.map((t) => (
+                <SelectItem key={t.id} value={t.name}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label>Day</Label>
@@ -252,6 +335,8 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
               setSaveError(false);
               const values: CourseFormValues = {
                 name: name.trim(),
+                program,
+                training,
                 day,
                 time,
               };
@@ -280,25 +365,17 @@ export default function MyCoursesPage() {
     null,
   );
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
-  const [records, setRecords] = useState<TeacherCourseRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(
-    async (record: Teacher) => {
-      try {
-        setError(null);
-        const [list, allRecords] = await Promise.all([
-          loadScheduledCourses(record.program, record.training),
-          listTeacherCourses(),
-        ]);
-        setCourses(list);
-        setRecords(allRecords);
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    },
-    [],
-  );
+  const refresh = useCallback(async () => {
+    try {
+      setError(null);
+      const all = await listTeacherCourses();
+      setCourses(all);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -310,7 +387,7 @@ export default function MyCoursesPage() {
           return;
         }
         setTeacher(record);
-        await refresh(record);
+        await refresh();
       })
       .catch(() => {
         if (!cancelled) setTeacher(null);
@@ -324,8 +401,14 @@ export default function MyCoursesPage() {
   // here without a manual refresh. Runs once the teacher record resolves.
   useEffect(() => {
     if (!teacher) return;
-    return subscribeToTable("courses", () => void refresh(teacher));
+    return subscribeToTable("courses", () => void refresh());
   }, [teacher, refresh]);
+
+  // Quiet fallback: refresh courses once if the tab regains focus after a
+  // while, in case the realtime connection dropped while backgrounded.
+  useRefetchOnFocus(() => {
+    if (teacher) void refresh();
+  });
 
   if (teacher === null) {
     return (
@@ -356,24 +439,22 @@ export default function MyCoursesPage() {
 
   const startEdit = (course: ScheduledCourseView) => {
     if (!course.id) return;
-    const record = records.find((r) => r.id === course.id);
+    const record = (courses ?? []).find((r) => r.id === course.id);
     if (!record) return;
-    setEditing(record);
+    setEditing(record as TeacherCourseRecord);
     setView("add-course");
   };
 
   const handleSubmit = async (values: CourseFormValues): Promise<boolean> => {
     let record: TeacherCourseRecord;
     if (editing) {
-      // Edits keep the course scoped to its original class and keep its
-      // original publish date; an uploaded thumbnail replaces the old one.
+      // Edits keep the course's publish date; an uploaded thumbnail replaces
+      // the old one. Program/Training are picked in the form itself.
       record = { ...editing, ...values };
     } else {
       record = {
         id: crypto.randomUUID(),
         teacherId: teacher.id,
-        program: teacher.program,
-        training: teacher.training,
         published: new Date().toISOString(),
         ...values,
       };
@@ -382,7 +463,7 @@ export default function MyCoursesPage() {
     if (!ok) return false;
     setEditing(null);
     setView("my-courses");
-    await refresh(teacher);
+    await refresh();
     return true;
   };
 
@@ -391,18 +472,20 @@ export default function MyCoursesPage() {
     try {
       setError(null);
       await deleteTeacherCourse(deleteTarget.id);
-      await refresh(teacher);
+      await refresh();
     } catch (err) {
       setError(errorMessage(err));
     }
     setDeleteTarget(null);
   };
 
+  const ownCourses = courses ?? [];
+
   return (
     <div>
       <h2 className="text-2xl font-semibold">Courses</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Teaching {teacher.training || "—"} ({teacher.program})
+        Teaching {teacher.specialty || "—"}
       </p>
 
       <Tabs value={view} onValueChange={handleViewChange} className="mt-4">
@@ -421,7 +504,7 @@ export default function MyCoursesPage() {
           )}
           {courses === null ? (
             !error && <DataLoading label="Loading courses…" />
-          ) : courses.length === 0 ? (
+          ) : ownCourses.length === 0 ? (
             <Card className="mt-4 max-w-xl">
               <CardContent className="py-8 text-center">
                 <p className="text-sm font-medium">No courses scheduled yet</p>
@@ -433,8 +516,7 @@ export default function MyCoursesPage() {
           ) : (
             <div className="mt-4">
               <CourseCardsGrid
-                courses={courses}
-                training={teacher.training}
+                courses={ownCourses}
                 showMaterials
                 renderActions={(c) =>
                   c.id !== undefined && c.teacherId === teacher.id ? (
@@ -487,7 +569,8 @@ export default function MyCoursesPage() {
             <AlertDialogTitle>Delete course?</AlertDialogTitle>
             <AlertDialogDescription>
               This will permanently remove “{deleteTarget?.name}” from your
-              class schedule. Students in this training will no longer see it.
+              schedule. Students in this course's training will no longer see
+              it.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

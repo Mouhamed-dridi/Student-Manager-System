@@ -20,6 +20,9 @@ export interface AccountRecord {
   [key: string]: unknown;
 }
 
+// "Has an account" simply means the record carries a password. The schema
+// makes `password` NOT NULL, and deleting an account sets it to NULL, so a
+// non-null (even empty-string) password is an account.
 export function hasAccount(record: { password?: string }): boolean {
-  return typeof record.password === "string" && record.password.length > 0;
+  return record.password != null;
 }

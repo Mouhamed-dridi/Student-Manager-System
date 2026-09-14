@@ -44,14 +44,23 @@ import {
   errorMessage,
   insertPlanning,
   listPlanning,
+  listTeacherCourses,
   updatePlanning,
 } from "@/lib/api";
-import { loadScheduledCourses } from "@/lib/trainings";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { PlanningRecord } from "./planning";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+async function courseNameOptions(teacherId: string): Promise<string[]> {
+  const all = await listTeacherCourses();
+  return [
+    ...new Set(
+      all.filter((c) => c.teacherId === teacherId).map((c) => c.name),
+    ),
+  ];
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
@@ -273,13 +282,13 @@ export default function PlanningPage() {
         }
         setTeacher(record);
         try {
-          const [all, scheduled] = await Promise.all([
+          const [all, courseNames] = await Promise.all([
             listPlanning(),
-            loadScheduledCourses(record.program, record.training),
+            courseNameOptions(record.id),
           ]);
           if (cancelled) return;
           setEntries(all);
-          setCourses([...new Set(scheduled.map((c) => c.name))]);
+          setCourses(courseNames);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -316,12 +325,12 @@ export default function PlanningPage() {
   const refresh = async () => {
     try {
       setError(null);
-      const [all, scheduled] = await Promise.all([
+      const [all, courseNames] = await Promise.all([
         listPlanning(),
-        loadScheduledCourses(teacher.program, teacher.training),
+        courseNameOptions(teacher.id),
       ]);
       setEntries(all);
-      setCourses([...new Set(scheduled.map((c) => c.name))]);
+      setCourses(courseNames);
     } catch (err) {
       setError(errorMessage(err));
     }

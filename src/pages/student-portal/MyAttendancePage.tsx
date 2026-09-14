@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, loadPersonAttendance } from "@/lib/api";
+import { getCurrentStudentId } from "@/lib/session";
 
 interface AttendanceEntry {
   date: string;
@@ -18,12 +19,12 @@ interface AttendanceEntry {
 export default function MyAttendancePage() {
   // No session id means there is nothing to load — start with an empty list.
   const [entries, setEntries] = useState<AttendanceEntry[] | null>(() =>
-    localStorage.getItem("currentStudentId") ? null : [],
+    getCurrentStudentId() ? null : [],
   );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = localStorage.getItem("currentStudentId");
+    const id = getCurrentStudentId();
     if (!id) return;
     loadPersonAttendance("student", id)
       .then(setEntries)

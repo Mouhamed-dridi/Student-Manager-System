@@ -35,9 +35,10 @@ import {
   deleteExamCascade,
   errorMessage,
   listExams,
+  listTeacherCourses,
   upsertExam,
 } from "@/lib/api";
-import { loadScheduledCourses } from "@/lib/trainings";
+import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { ExamRecord } from "./exams";
 import { loadCurrentTeacher } from "./currentTeacher";
@@ -145,6 +146,7 @@ export default function ExamsPage() {
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const [exams, setExams] = useState<ExamRecord[] | null>(null);
   const [courses, setCourses] = useState<string[]>([]);
+  const [courseRecords, setCourseRecords] = useState<TeacherCourseRecord[]>([]);
   const [editing, setEditing] = useState<ExamRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ExamRecord | null>(null);
   const [gradeCount, setGradeCount] = useState(0);
@@ -160,13 +162,15 @@ export default function ExamsPage() {
         }
         setTeacher(record);
         try {
-          const [all, scheduled] = await Promise.all([
+          const [all, allCourses] = await Promise.all([
             listExams(),
-            loadScheduledCourses(record.program, record.training),
+            listTeacherCourses(),
           ]);
           if (cancelled) return;
+          const ownCourses = allCourses.filter((c) => c.teacherId === record.id);
           setExams(all);
-          setCourses([...new Set(scheduled.map((c) => c.name))]);
+          setCourseRecords(ownCourses);
+          setCourses([...new Set(ownCourses.map((c) => c.name))]);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -208,7 +212,7 @@ export default function ExamsPage() {
   }
 
   const myExams = exams
-    .filter((e) => e.program === teacher.program && e.training === teacher.training)
+    .filter((e) => e.teacherId === teacher.id)
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const refreshExams = async () => {
@@ -225,15 +229,18 @@ export default function ExamsPage() {
       setError(null);
       const existing = exams.find((e) => e.id === data.id);
       if (existing) {
-        // Edits keep the exam scoped to its original class, even if the
-        // teacher's assignment has since changed.
+        // Edits keep the exam's original scope, including its program and
+        // training snapshots.
         await upsertExam({ ...existing, ...data });
       } else {
+        const courseRecord = data.course
+          ? courseRecords.find((c) => c.name === data.course)
+          : undefined;
         await upsertExam({
           ...data,
           teacherId: teacher.id,
-          program: teacher.program,
-          training: teacher.training,
+          program: courseRecord?.program ?? "",
+          training: courseRecord?.training ?? "",
         });
       }
       setEditing(null);
@@ -262,8 +269,8 @@ export default function ExamsPage() {
         {editing ? "Edit Exam" : "Add Exam"}
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Exams are visible only to your class ({teacher.training || "—"} ·{" "}
-        {teacher.program}).
+        Create exams for the courses you teach. Pick a course, set a date, and
+        attach a file if needed.
       </p>
 
       <div className="mt-4">

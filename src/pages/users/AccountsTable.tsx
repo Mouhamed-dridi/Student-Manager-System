@@ -24,6 +24,7 @@ import {
 export interface AccountsTableRow {
   id: string;
   fullName: string;
+  program?: string;
   password?: string;
   blocked?: boolean;
 }
@@ -31,6 +32,7 @@ export interface AccountsTableRow {
 interface AccountsTableProps {
   rows: AccountsTableRow[];
   emptyRowMessage: string;
+  classHeader?: string;
   onToggleBlock: (id: string) => void;
   onResetRequest: (row: AccountsTableRow) => void;
   onDelete: (id: string) => void;
@@ -54,6 +56,7 @@ function statusBadge(blocked?: boolean) {
 export default function AccountsTable({
   rows,
   emptyRowMessage,
+  classHeader = "Program",
   onToggleBlock,
   onResetRequest,
   onDelete,
@@ -66,6 +69,7 @@ export default function AccountsTable({
         <TableHeader>
           <TableRow>
             <TableHead>Full Name</TableHead>
+            <TableHead>{classHeader}</TableHead>
             <TableHead>Password</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -75,7 +79,7 @@ export default function AccountsTable({
           {rows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={4}
+                colSpan={5}
                 className="py-6 text-center text-sm text-muted-foreground"
               >
                 {emptyRowMessage}
@@ -85,6 +89,7 @@ export default function AccountsTable({
             rows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="font-medium">{row.fullName}</TableCell>
+                <TableCell>{row.program || "—"}</TableCell>
                 <TableCell>
                   <span className="flex items-center gap-2">
                     <span className="font-mono text-xs">

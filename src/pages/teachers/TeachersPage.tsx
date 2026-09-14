@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,8 +8,10 @@ import {
   errorMessage,
   insertTeachers,
   listTeachers,
+  subscribeToTable,
   updateTeacherProfile,
 } from "@/lib/api";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 import TeacherForm, { type Teacher } from "./TeacherForm";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
@@ -25,11 +27,25 @@ export default function TeachersPage() {
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const refresh = useCallback(async () => {
+    setTeachers(await listTeachers());
+  }, []);
+
   useEffect(() => {
     listTeachers()
       .then(setTeachers)
       .catch((err) => setError(errorMessage(err)));
   }, []);
+
+  // Live updates: teachers added/edited/removed in another browser appear
+  // here without a manual refresh.
+  useEffect(
+    () => subscribeToTable("teachers", () => void refresh()),
+    [refresh],
+  );
+
+  // Quiet fallback: refetch once if the tab regains focus after a while.
+  useRefetchOnFocus(refresh);
 
   const handleSave = async (teacher: Teacher) => {
     try {

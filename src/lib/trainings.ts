@@ -88,6 +88,8 @@ export interface TeacherCourseRecord {
   teacherId: string;
   program: string;
   training: string;
+  programId?: string;
+  trainingId?: string;
   name: string;
   day: string;
   time: string;
@@ -99,9 +101,31 @@ export interface TeacherCourseRecord {
 export interface ScheduledCourseView extends ScheduledCourse {
   id?: string;
   teacherId?: string;
+  program?: string;
+  training?: string;
+  programId?: string;
+  trainingId?: string;
   thumbnail?: string;
   published?: string;
   materials?: CourseMaterial[];
+}
+
+// Teacher-created courses are scoped to the teacher's class. Prefer matching
+// by the real foreign keys (program_id/training_id); fall back to the joined
+// program-code/training-name when the ids are not available.
+function courseInClass(
+  c: TeacherCourseRecord,
+  program: string,
+  training: string,
+  assignment?: { programId?: string; trainingId?: string },
+): boolean {
+  if (assignment?.programId && assignment.trainingId) {
+    return (
+      c.programId === assignment.programId &&
+      c.trainingId === assignment.trainingId
+    );
+  }
+  return c.program === program && c.training === training;
 }
 
 // Seeded entries carry no id/teacherId; teacher-created ones do.
@@ -109,15 +133,33 @@ export interface ScheduledCourseView extends ScheduledCourse {
 export async function loadScheduledCourses(
   program: string,
   training: string,
+  assignment?: { programId?: string; trainingId?: string },
 ): Promise<ScheduledCourseView[]> {
   const seeded: ScheduledCourseView[] =
     COURSES[program as Program]?.[training] ?? [];
   const added = (await listTeacherCourses())
-    .filter((c) => c.program === program && c.training === training)
+    .filter((c) => courseInClass(c, program, training, assignment))
     .map(
-      ({ id, teacherId, name, day, time, thumbnail, published, materials }) => ({
+      ({
         id,
         teacherId,
+        program,
+        training,
+        programId,
+        trainingId,
+        name,
+        day,
+        time,
+        thumbnail,
+        published,
+        materials,
+      }) => ({
+        id,
+        teacherId,
+        program,
+        training,
+        programId,
+        trainingId,
         name,
         day,
         time,

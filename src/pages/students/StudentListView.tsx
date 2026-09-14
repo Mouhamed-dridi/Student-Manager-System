@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import {
   AlertDialog,
@@ -22,11 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
-import { PROGRAMS, TRAININGS } from "@/lib/trainings";
+import { listPrograms, listTrainings } from "@/lib/api";
 import StudentList from "./StudentList";
 import type { Student } from "./StudentForm";
 
 type ProgramFilter = Program | "all";
+
+interface ProgramOption {
+  id: string;
+  code: string;
+}
 
 interface StudentListViewProps {
   students: Student[];
@@ -49,13 +54,31 @@ export default function StudentListView({
     () => new Set(),
   );
 
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [allTrainings, setAllTrainings] = useState<
+    { name: string; programId: string }[]
+  >([]);
+
+  useEffect(() => {
+    listPrograms().then(setProgramOptions).catch(() => {});
+    listTrainings().then((rows) => {
+      setAllTrainings(rows.map((r) => ({ name: r.name, programId: r.program_id })));
+    }).catch(() => {});
+  }, []);
+
+  const trainingOptions = useMemo(() => {
+    if (program === "all") {
+      return [...new Set(allTrainings.map((t) => t.name))];
+    }
+    const selectedProgramId = programOptions.find((p) => p.code === program)?.id;
+    if (!selectedProgramId) return [];
+    return allTrainings
+      .filter((t) => t.programId === selectedProgramId)
+      .map((t) => t.name);
+  }, [program, programOptions, allTrainings]);
+
   const hasActiveFilters =
     search.trim() !== "" || program !== "all" || training !== "all";
-
-  const trainingOptions =
-    program === "all"
-      ? [...new Set(Object.values(TRAININGS).flat())]
-      : TRAININGS[program];
 
   const query = search.trim().toLowerCase();
   const filtered = students.filter((s) => {
@@ -142,9 +165,9 @@ export default function StudentListView({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      {PROGRAMS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
+                      {programOptions.map((p) => (
+                        <SelectItem key={p.id} value={p.code}>
+                          {p.code}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -162,9 +185,9 @@ export default function StudentListView({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      {trainingOptions.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
+                      {trainingOptions.map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
                         </SelectItem>
                       ))}
                     </SelectContent>

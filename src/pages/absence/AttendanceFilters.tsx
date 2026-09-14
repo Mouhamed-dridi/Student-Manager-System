@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,12 +11,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
-import { PROGRAMS, TRAININGS } from "@/lib/trainings";
+import { listPrograms, listTrainings } from "@/lib/api";
 
 export interface AttendanceFilterState {
   search: string;
   program: Program | "all";
   training: string;
+}
+
+interface ProgramOption {
+  id: string;
+  code: string;
 }
 
 interface AttendanceFiltersProps {
@@ -31,13 +36,31 @@ export default function AttendanceFilters({
   const [open, setOpen] = useState(false);
   const { search, program, training } = value;
 
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [allTrainings, setAllTrainings] = useState<
+    { name: string; programId: string }[]
+  >([]);
+
+  useEffect(() => {
+    listPrograms().then(setProgramOptions).catch(() => {});
+    listTrainings().then((rows) => {
+      setAllTrainings(rows.map((r) => ({ name: r.name, programId: r.program_id })));
+    }).catch(() => {});
+  }, []);
+
+  const trainingOptions = useMemo(() => {
+    if (program === "all") {
+      return [...new Set(allTrainings.map((t) => t.name))];
+    }
+    const selectedProgramId = programOptions.find((p) => p.code === program)?.id;
+    if (!selectedProgramId) return [];
+    return allTrainings
+      .filter((t) => t.programId === selectedProgramId)
+      .map((t) => t.name);
+  }, [program, programOptions, allTrainings]);
+
   const hasActive =
     search.trim() !== "" || program !== "all" || training !== "all";
-
-  const trainingOptions =
-    program === "all"
-      ? [...new Set(Object.values(TRAININGS).flat())]
-      : TRAININGS[program];
 
   return (
     <div className="flex items-center gap-2">
@@ -81,9 +104,9 @@ export default function AttendanceFilters({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    {PROGRAMS.map((p) => (
-                      <SelectItem key={p} value={p}>
-                        {p}
+                    {programOptions.map((p) => (
+                      <SelectItem key={p.id} value={p.code}>
+                        {p.code}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -103,9 +126,9 @@ export default function AttendanceFilters({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
-                    {trainingOptions.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t}
+                    {trainingOptions.map((name) => (
+                      <SelectItem key={name} value={name}>
+                        {name}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -10,6 +10,7 @@ import {
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, listPayments } from "@/lib/api";
 import type { Payment } from "@/pages/pay/PaymentForm";
+import { getCurrentStudentId } from "@/lib/session";
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
   "one-time": "One-time",
@@ -20,12 +21,12 @@ const PLAN_LABELS: Record<Payment["planType"], string> = {
 export default function MyPaymentsPage() {
   // No session id means there is nothing to load — start with an empty list.
   const [payments, setPayments] = useState<Payment[] | null>(() =>
-    localStorage.getItem("currentStudentId") ? null : [],
+    getCurrentStudentId() ? null : [],
   );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = localStorage.getItem("currentStudentId");
+    const id = getCurrentStudentId();
     if (!id) return;
     listPayments()
       .then((all) =>
