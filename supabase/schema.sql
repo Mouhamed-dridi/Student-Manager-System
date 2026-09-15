@@ -53,26 +53,31 @@ create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   student_id uuid,
   amount numeric not null,
-  plan_type text,
+  plan_type text check (plan_type in ('one_time', 'semester', 'monthly')),
   payment_date date,
-  status text,
+  status text check (status in ('paid', 'pending')),
   created_at timestamptz not null default now()
 );
 
 -- ------------------------------------------------------------- attendance --
--- One row per person per day. person_type is 'student' or 'teacher'.
+-- Unified attendance log: one row per recorded presence. Each row is fully
+-- denormalised (type, full_name, class_name) so the table renders as-is and
+-- the search filter can be pushed down into the Supabase query (ilike).
+-- type is 'student' or 'teacher'; class_name holds the program·training for
+-- students or the specialty for teachers.
 
 create table if not exists public.attendance (
-  id bigint generated always as identity primary key,
-  person_type text not null,
-  person_id uuid not null,
-  date date not null,
-  present boolean not null,
+  id uuid primary key default gen_random_uuid(),
+  type text not null check (type in ('student', 'teacher')),
+  full_name text not null,
+  class_name text,
+  date date,
+  time text,
   created_at timestamptz not null default now()
 );
 
-create index if not exists attendance_person_day_idx
-  on public.attendance (person_type, person_id, date);
+create index if not exists attendance_log_idx
+  on public.attendance (date, full_name);
 
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code

@@ -16,7 +16,7 @@ export interface Payment {
   studentId: string;
   studentName: string;
   amount: number;
-  planType: "one-time" | "semester" | "monthly";
+  planType: "one_time" | "semester" | "monthly";
   paymentDate: string;
   status?: string;
   createdAt?: string;
@@ -36,8 +36,8 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
   const [nameInput, setNameInput] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [amount, setAmount] = useState("");
-  const [planType, setPlanType] = useState<Payment["planType"]>("one-time");
-  const [status, setStatus] = useState("Paid");
+  const [planType, setPlanType] = useState<Payment["planType"]>("one_time");
+  const [status, setStatus] = useState("paid");
   const [date, setDate] = useState(todayString);
 
   const query = nameInput.trim().toLowerCase();
@@ -76,8 +76,8 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
     setAmount("");
     setNameInput("");
     setSelectedStudent(null);
-    setPlanType("one-time");
-    setStatus("Paid");
+    setPlanType("one_time");
+    setStatus("paid");
     setDate(todayString());
   };
 
@@ -140,7 +140,7 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="one-time">One-time</SelectItem>
+              <SelectItem value="one_time">One-Time</SelectItem>
               <SelectItem value="semester">Semester</SelectItem>
               <SelectItem value="monthly">Monthly</SelectItem>
             </SelectContent>
@@ -167,8 +167,8 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Paid">Paid</SelectItem>
-              <SelectItem value="Pending">Pending</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
             </SelectContent>
           </Select>
         </div>

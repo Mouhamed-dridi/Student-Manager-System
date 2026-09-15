@@ -13,7 +13,7 @@ import type { Payment } from "@/pages/pay/PaymentForm";
 import { getCurrentStudentId } from "@/lib/session";
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
-  "one-time": "One-time",
+  one_time: "One-Time",
   semester: "Semester",
   monthly: "Monthly",
 };

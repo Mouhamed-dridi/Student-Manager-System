@@ -8,38 +8,45 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
-import { errorMessage, loadPersonAttendance } from "@/lib/api";
-import { getCurrentStudentId } from "@/lib/session";
-
-interface AttendanceEntry {
-  date: string;
-  present: boolean;
-}
+import {
+  errorMessage,
+  loadStudentAttendance,
+  type AttendanceRecord,
+} from "@/lib/api";
+import { loadCurrentStudent } from "./currentStudent";
 
 export default function MyAttendancePage() {
-  // No session id means there is nothing to load — start with an empty list.
-  const [entries, setEntries] = useState<AttendanceEntry[] | null>(() =>
-    getCurrentStudentId() ? null : [],
-  );
+  const [entries, setEntries] = useState<AttendanceRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const id = getCurrentStudentId();
-    if (!id) return;
-    loadPersonAttendance("student", id)
-      .then(setEntries)
-      .catch((err) => setError(errorMessage(err)));
+    let cancelled = false;
+    loadCurrentStudent()
+      .then((student) => {
+        if (!student) {
+          if (!cancelled) setEntries([]);
+          return;
+        }
+        return loadStudentAttendance(student.fullName).then((rows) => {
+          if (!cancelled) setEntries(rows);
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const presentCount = (entries ?? []).filter((e) => e.present).length;
-  const absentCount = (entries ?? []).length - presentCount;
+  const total = (entries ?? []).length;
 
   return (
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Absence</h2>
         <span className="text-sm text-muted-foreground">
-          {presentCount} present, {absentCount} absent
+          {total} record{total === 1 ? "" : "s"}
         </span>
       </div>
 
@@ -61,24 +68,16 @@ export default function MyAttendancePage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead className="text-right">Status</TableHead>
+                <TableHead>Time</TableHead>
+                <TableHead>Class</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {entries.map((e) => (
-                <TableRow key={e.date}>
+                <TableRow key={e.id}>
                   <TableCell>{e.date}</TableCell>
-                  <TableCell className="text-right">
-                    {e.present ? (
-                      <span className="inline-flex rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
-                        Present
-                      </span>
-                    ) : (
-                      <span className="inline-flex rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                        Absent
-                      </span>
-                    )}
-                  </TableCell>
+                  <TableCell>{e.time ?? "—"}</TableCell>
+                  <TableCell>{e.className?.trim() ? e.className : "—"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

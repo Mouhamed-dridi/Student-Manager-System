@@ -442,66 +442,65 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
 
 // -------------------------------------------------------------- attendance
 
-export type PersonType = "student" | "teacher";
-
-export type AttendanceMap = Record<string, Record<string, boolean>>;
-
-export async function loadAttendanceMap(
-  personType: PersonType,
-): Promise<AttendanceMap> {
-  const tableRows = await rows<{
-    person_id: string;
-    date: string;
-    present: boolean;
-  }>("attendance", { eq: { person_type: personType } });
-  const map: AttendanceMap = {};
-  for (const r of tableRows) {
-    const day = (map[r.date] ??= {});
-    day[r.person_id] = r.present;
-  }
-  return map;
+export interface AttendanceRecord {
+  id: string;
+  type: "student" | "teacher";
+  fullName: string;
+  className: string | null;
+  date: string;
+  time: string | null;
 }
 
-export async function setAttendanceMark(
-  personType: PersonType,
-  personId: string,
-  date: string,
-  present: boolean,
-): Promise<void> {
-  const { data } = await supabase
+interface AttendanceRow {
+  id: string;
+  type: "student" | "teacher";
+  full_name: string;
+  class_name: string | null;
+  date: string;
+  time: string | null;
+}
+
+const ATTENDANCE_SELECT = "id, type, full_name, class_name, date, time";
+
+function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
+  return {
+    id: row.id,
+    type: row.type,
+    fullName: row.full_name,
+    className: row.class_name,
+    date: row.date,
+    time: row.time,
+  };
+}
+
+/**
+ * All attendance log rows, newest date/time first. No filters are applied
+ * here; the page renders every row returned by Supabase and filters the
+ * rendered rows client-side by name/class.
+ */
+export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
+  const { data, error } = await supabase
     .from("attendance")
-    .select("person_id")
-    .eq("person_type", personType)
-    .eq("person_id", personId)
-    .eq("date", date)
-    .maybeSingle();
-  if (data) {
-    const { error } = await supabase
-      .from("attendance")
-      .update({ present })
-      .eq("person_type", personType)
-      .eq("person_id", personId)
-      .eq("date", date);
-    if (error) throw new Error(error.message);
-  } else {
-    const { error } = await supabase
-      .from("attendance")
-      .insert({ person_type: personType, person_id: personId, date, present });
-    if (error) throw new Error(error.message);
-  }
+    .select(ATTENDANCE_SELECT)
+    .order("date", { ascending: false })
+    .order("time", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
 }
 
-export async function loadPersonAttendance(
-  personType: PersonType,
-  personId: string,
-): Promise<{ date: string; present: boolean }[]> {
-  const tableRows = await rows<{
-    date: string;
-    present: boolean;
-  }>("attendance", { eq: { person_type: personType, person_id: personId } });
-  return tableRows
-    .map((r) => ({ date: r.date, present: r.present }))
-    .sort((a, b) => b.date.localeCompare(a.date));
+/** A student's own attendance history (type=student), newest date first. */
+export async function loadStudentAttendance(
+  fullName: string,
+): Promise<AttendanceRecord[]> {
+  const { data, error } = await supabase
+    .from("attendance")
+    .select(ATTENDANCE_SELECT)
+    .eq("type", "student")
+    .eq("full_name", fullName)
+    .order("date", { ascending: false })
+    .order("time", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
 }
 
 // ---------------------------------------------------------------- courses

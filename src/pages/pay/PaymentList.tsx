@@ -19,7 +19,7 @@ interface PaymentListProps {
 }
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
-  "one-time": "One-time",
+  one_time: "One-Time",
   semester: "Semester",
   monthly: "Monthly",
 };
