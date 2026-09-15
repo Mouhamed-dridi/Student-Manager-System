@@ -66,7 +66,7 @@ export default function PrintTicket({ payment }: PrintTicketProps) {
     <div class="amount">${payment.amount.toFixed(2)}</div>
     <div class="row">
       <span class="label">Date</span>
-      <span>${payment.date}</span>
+      <span>${payment.paymentDate}</span>
     </div>
     <div class="footer">Student Manager System</div>
   </div>

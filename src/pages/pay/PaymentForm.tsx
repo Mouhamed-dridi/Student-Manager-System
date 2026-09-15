@@ -15,28 +15,29 @@ export interface Payment {
   id: string;
   studentId: string;
   studentName: string;
-  studentProgram: string;
-  studentTraining: string;
   amount: number;
   planType: "one-time" | "semester" | "monthly";
-  date: string;
+  paymentDate: string;
   status?: string;
+  createdAt?: string;
 }
 
 interface PaymentFormProps {
   students: Student[];
   onSave: (payment: Payment) => void;
+  onCancel?: () => void;
 }
 
 function todayString() {
   return new Date().toISOString().split("T")[0];
 }
 
-export default function PaymentForm({ students, onSave }: PaymentFormProps) {
+export default function PaymentForm({ students, onSave, onCancel }: PaymentFormProps) {
   const [nameInput, setNameInput] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [amount, setAmount] = useState("");
   const [planType, setPlanType] = useState<Payment["planType"]>("one-time");
+  const [status, setStatus] = useState("Paid");
   const [date, setDate] = useState(todayString);
 
   const query = nameInput.trim().toLowerCase();
@@ -67,21 +68,21 @@ export default function PaymentForm({ students, onSave }: PaymentFormProps) {
       id: crypto.randomUUID(),
       studentId: selectedStudent.id,
       studentName: selectedStudent.fullName,
-      studentProgram: selectedStudent.program,
-      studentTraining: selectedStudent.training,
       amount: parseFloat(amount),
       planType,
-      date,
+      paymentDate: date,
+      status,
     });
     setAmount("");
     setNameInput("");
     setSelectedStudent(null);
     setPlanType("one-time");
+    setStatus("Paid");
     setDate(todayString());
   };
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="studentName">Student</Label>
         <div className="relative">
@@ -112,70 +113,77 @@ export default function PaymentForm({ students, onSave }: PaymentFormProps) {
             No students match "{nameInput.trim()}".
           </p>
         )}
+      </div>
 
-        {selectedStudent && (
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div className="space-y-1.5">
-              <Label>Program</Label>
-              <p className="flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm">
-                {selectedStudent.program}
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Training</Label>
-              <p className="flex h-8 items-center rounded-lg border border-input bg-muted/30 px-2.5 text-sm">
-                {selectedStudent.training || "—"}
-              </p>
-            </div>
-          </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="amount">Amount</Label>
+          <Input
+            id="amount"
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Plan Type</Label>
+          <Select
+            value={planType}
+            onValueChange={(v) => setPlanType(v as Payment["planType"])}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="one-time">One-time</SelectItem>
+              <SelectItem value="semester">Semester</SelectItem>
+              <SelectItem value="monthly">Monthly</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="date">Payment Date</Label>
+          <Input
+            id="date"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Status</Label>
+          <Select value={status} onValueChange={(v) => v && setStatus(v)}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Paid">Paid</SelectItem>
+              <SelectItem value="Pending">Pending</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-2">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
         )}
+        <Button type="submit" disabled={!selectedStudent || !amount}>
+          Add Payment
+        </Button>
       </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="amount">Amount</Label>
-        <Input
-          id="amount"
-          type="number"
-          min="0"
-          step="0.01"
-          placeholder="Enter amount"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          required
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Plan Type</Label>
-        <Select
-          value={planType}
-          onValueChange={(v) => setPlanType(v as Payment["planType"])}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="one-time">One-time</SelectItem>
-            <SelectItem value="semester">Semester</SelectItem>
-            <SelectItem value="monthly">Monthly</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="date">Date</Label>
-        <Input
-          id="date"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
-      </div>
-
-      <Button type="submit" disabled={!selectedStudent}>
-        Add Payment
-      </Button>
     </form>
   );
 }

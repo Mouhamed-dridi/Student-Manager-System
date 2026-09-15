@@ -380,11 +380,9 @@ interface PaymentRow {
   student_id: string;
   amount: number;
   plan_type: string;
-  date: string;
+  payment_date: string;
   status: string | null;
-  student_name: string | null;
-  student_program: string | null;
-  student_training: string | null;
+  created_at: string | null;
 }
 
 function paymentFromRow(row: PaymentRow): Payment {
@@ -393,16 +391,19 @@ function paymentFromRow(row: PaymentRow): Payment {
     studentId: row.student_id,
     amount: Number(row.amount),
     planType: row.plan_type as Payment["planType"],
-    date: row.date,
+    paymentDate: row.payment_date,
     status: row.status ?? undefined,
-    studentName: row.student_name ?? "",
-    studentProgram: row.student_program ?? "",
-    studentTraining: row.student_training ?? "",
+    createdAt: row.created_at ?? undefined,
+    studentName: "",
   };
 }
 
 export async function listPayments(): Promise<Payment[]> {
-  return (await rows<PaymentRow>("payments")).map(paymentFromRow);
+  return (
+    await rows<PaymentRow>("payments", {
+      order: { column: "created_at", ascending: false },
+    })
+  ).map(paymentFromRow);
 }
 
 export async function insertPayment(payment: Payment): Promise<Payment> {
@@ -413,11 +414,8 @@ export async function insertPayment(payment: Payment): Promise<Payment> {
       student_id: payment.studentId,
       amount: payment.amount,
       plan_type: payment.planType,
-      date: payment.date,
+      payment_date: payment.paymentDate,
       status: payment.status ?? null,
-      student_name: payment.studentName,
-      student_program: payment.studentProgram,
-      student_training: payment.studentTraining,
     })
     .select()
     .single();
@@ -435,11 +433,8 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
         student_id: p.studentId,
         amount: p.amount,
         plan_type: p.planType,
-        date: p.date,
+        payment_date: p.paymentDate,
         status: p.status ?? null,
-        student_name: p.studentName,
-        student_program: p.studentProgram,
-        student_training: p.studentTraining,
       })),
     );
   if (error) throw new Error(error.message);

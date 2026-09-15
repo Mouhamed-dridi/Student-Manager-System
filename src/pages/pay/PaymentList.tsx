@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Printer, Ticket } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Printer, Search, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,6 +24,10 @@ const PLAN_LABELS: Record<Payment["planType"], string> = {
   monthly: "Monthly",
 };
 
+function formatDate(value: string) {
+  return value ? new Date(value).toLocaleDateString() : "—";
+}
+
 export default function PaymentList({
   payments,
   onPrintReceipt,
@@ -31,18 +35,28 @@ export default function PaymentList({
 }: PaymentListProps) {
   const [search, setSearch] = useState("");
 
-  const filtered = payments.filter((p) =>
-    p.studentName.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return payments;
+    return payments.filter(
+      (p) =>
+        p.studentName.toLowerCase().includes(q) ||
+        p.paymentDate.includes(q) ||
+        (p.status ?? "").toLowerCase().includes(q),
+    );
+  }, [payments, search]);
 
   return (
     <div className="space-y-4">
-      <Input
-        placeholder="Search by student name..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="max-w-sm"
-      />
+      <div className="relative max-w-sm">
+        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search by student, date, or status..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
       {filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -54,24 +68,30 @@ export default function PaymentList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Student Name</TableHead>
-              <TableHead>Program</TableHead>
-              <TableHead>Training</TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>Student</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>Plan Type</TableHead>
-              <TableHead>Date</TableHead>
+              <TableHead>Payment Date</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Created At</TableHead>
               <TableHead className="w-32">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((p) => (
               <TableRow key={p.id}>
-                <TableCell>{p.studentName}</TableCell>
-                <TableCell>{p.studentProgram}</TableCell>
-                <TableCell>{p.studentTraining}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {p.id.slice(0, 8)}
+                </TableCell>
+                <TableCell>{p.studentName || "—"}</TableCell>
                 <TableCell>{p.amount.toFixed(2)}</TableCell>
                 <TableCell>{PLAN_LABELS[p.planType]}</TableCell>
-                <TableCell>{p.date}</TableCell>
+                <TableCell>{formatDate(p.paymentDate)}</TableCell>
+                <TableCell>{p.status ?? "—"}</TableCell>
+                <TableCell>
+                  {p.createdAt ? formatDate(p.createdAt) : "—"}
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
                     <Button

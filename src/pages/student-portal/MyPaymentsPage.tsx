@@ -33,7 +33,7 @@ export default function MyPaymentsPage() {
         setPayments(
           all
             .filter((p) => p.studentId === id)
-            .sort((a, b) => b.date.localeCompare(a.date)),
+            .sort((a, b) => b.paymentDate.localeCompare(a.paymentDate)),
         ),
       )
       .catch((err) => setError(errorMessage(err)));
@@ -76,7 +76,7 @@ export default function MyPaymentsPage() {
           <TableBody>
             {payments.map((p) => (
               <TableRow key={p.id}>
-                <TableCell>{p.date}</TableCell>
+                <TableCell>{p.paymentDate}</TableCell>
                 <TableCell>{p.amount}</TableCell>
                 <TableCell>{PLAN_LABELS[p.planType]}</TableCell>
                 <TableCell>{p.status ?? "Completed"}</TableCell>

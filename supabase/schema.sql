@@ -46,19 +46,16 @@ create table if not exists public.teachers (
 );
 
 -- -------------------------------------------------------------- payments ---
--- Keeps a snapshot of the student's name/class so payment history survives
--- student edits and deletions (mirrors the original app behaviour).
+-- One row per recorded payment. Student details are not snapshotted here;
+-- join to students.student_id to resolve the name at read time.
 
 create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   student_id uuid,
   amount numeric not null,
   plan_type text,
-  date date,
+  payment_date date,
   status text,
-  student_name text,
-  student_program text,
-  student_training text,
   created_at timestamptz not null default now()
 );
 

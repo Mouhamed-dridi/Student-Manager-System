@@ -61,7 +61,7 @@ export default function PrintReceipt({ payment, student }: PrintReceiptProps) {
     </div>
     <div class="row">
       <span class="label">Date</span>
-      <span class="value">${payment.date}</span>
+      <span class="value">${payment.paymentDate}</span>
     </div>
     <div class="row total">
       <span class="label">Amount Paid</span>
