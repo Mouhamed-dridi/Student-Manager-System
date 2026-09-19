@@ -103,6 +103,8 @@ interface StudentRow {
   email: string;
   password: string | null;
   blocked: boolean | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 function studentFromRow(row: StudentRow): Student {
@@ -140,9 +142,21 @@ async function studentToRow(student: Student) {
 const STUDENT_SELECT = "*, programs(code), trainings(name)";
 
 export async function listStudents(): Promise<Student[]> {
-  return (
-    await rows<StudentRow>("students", undefined, STUDENT_SELECT)
-  ).map(studentFromRow);
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.students
+    ? await supabase
+        .from("students")
+        .select(STUDENT_SELECT)
+        .or("is_deleted.is.false,is_deleted.is.null")
+    : await supabase.from("students").select(STUDENT_SELECT);
+  if (error) throw new Error(error.message);
+  let students = (data ?? []).map((row) => studentFromRow(row as StudentRow));
+  if (!capabilities.students) {
+    students = students.filter(
+      (s) => !localGeneralTrashDeletedAt.has(generalTrashKey("students", s.id)),
+    );
+  }
+  return students;
 }
 
 export async function getStudentById(id: string): Promise<Student | null> {
@@ -152,7 +166,10 @@ export async function getStudentById(id: string): Promise<Student | null> {
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data ? studentFromRow(data as StudentRow) : null;
+  if (!data) return null;
+  const row = data as StudentRow;
+  if (row.is_deleted === true) return null;
+  return studentFromRow(row);
 }
 
 /** Inserts a student; login fields are included when present. */
@@ -200,9 +217,44 @@ export async function updateStudentProfile(
   if (error) throw new Error(error.message);
 }
 
-export async function deleteStudents(ids: string[]): Promise<void> {
+/** Permanent delete: destroys rows immediately (used by the Trash page). */
+export async function hardDeleteStudents(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const { error } = await supabase.from("students").delete().in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
+/** Soft-deletes: moves rows to the general Trash when the columns exist. */
+export async function softDeleteStudents(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.students) {
+    const now = new Date().toISOString();
+    for (const id of ids)
+      localGeneralTrashDeletedAt.set(generalTrashKey("students", id), now);
+    return;
+  }
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("students")
+    .update({ is_deleted: true, deleted_at: now })
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
+/** Restores soft-deleted students back to the active list. */
+export async function restoreStudents(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.students) {
+    for (const id of ids)
+      localGeneralTrashDeletedAt.delete(generalTrashKey("students", id));
+    return;
+  }
+  const { error } = await supabase
+    .from("students")
+    .update({ is_deleted: false, deleted_at: null })
+    .in("id", ids);
   if (error) throw new Error(error.message);
 }
 
@@ -219,11 +271,18 @@ export interface AccountInfo {
 }
 
 export async function listStudentAccounts(): Promise<AccountInfo[]> {
-  const { data, error } = await supabase
-    .from("students")
-    .select("id, full_name, password, blocked, programs(code), trainings(name)");
+  const capabilities = await generalTrashCapabilities();
+  const builder = capabilities.students
+    ? supabase
+        .from("students")
+        .select("id, full_name, password, blocked, programs(code), trainings(name)")
+        .or("is_deleted.is.false,is_deleted.is.null")
+    : supabase
+        .from("students")
+        .select("id, full_name, password, blocked, programs(code), trainings(name)");
+  const { data, error } = await builder;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r: Record<string, unknown>) => ({
+  let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     fullName: (r.full_name as string) ?? "",
     password: (r.password as string) ?? undefined,
@@ -231,6 +290,12 @@ export async function listStudentAccounts(): Promise<AccountInfo[]> {
     program: ((r.programs as { code: string } | null)?.code ?? "") as Student["program"],
     training: (r.trainings as { name: string } | null)?.name ?? "",
   }));
+  if (!capabilities.students) {
+    accounts = accounts.filter(
+      (a) => !localGeneralTrashDeletedAt.has(generalTrashKey("students", a.id)),
+    );
+  }
+  return accounts;
 }
 
 // ---------------------------------------------------------------- teachers
@@ -243,6 +308,8 @@ interface TeacherRow {
   email: string;
   password: string | null;
   blocked: boolean | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 function teacherFromRow(row: TeacherRow): Teacher {
@@ -272,9 +339,21 @@ async function teacherToRow(teacher: Teacher) {
 const TEACHER_SELECT = "*";
 
 export async function listTeachers(): Promise<Teacher[]> {
-  return (
-    await rows<TeacherRow>("teachers", undefined, TEACHER_SELECT)
-  ).map(teacherFromRow);
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.teachers
+    ? await supabase
+        .from("teachers")
+        .select(TEACHER_SELECT)
+        .or("is_deleted.is.false,is_deleted.is.null")
+    : await supabase.from("teachers").select(TEACHER_SELECT);
+  if (error) throw new Error(error.message);
+  let teachers = (data ?? []).map((row) => teacherFromRow(row as TeacherRow));
+  if (!capabilities.teachers) {
+    teachers = teachers.filter(
+      (t) => !localGeneralTrashDeletedAt.has(generalTrashKey("teachers", t.id)),
+    );
+  }
+  return teachers;
 }
 
 export async function getTeacherById(id: string): Promise<Teacher | null> {
@@ -284,7 +363,10 @@ export async function getTeacherById(id: string): Promise<Teacher | null> {
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return data ? teacherFromRow(data as TeacherRow) : null;
+  if (!data) return null;
+  const row = data as TeacherRow;
+  if (row.is_deleted === true) return null;
+  return teacherFromRow(row);
 }
 
 export async function insertTeacher(teacher: Teacher): Promise<Teacher> {
@@ -322,18 +404,60 @@ export async function updateTeacherProfile(
   if (error) throw new Error(error.message);
 }
 
-export async function deleteTeachers(ids: string[]): Promise<void> {
+/** Permanent delete: destroys rows immediately (used by the Trash page). */
+export async function hardDeleteTeachers(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const { error } = await supabase.from("teachers").delete().in("id", ids);
   if (error) throw new Error(error.message);
 }
 
-export async function listTeacherAccounts(): Promise<AccountInfo[]> {
-  const { data, error } = await supabase
+/** Soft-deletes: moves rows to the general Trash when the columns exist. */
+export async function softDeleteTeachers(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.teachers) {
+    const now = new Date().toISOString();
+    for (const id of ids)
+      localGeneralTrashDeletedAt.set(generalTrashKey("teachers", id), now);
+    return;
+  }
+  const now = new Date().toISOString();
+  const { error } = await supabase
     .from("teachers")
-    .select("id, full_name, password, blocked, specialty");
+    .update({ is_deleted: true, deleted_at: now })
+    .in("id", ids);
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r: Record<string, unknown>) => ({
+}
+
+/** Restores soft-deleted teachers back to the active list. */
+export async function restoreTeachers(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.teachers) {
+    for (const id of ids)
+      localGeneralTrashDeletedAt.delete(generalTrashKey("teachers", id));
+    return;
+  }
+  const { error } = await supabase
+    .from("teachers")
+    .update({ is_deleted: false, deleted_at: null })
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
+export async function listTeacherAccounts(): Promise<AccountInfo[]> {
+  const capabilities = await generalTrashCapabilities();
+  const builder = capabilities.teachers
+    ? supabase
+        .from("teachers")
+        .select("id, full_name, password, blocked, specialty")
+        .or("is_deleted.is.false,is_deleted.is.null")
+    : supabase
+        .from("teachers")
+        .select("id, full_name, password, blocked, specialty");
+  const { data, error } = await builder;
+  if (error) throw new Error(error.message);
+  let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     fullName: (r.full_name as string) ?? "",
     password: (r.password as string) ?? undefined,
@@ -342,6 +466,12 @@ export async function listTeacherAccounts(): Promise<AccountInfo[]> {
     training: "",
     specialty: (r.specialty as string | null) ?? "",
   }));
+  if (!capabilities.teachers) {
+    accounts = accounts.filter(
+      (a) => !localGeneralTrashDeletedAt.has(generalTrashKey("teachers", a.id)),
+    );
+  }
+  return accounts;
 }
 
 // -------------------------------------------------------- login accounts
@@ -423,17 +553,10 @@ let paymentsCapabilitiesPromise: Promise<PaymentsCapabilities> | null = null;
 function detectPaymentsCapabilities(): Promise<PaymentsCapabilities> {
   if (!paymentsCapabilitiesPromise) {
     paymentsCapabilitiesPromise = (async () => {
-      const hasColumn = async (column: string) => {
-        const { error } = await supabase
-          .from("payments")
-          .select(column)
-          .limit(1);
-        return !error;
-      };
       const [hasIsDeleted, hasDeletedAt, hasEditHistory] = await Promise.all([
-        hasColumn("is_deleted"),
-        hasColumn("deleted_at"),
-        hasColumn("edit_history"),
+        hasColumn("payments", "is_deleted"),
+        hasColumn("payments", "deleted_at"),
+        hasColumn("payments", "edit_history"),
       ]);
       return {
         supportsTrash: hasIsDeleted && hasDeletedAt,
@@ -705,6 +828,180 @@ export async function listPaymentHistory(): Promise<PaymentHistoryItem[]> {
   }
   items.sort((a, b) => b.entry.changedAt.localeCompare(a.entry.changedAt));
   return items;
+}
+
+// ---------------------------------------------------------- general trash
+//
+// Students, teachers and publications share one Trash page (Payments has its
+// own). Like the payments trash, these tables are probed at runtime: if a
+// table lacks is_deleted/deleted_at, no query references the missing columns
+// and the in-memory map below tracks the session's deletions instead.
+
+export interface TrashCapabilities {
+  students: boolean;
+  teachers: boolean;
+  publications: boolean;
+}
+
+let generalTrashCapabilitiesPromise: Promise<TrashCapabilities> | null = null;
+
+async function hasColumn(table: string, column: string): Promise<boolean> {
+  const { error } = await supabase.from(table).select(column).limit(1);
+  return !error;
+}
+
+/** Probes which tables actually carry the is_deleted/deleted_at columns. */
+export async function generalTrashCapabilities(): Promise<TrashCapabilities> {
+  if (!generalTrashCapabilitiesPromise) {
+    generalTrashCapabilitiesPromise = (async () => {
+      const [students, teachers, publications] = await Promise.all([
+        Promise.all([hasColumn("students", "is_deleted"), hasColumn("students", "deleted_at")]),
+        Promise.all([hasColumn("teachers", "is_deleted"), hasColumn("teachers", "deleted_at")]),
+        Promise.all([
+          hasColumn("publications", "is_deleted"),
+          hasColumn("publications", "deleted_at"),
+        ]),
+      ]);
+      const and = (flags: boolean[]) => flags.every(Boolean);
+      return {
+        students: and(students),
+        teachers: and(teachers),
+        publications: and(publications),
+      };
+    })().catch(() => ({ students: false, teachers: false, publications: false }));
+  }
+  return generalTrashCapabilitiesPromise;
+}
+
+/** In-memory fallback used ONLY when the matching DB columns are absent. */
+const localGeneralTrashDeletedAt = new Map<string, string>();
+const generalTrashKey = (table: string, id: string) => `${table}:${id}`;
+
+/** One row in the general Trash page, built across all trashable tables. */
+export interface TrashItem {
+  table: "students" | "teachers" | "publications";
+  id: string;
+  name: string;
+  detail: string;
+  deletedAt: string | null;
+}
+
+/** Every soft-deleted row from the trashable tables, newest first. */
+export async function listGeneralTrash(): Promise<{
+  items: TrashItem[];
+  capabilities: TrashCapabilities;
+}> {
+  const capabilities = await generalTrashCapabilities();
+  const items: TrashItem[] = [];
+
+  if (capabilities.students) {
+    const { data, error } = await supabase
+      .from("students")
+      .select(STUDENT_SELECT)
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const s = studentFromRow(row as StudentRow);
+      const raw = row as StudentRow;
+      items.push({
+        table: "students",
+        id: s.id,
+        name: s.fullName,
+        detail: [s.program, s.training].filter(Boolean).join(" · ") || "—",
+        deletedAt: raw.deleted_at ?? null,
+      });
+    }
+  } else {
+    for (const [key, deletedAt] of localGeneralTrashDeletedAt) {
+      if (!key.startsWith("students:")) continue;
+      const id = key.slice("students:".length);
+      const s = await getStudentById(id);
+      if (s)
+        items.push({
+          table: "students",
+          id,
+          name: s.fullName,
+          detail: [s.program, s.training].filter(Boolean).join(" · ") || "—",
+          deletedAt,
+        });
+    }
+  }
+
+  if (capabilities.teachers) {
+    const { data, error } = await supabase
+      .from("teachers")
+      .select(TEACHER_SELECT)
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const t = teacherFromRow(row as TeacherRow);
+      const raw = row as TeacherRow;
+      items.push({
+        table: "teachers",
+        id: t.id,
+        name: t.fullName,
+        detail: t.specialty || "—",
+        deletedAt: raw.deleted_at ?? null,
+      });
+    }
+  } else {
+    for (const [key, deletedAt] of localGeneralTrashDeletedAt) {
+      if (!key.startsWith("teachers:")) continue;
+      const id = key.slice("teachers:".length);
+      const t = await getTeacherById(id);
+      if (t)
+        items.push({
+          table: "teachers",
+          id,
+          name: t.fullName,
+          detail: t.specialty || "—",
+          deletedAt,
+        });
+    }
+  }
+
+  if (capabilities.publications) {
+    const { data, error } = await supabase
+      .from("publications")
+      .select("*")
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const p = publicationFromRow(row as PublicationRow);
+      const raw = row as { deleted_at?: string | null };
+      items.push({
+        table: "publications",
+        id: p.id,
+        name: p.title,
+        detail: p.recipients.map((r) => r).join(", ") || "—",
+        deletedAt: raw.deleted_at ?? null,
+      });
+    }
+  } else {
+    for (const [key, deletedAt] of localGeneralTrashDeletedAt) {
+      if (!key.startsWith("publications:")) continue;
+      const id = key.slice("publications:".length);
+      const p = (await supabase
+        .from("publications")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle()).data as PublicationRow | null;
+      if (p)
+        items.push({
+          table: "publications",
+          id,
+          name: p.title,
+          detail: p.recipients?.join(", ") || "—",
+          deletedAt,
+        });
+    }
+  }
+
+  items.sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""));
+  return { items, capabilities };
 }
 
 // -------------------------------------------------------------- attendance
@@ -999,6 +1296,8 @@ interface PublicationRow {
   recipients: string[];
   channels: string[];
   sent_at: string | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 function publicationFromRow(row: PublicationRow): Publication {
@@ -1013,11 +1312,27 @@ function publicationFromRow(row: PublicationRow): Publication {
 }
 
 export async function listPublications(): Promise<Publication[]> {
-  return (
-    await rows<PublicationRow>("publications", {
-      order: { column: "sent_at", ascending: false },
-    })
-  ).map(publicationFromRow);
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.publications
+    ? await supabase
+        .from("publications")
+        .select("*")
+        .or("is_deleted.is.false,is_deleted.is.null")
+        .order("sent_at", { ascending: false })
+    : await supabase
+        .from("publications")
+        .select("*")
+        .order("sent_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  let rowsArr = (data ?? []).map((row) =>
+    publicationFromRow(row as PublicationRow),
+  );
+  if (!capabilities.publications) {
+    rowsArr = rowsArr.filter(
+      (p) => !localGeneralTrashDeletedAt.has(generalTrashKey("publications", p.id)),
+    );
+  }
+  return rowsArr;
 }
 
 export async function insertPublication(
@@ -1039,10 +1354,42 @@ export async function insertPublication(
   return publicationFromRow(data as PublicationRow);
 }
 
-export async function deletePublication(id: string): Promise<void> {
+/** Permanent delete: destroys the publication immediately (Trash page). */
+export async function hardDeletePublication(id: string): Promise<void> {
   const { error } = await supabase
     .from("publications")
     .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Soft-deletes: moves the publication to the general Trash when possible. */
+export async function softDeletePublication(id: string): Promise<void> {
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.publications) {
+    localGeneralTrashDeletedAt.set(
+      generalTrashKey("publications", id),
+      new Date().toISOString(),
+    );
+    return;
+  }
+  const { error } = await supabase
+    .from("publications")
+    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Restores a trashed publication back to the active list. */
+export async function restorePublication(id: string): Promise<void> {
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.publications) {
+    localGeneralTrashDeletedAt.delete(generalTrashKey("publications", id));
+    return;
+  }
+  const { error } = await supabase
+    .from("publications")
+    .update({ is_deleted: false, deleted_at: null })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -1096,6 +1443,166 @@ export async function updatePlanning(
 export async function deletePlanning(id: string): Promise<void> {
   const { error } = await supabase.from("planning").delete().eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+// --------------------------------------------------------------- dashboard
+
+export interface DashboardStats {
+  studentCount: number;
+  teacherCount: number;
+  attendanceRate: number;
+  monthlyRevenue: number;
+  totalPaid: number;
+  pendingAmount: number;
+  revenueByMonth: { month: string; amount: number }[];
+  revenueByPlan: { name: string; value: number }[];
+  studentsByProgram: { program: string; count: number }[];
+}
+
+/**
+ * Aggregates the KPI cards and charts for the operator Dashboard from the
+ * live tables. All filtering (incl. trash exclusion) is inherited from the
+ * list helpers.
+ */
+export async function getDashboardStats(): Promise<DashboardStats> {
+  const [students, teachers, attendance, payments] = await Promise.all([
+    listStudents(),
+    listTeachers(),
+    loadAttendanceRecords(),
+    listPayments(),
+  ]);
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const recentAttendance = attendance.filter((a) => {
+    const d = new Date(a.date);
+    return !Number.isNaN(d.getTime()) && d >= thirtyDaysAgo && d <= now;
+  });
+  const people = students.length + teachers.length;
+  const attendanceRate =
+    people > 0 ? Math.min(100, (recentAttendance.length / (30 * people)) * 100) : 0;
+
+  const paid = payments.filter((p) => p.status === "paid");
+  const sumPaid = (list: typeof paid) =>
+    list.reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalPaid = Math.round(sumPaid(paid) * 100) / 100;
+
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const monthlyRevenue =
+    Math.round(
+      sumPaid(paid.filter((p) => p.paymentDate.startsWith(thisMonthKey))) * 100,
+    ) / 100;
+
+  const pendingAmount =
+    Math.round(
+      payments
+        .filter((p) => p.status === "pending")
+        .reduce((sum, p) => sum + Number(p.amount), 0) * 100,
+    ) / 100;
+
+  const revenueByMonth: { month: string; amount: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    revenueByMonth.push({
+      month: d.toLocaleString(undefined, { month: "short" }),
+      amount:
+        Math.round(sumPaid(paid.filter((p) => p.paymentDate.startsWith(key))) * 100) /
+        100,
+    });
+  }
+
+  const planTotals: Record<string, number> = {};
+  for (const p of paid) {
+    planTotals[p.planType] = (planTotals[p.planType] ?? 0) + Number(p.amount);
+  }
+  const revenueByPlan = Object.entries(planTotals).map(([plan, value]) => ({
+    name: PLAN_LABELS[plan] ?? (plan || "Unknown"),
+    value: Math.round(value * 100) / 100,
+  }));
+
+  const programCounts: Record<string, number> = {};
+  for (const s of students) {
+    const key = s.program || "Unassigned";
+    programCounts[key] = (programCounts[key] ?? 0) + 1;
+  }
+  const studentsByProgram = Object.entries(programCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([program, count]) => ({ program, count }));
+
+  return {
+    studentCount: students.length,
+    teacherCount: teachers.length,
+    attendanceRate,
+    monthlyRevenue,
+    totalPaid,
+    pendingAmount,
+    revenueByMonth,
+    revenueByPlan,
+    studentsByProgram,
+  };
+}
+
+// ----------------------------------------------------------------- settings
+
+export interface AppNotifications {
+  email: boolean;
+  sms: boolean;
+  inApp: boolean;
+}
+
+export interface AppSettings {
+  systemName?: string;
+  language?: string;
+  notifications?: AppNotifications;
+  adminName?: string;
+  adminEmail?: string;
+}
+
+/** Reads all operator-level settings from the key/value settings table. */
+export async function getSettings(): Promise<AppSettings> {
+  const { data, error } = await supabase.from("settings").select("key, value");
+  if (error) throw new Error(error.message);
+  const store: Record<string, unknown> = {};
+  for (const row of data ?? []) store[row.key as string] = row.value;
+  return {
+    systemName:
+      typeof store.system_name === "string" ? (store.system_name as string) : undefined,
+    language:
+      typeof store.language === "string" ? (store.language as string) : undefined,
+    notifications: store.notifications as AppNotifications | undefined,
+    adminName:
+      typeof store.admin_name === "string" ? (store.admin_name as string) : undefined,
+    adminEmail:
+      typeof store.admin_email === "string" ? (store.admin_email as string) : undefined,
+  };
+}
+
+/** Writes every settings key (empty values are stored as JSON null). */
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  const now = new Date().toISOString();
+  const rows = [
+    { key: "system_name", value: settings.systemName ?? null, updated_at: now },
+    { key: "language", value: settings.language ?? null, updated_at: now },
+    { key: "notifications", value: settings.notifications ?? null, updated_at: now },
+    { key: "admin_name", value: settings.adminName ?? null, updated_at: now },
+    { key: "admin_email", value: settings.adminEmail ?? null, updated_at: now },
+  ];
+  const { error } = await supabase
+    .from("settings")
+    .upsert(rows as Record<string, unknown>[], { onConflict: "key" });
+  if (error) throw new Error(error.message);
+}
+
+/** Sidebar/top-bar branding; resilient to a missing settings table. */
+export async function getSystemName(): Promise<string> {
+  try {
+    const settings = await getSettings();
+    const name = settings.systemName?.trim();
+    return name || "SSM";
+  } catch {
+    return "SSM";
+  }
 }
 
 // -------------------------------------------------------------- realtime

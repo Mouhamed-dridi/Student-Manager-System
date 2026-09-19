@@ -94,8 +94,8 @@ export default function StudentList({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete student?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently remove {s.fullName} from the
-                        list. This action cannot be undone.
+                        {s.fullName} will be moved to the Trash. You can
+                        restore them later or permanently delete from there.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

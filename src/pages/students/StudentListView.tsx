@@ -237,8 +237,8 @@ export default function StudentListView({
                       {selectedIds.size === 1 ? "" : "s"}?
                     </AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently remove them from the list. This
-                      action cannot be undone.
+                      They will be moved to the Trash. You can restore them
+                      later or permanently delete from there.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

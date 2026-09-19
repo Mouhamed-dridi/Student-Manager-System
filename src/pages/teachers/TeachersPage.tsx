@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
-  deleteTeachers,
   errorMessage,
   insertTeachers,
   listTeachers,
+  softDeleteTeachers,
   subscribeToTable,
   updateTeacherProfile,
 } from "@/lib/api";
@@ -69,7 +69,7 @@ export default function TeachersPage() {
   const handleDelete = async (id: string) => {
     try {
       setError(null);
-      await deleteTeachers([id]);
+      await softDeleteTeachers([id]);
       setTeachers(await listTeachers());
     } catch (err) {
       setError(errorMessage(err));

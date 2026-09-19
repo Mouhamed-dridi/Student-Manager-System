@@ -4,10 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
-  deleteStudents,
   errorMessage,
   insertStudents,
   listStudents,
+  softDeleteStudents,
   subscribeToTable,
   updateStudentProfile,
 } from "@/lib/api";
@@ -74,7 +74,7 @@ export default function StudentsPage() {
   const handleDelete = async (id: string) => {
     try {
       setError(null);
-      await deleteStudents([id]);
+      await softDeleteStudents([id]);
       await refresh();
     } catch (err) {
       setError(errorMessage(err));
@@ -85,7 +85,7 @@ export default function StudentsPage() {
   const handleDeleteMany = async (ids: string[]) => {
     try {
       setError(null);
-      await deleteStudents(ids);
+      await softDeleteStudents(ids);
       await refresh();
     } catch (err) {
       setError(errorMessage(err));

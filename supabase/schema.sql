@@ -69,6 +69,34 @@ alter table if exists public.payments
   add column if not exists deleted_at timestamptz,
   add column if not exists edit_history jsonb not null default '[]'::jsonb;
 
+-- ------------------------------------------------------ general trash ---
+-- Soft-delete columns for the operator Trash page (Payments has its own
+-- columns above). is_deleted = true moves the row to Trash; deleted_at
+-- records when. The app probes these at runtime and falls back to in-memory
+-- tracking when they are absent, so no query ever references a missing
+-- column.
+
+alter table if exists public.students
+  add column if not exists is_deleted boolean not null default false,
+  add column if not exists deleted_at timestamptz;
+
+alter table if exists public.teachers
+  add column if not exists is_deleted boolean not null default false,
+  add column if not exists deleted_at timestamptz;
+
+alter table if exists public.publications
+  add column if not exists is_deleted boolean not null default false,
+  add column if not exists deleted_at timestamptz;
+
+-- ---------------------------------------------------------------- settings -
+-- Operator-level SaaS settings as a simple key/value store.
+
+create table if not exists public.settings (
+  key text primary key,
+  value jsonb,
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------- attendance --
 -- Unified attendance log: one row per recorded presence. Each row is fully
 -- denormalised (type, full_name, class_name) so the table renders as-is and
@@ -165,7 +193,7 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['students', 'teachers', 'courses']
+  foreach t in array array['students', 'teachers', 'courses', 'publications']
   loop
     begin
       execute format(
@@ -186,7 +214,7 @@ declare
 begin
   foreach t in array array[
     'students', 'teachers', 'payments', 'attendance', 'courses',
-    'exams', 'grades', 'publications', 'planning'
+    'exams', 'grades', 'publications', 'planning', 'settings'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

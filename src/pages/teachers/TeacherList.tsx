@@ -79,8 +79,8 @@ export default function TeacherList({
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete teacher?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently remove {t.fullName} from the
-                        list. This action cannot be undone.
+                        {t.fullName} will be moved to the Trash. You can
+                        restore them later or permanently delete from there.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

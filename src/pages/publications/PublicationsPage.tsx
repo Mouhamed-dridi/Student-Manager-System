@@ -33,10 +33,10 @@ import {
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
-  deletePublication,
   errorMessage,
   insertPublication,
   listPublications,
+  softDeletePublication,
 } from "@/lib/api";
 
 type RecipientType = "teachers" | "students";
@@ -90,7 +90,7 @@ export default function PublicationsPage() {
   const handleDelete = async (id: string) => {
     try {
       setError(null);
-      await deletePublication(id);
+      await softDeletePublication(id);
       setPublications(await listPublications());
     } catch (err) {
       setError(errorMessage(err));
@@ -280,8 +280,8 @@ export default function PublicationsPage() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete publication?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently remove "{p.title}" from the
-                            history. This action cannot be undone.
+                            "{p.title}" will be moved to the Trash. You can
+                            restore it later or permanently delete from there.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

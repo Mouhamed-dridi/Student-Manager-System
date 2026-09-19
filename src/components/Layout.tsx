@@ -1,18 +1,22 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  LayoutDashboard,
   Users,
   GraduationCap,
   DollarSign,
   CalendarX,
   BookOpen,
   UserCog,
+  Trash2,
+  Settings,
   ChevronDown,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import DashboardPage from "@/pages/dashboard/DashboardPage";
 import StudentsPage from "@/pages/students/StudentsPage";
 import TeachersPage from "@/pages/teachers/TeachersPage";
 import PayPage from "@/pages/pay/PayPage";
@@ -21,9 +25,13 @@ import PaymentTrashPage from "@/pages/pay/PaymentTrashPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
 import UserManagementPage from "@/pages/users/UserManagementPage";
+import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
+import SettingsPage from "@/pages/settings/SettingsPage";
 import { clearSession } from "@/lib/session";
+import { getSystemName } from "@/lib/api";
 
 type MenuKey =
+  | "dashboard"
   | "students"
   | "teachers"
   | "pay"
@@ -31,7 +39,9 @@ type MenuKey =
   | "pay-trash"
   | "absence"
   | "publications"
-  | "users";
+  | "users"
+  | "trash"
+  | "settings";
 
 interface MenuItem {
   key: MenuKey;
@@ -41,6 +51,7 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "students", label: "Students", icon: Users },
   { key: "teachers", label: "Teachers", icon: GraduationCap },
   {
@@ -56,9 +67,12 @@ const menuItems: MenuItem[] = [
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "publications", label: "Publications", icon: BookOpen },
   { key: "users", label: "User Management", icon: UserCog },
+  { key: "trash", label: "Trash", icon: Trash2 },
+  { key: "settings", label: "Settings", icon: Settings },
 ];
 
 const pages: Record<MenuKey, React.ReactNode> = {
+  dashboard: <DashboardPage />,
   students: <StudentsPage />,
   teachers: <TeachersPage />,
   pay: <PayPage />,
@@ -67,12 +81,21 @@ const pages: Record<MenuKey, React.ReactNode> = {
   absence: <AbsencePage />,
   publications: <PublicationsPage />,
   users: <UserManagementPage />,
+  trash: <GeneralTrashPage />,
+  settings: <SettingsPage />,
 };
 
 export default function Layout() {
-  const [active, setActive] = useState<MenuKey>("students");
+  const [active, setActive] = useState<MenuKey>("dashboard");
   const [payExpanded, setPayExpanded] = useState(true);
+  const [systemName, setSystemName] = useState("SSM");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    getSystemName()
+      .then(setSystemName)
+      .catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     clearSession();
@@ -96,7 +119,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
         <div className="flex h-14 items-center px-4 text-lg font-semibold">
-          SSM
+          {systemName}
         </div>
         <Separator />
         <nav className="flex-1 space-y-1 p-2">
@@ -168,7 +191,7 @@ export default function Layout() {
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
           <span className="text-sm font-medium text-muted-foreground">
-            Student Manager System
+            {systemName === "SSM" ? "Student Manager System" : systemName}
           </span>
           <Button variant="outline" size="sm" onClick={handleLogout}>
             Logout
