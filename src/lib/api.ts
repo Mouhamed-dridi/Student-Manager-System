@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getRole } from "@/lib/session";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { Payment } from "@/pages/pay/PaymentForm";
@@ -382,6 +383,9 @@ interface PaymentRow {
   plan_type: string;
   payment_date: string;
   status: string | null;
+  is_deleted: boolean | null;
+  deleted_at: string | null;
+  edit_history: unknown;
   created_at: string | null;
 }
 
@@ -393,17 +397,111 @@ function paymentFromRow(row: PaymentRow): Payment {
     planType: row.plan_type as Payment["planType"],
     paymentDate: row.payment_date,
     status: row.status ?? undefined,
+    isDeleted: row.is_deleted === true,
+    deletedAt: row.deleted_at ?? undefined,
     createdAt: row.created_at ?? undefined,
     studentName: "",
   };
 }
 
+/**
+ * Payment column support is detected at runtime: some deployments of the
+ * payments table omit the trash (is_deleted / deleted_at) and history
+ * (edit_history) columns. When a column is missing the app degrades instead
+ * of querying it (which PostgREST rejects with "column does not exist"):
+ *  - active filtering falls back to "every row is active"
+ *  - trash is tracked in memory for the current session only
+ *  - edits are appended to an in-memory history log instead of the DB column
+ */
+interface PaymentsCapabilities {
+  supportsTrash: boolean;
+  supportsHistory: boolean;
+}
+
+let paymentsCapabilitiesPromise: Promise<PaymentsCapabilities> | null = null;
+
+function detectPaymentsCapabilities(): Promise<PaymentsCapabilities> {
+  if (!paymentsCapabilitiesPromise) {
+    paymentsCapabilitiesPromise = (async () => {
+      const hasColumn = async (column: string) => {
+        const { error } = await supabase
+          .from("payments")
+          .select(column)
+          .limit(1);
+        return !error;
+      };
+      const [hasIsDeleted, hasDeletedAt, hasEditHistory] = await Promise.all([
+        hasColumn("is_deleted"),
+        hasColumn("deleted_at"),
+        hasColumn("edit_history"),
+      ]);
+      return {
+        supportsTrash: hasIsDeleted && hasDeletedAt,
+        supportsHistory: hasEditHistory,
+      };
+    })().catch(() => ({ supportsTrash: false, supportsHistory: false }));
+  }
+  return paymentsCapabilitiesPromise;
+}
+
+/** True when the payments table actually has is_deleted/deleted_at columns. */
+export async function paymentsSupportsTrash(): Promise<boolean> {
+  return (await detectPaymentsCapabilities()).supportsTrash;
+}
+
+/** True when the payments table actually has the edit_history jsonb column. */
+export async function paymentsSupportsHistory(): Promise<boolean> {
+  return (await detectPaymentsCapabilities()).supportsHistory;
+}
+
+/** In-memory fallbacks used ONLY when the matching DB columns are absent. */
+const localTrashDeletedAt = new Map<string, string>();
+const localEditHistory: PaymentHistoryItem[] = [];
+
+/** Active payments only, newest first. */
 export async function listPayments(): Promise<Payment[]> {
-  return (
-    await rows<PaymentRow>("payments", {
-      order: { column: "created_at", ascending: false },
-    })
-  ).map(paymentFromRow);
+  const caps = await detectPaymentsCapabilities();
+  const { data, error } = caps.supportsTrash
+    ? await supabase
+        .from("payments")
+        .select("*")
+        .or("is_deleted.is.false,is_deleted.is.null")
+        .order("created_at", { ascending: false })
+    : await supabase
+        .from("payments")
+        .select("*")
+        .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []).map((row) => paymentFromRow(row as PaymentRow));
+  if (!caps.supportsTrash) {
+    return rows.filter((p) => !localTrashDeletedAt.has(p.id));
+  }
+  return rows;
+}
+
+/** Payments in the Pay > Trash view, newest trash first. */
+export async function listDeletedPayments(): Promise<Payment[]> {
+  const caps = await detectPaymentsCapabilities();
+  if (caps.supportsTrash) {
+    const { data, error } = await supabase
+      .from("payments")
+      .select("*")
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map((row) => paymentFromRow(row as PaymentRow));
+  }
+  if (localTrashDeletedAt.size === 0) return [];
+  const { data, error } = await supabase.from("payments").select("*");
+  if (error) throw new Error(error.message);
+  return (data ?? [])
+    .map((row) => paymentFromRow(row as PaymentRow))
+    .filter((p) => localTrashDeletedAt.has(p.id))
+    .map((p) => ({
+      ...p,
+      isDeleted: true,
+      deletedAt: localTrashDeletedAt.get(p.id),
+    }));
 }
 
 export async function insertPayment(payment: Payment): Promise<Payment> {
@@ -438,6 +536,175 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
       })),
     );
   if (error) throw new Error(error.message);
+}
+
+/** One field-level change, stored in display-ready form. */
+export interface PaymentFieldChange {
+  field: string;
+  from: string;
+  to: string;
+}
+
+/** One recorded edit; entries are appended to payments.edit_history. */
+export interface EditHistoryEntry {
+  changedAt: string;
+  changedBy: string;
+  changes: PaymentFieldChange[];
+}
+
+/** An edit-history entry paired with its payment, for the History page. */
+export interface PaymentHistoryItem {
+  paymentId: string;
+  studentName: string;
+  entry: EditHistoryEntry;
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  one_time: "One-Time",
+  semester: "Semester",
+  monthly: "Monthly",
+};
+
+const PAYMENT_FIELD_COMPARATORS: {
+  label: string;
+  value: (p: Payment) => string;
+}[] = [
+  { label: "Student", value: (p) => p.studentName || "—" },
+  { label: "Amount", value: (p) => p.amount.toFixed(2) },
+  { label: "Plan Type", value: (p) => PLAN_LABELS[p.planType] ?? p.planType },
+  { label: "Payment Date", value: (p) => p.paymentDate },
+  {
+    label: "Status",
+    value: (p) =>
+      p.status ? p.status.charAt(0).toUpperCase() + p.status.slice(1) : "—",
+  },
+];
+
+/** Fields that differ between two payments, in display-ready form. */
+function paymentDiffs(before: Payment, after: Payment): PaymentFieldChange[] {
+  const changes: PaymentFieldChange[] = [];
+  for (const { label, value } of PAYMENT_FIELD_COMPARATORS) {
+    const from = value(before);
+    const to = value(after);
+    if (from !== to) changes.push({ field: label, from, to });
+  }
+  return changes;
+}
+
+/**
+ * Updates the editable fields of an existing payment and appends one entry
+ * describing the change to the payment's edit_history (jsonb) column when that
+ * column exists. The actor is the cookie session role — the Pay module is
+ * operator-only, so this is always "operator".
+ */
+export async function updatePayment(
+  before: Payment,
+  after: Payment,
+): Promise<void> {
+  const changes = paymentDiffs(before, after);
+  const payload: Record<string, unknown> = {
+    student_id: after.studentId,
+    amount: after.amount,
+    plan_type: after.planType,
+    payment_date: after.paymentDate,
+    status: after.status ?? null,
+  };
+  const entry: EditHistoryEntry = {
+    changedAt: new Date().toISOString(),
+    changedBy: getRole() ?? "operator",
+    changes,
+  };
+  const caps = await detectPaymentsCapabilities();
+  if (caps.supportsHistory) {
+    const { data: current } = await supabase
+      .from("payments")
+      .select("edit_history")
+      .eq("id", after.id)
+      .maybeSingle();
+    const existing = Array.isArray(
+      (current as { edit_history?: unknown } | null)?.edit_history,
+    )
+      ? ((current as { edit_history: unknown }).edit_history as EditHistoryEntry[])
+      : [];
+    payload.edit_history = [...existing, entry];
+  } else {
+    // No edit_history column: track this edit in-memory for the session.
+    localEditHistory.push({
+      paymentId: after.id,
+      studentName: after.studentName,
+      entry,
+    });
+  }
+  const { error } = await supabase
+    .from("payments")
+    .update(payload)
+    .eq("id", after.id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Soft-deletes: flags the payment (is_deleted = true, deleted_at = NOW()) so
+ * it appears in Pay > Trash instead of being destroyed. Without the flags the
+ * delete is tracked in memory for the session only — no query against a
+ * non-existent column is ever issued.
+ */
+export async function softDeletePayment(payment: Payment): Promise<void> {
+  const caps = await detectPaymentsCapabilities();
+  if (!caps.supportsTrash) {
+    localTrashDeletedAt.set(payment.id, new Date().toISOString());
+    return;
+  }
+  const { error } = await supabase
+    .from("payments")
+    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+    .eq("id", payment.id);
+  if (error) throw new Error(error.message);
+}
+
+/** Restores a trashed payment back to the active list. */
+export async function restorePayment(payment: Payment): Promise<void> {
+  const caps = await detectPaymentsCapabilities();
+  if (!caps.supportsTrash) {
+    localTrashDeletedAt.delete(payment.id);
+    return;
+  }
+  const { error } = await supabase
+    .from("payments")
+    .update({ is_deleted: false, deleted_at: null })
+    .eq("id", payment.id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Every recorded payment edit across all payments (incl. trashed), newest
+ * first. When the edit_history column is missing this serves the in-memory
+ * log from this session instead of querying it.
+ */
+export async function listPaymentHistory(): Promise<PaymentHistoryItem[]> {
+  const caps = await detectPaymentsCapabilities();
+  const items: PaymentHistoryItem[] = [...localEditHistory];
+  if (caps.supportsHistory) {
+    const { data, error } = await supabase
+      .from("payments")
+      .select("id, student_id, edit_history");
+    if (error) throw new Error(error.message);
+    const students = await listStudents();
+    const studentNameFor = new Map(students.map((s) => [s.id, s.fullName]));
+    for (const row of data ?? []) {
+      const history = Array.isArray(row.edit_history)
+        ? (row.edit_history as EditHistoryEntry[])
+        : [];
+      for (const entry of history) {
+        items.push({
+          paymentId: row.id,
+          studentName: studentNameFor.get(row.student_id) ?? "Unknown student",
+          entry,
+        });
+      }
+    }
+  }
+  items.sort((a, b) => b.entry.changedAt.localeCompare(a.entry.changedAt));
+  return items;
 }
 
 // -------------------------------------------------------------- attendance

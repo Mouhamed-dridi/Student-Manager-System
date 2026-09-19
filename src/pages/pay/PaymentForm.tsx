@@ -19,11 +19,14 @@ export interface Payment {
   planType: "one_time" | "semester" | "monthly";
   paymentDate: string;
   status?: string;
+  isDeleted?: boolean;
+  deletedAt?: string;
   createdAt?: string;
 }
 
 interface PaymentFormProps {
   students: Student[];
+  initial?: Payment;
   onSave: (payment: Payment) => void;
   onCancel?: () => void;
 }
@@ -32,13 +35,28 @@ function todayString() {
   return new Date().toISOString().split("T")[0];
 }
 
-export default function PaymentForm({ students, onSave, onCancel }: PaymentFormProps) {
-  const [nameInput, setNameInput] = useState("");
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [amount, setAmount] = useState("");
-  const [planType, setPlanType] = useState<Payment["planType"]>("one_time");
-  const [status, setStatus] = useState("paid");
-  const [date, setDate] = useState(todayString);
+export default function PaymentForm({
+  students,
+  initial,
+  onSave,
+  onCancel,
+}: PaymentFormProps) {
+  const isEditing = initial !== undefined;
+  const [nameInput, setNameInput] = useState(initial?.studentName ?? "");
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(
+    () =>
+      (initial &&
+        (students.find((s) => s.id === initial.studentId) ?? null)) ||
+      null,
+  );
+  const [amount, setAmount] = useState(
+    initial ? String(initial.amount) : "",
+  );
+  const [planType, setPlanType] = useState<Payment["planType"]>(
+    initial?.planType ?? "one_time",
+  );
+  const [status, setStatus] = useState(initial?.status ?? "paid");
+  const [date, setDate] = useState(initial?.paymentDate ?? todayString());
 
   const query = nameInput.trim().toLowerCase();
   const matches =
@@ -65,20 +83,24 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
     e.preventDefault();
     if (!selectedStudent) return;
     onSave({
-      id: crypto.randomUUID(),
+      id: initial?.id ?? crypto.randomUUID(),
       studentId: selectedStudent.id,
       studentName: selectedStudent.fullName,
       amount: parseFloat(amount),
       planType,
       paymentDate: date,
       status,
+      deletedAt: initial?.deletedAt,
+      createdAt: initial?.createdAt,
     });
-    setAmount("");
-    setNameInput("");
-    setSelectedStudent(null);
-    setPlanType("one_time");
-    setStatus("paid");
-    setDate(todayString());
+    if (!isEditing) {
+      setAmount("");
+      setNameInput("");
+      setSelectedStudent(null);
+      setPlanType("one_time");
+      setStatus("paid");
+      setDate(todayString());
+    }
   };
 
   return (
@@ -181,7 +203,7 @@ export default function PaymentForm({ students, onSave, onCancel }: PaymentFormP
           </Button>
         )}
         <Button type="submit" disabled={!selectedStudent || !amount}>
-          Add Payment
+          {isEditing ? "Save Changes" : "Add Payment"}
         </Button>
       </div>
     </form>

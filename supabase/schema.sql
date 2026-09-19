@@ -59,6 +59,16 @@ create table if not exists public.payments (
   created_at timestamptz not null default now()
 );
 
+-- Trash + audit columns (idempotent for databases that already have them):
+-- is_deleted = true moves the payment to the Pay > Trash view instead of
+-- deleting it; deleted_at records when; edit_history (jsonb array) stores
+-- one entry per edit ({changedAt, changedBy, changes:[{field, from, to}]})
+-- so the Pay > History view can replay all modifications.
+alter table if exists public.payments
+  add column if not exists is_deleted boolean not null default false,
+  add column if not exists deleted_at timestamptz,
+  add column if not exists edit_history jsonb not null default '[]'::jsonb;
+
 -- ------------------------------------------------------------- attendance --
 -- Unified attendance log: one row per recorded presence. Each row is fully
 -- denormalised (type, full_name, class_name) so the table renders as-is and

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Printer, Search, Ticket } from "lucide-react";
+import { Pencil, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,8 +14,8 @@ import type { Payment } from "./PaymentForm";
 
 interface PaymentListProps {
   payments: Payment[];
-  onPrintReceipt: (payment: Payment) => void;
-  onPrintTicket: (payment: Payment) => void;
+  onEdit: (payment: Payment) => void;
+  onDelete: (payment: Payment) => void;
 }
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
@@ -30,8 +30,8 @@ function formatDate(value: string) {
 
 export default function PaymentList({
   payments,
-  onPrintReceipt,
-  onPrintTicket,
+  onEdit,
+  onDelete,
 }: PaymentListProps) {
   const [search, setSearch] = useState("");
 
@@ -97,18 +97,21 @@ export default function PaymentList({
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Print Receipt"
-                      onClick={() => onPrintReceipt(p)}
+                      title="Edit payment"
+                      aria-label={`Edit payment for ${p.studentName}`}
+                      onClick={() => onEdit(p)}
                     >
-                      <Printer className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Print Ticket"
-                      onClick={() => onPrintTicket(p)}
+                      title="Move to trash"
+                      aria-label={`Delete payment for ${p.studentName}`}
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => onDelete(p)}
                     >
-                      <Ticket className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </TableCell>

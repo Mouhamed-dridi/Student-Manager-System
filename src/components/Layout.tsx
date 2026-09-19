@@ -7,32 +7,63 @@ import {
   CalendarX,
   BookOpen,
   UserCog,
+  ChevronDown,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 import StudentsPage from "@/pages/students/StudentsPage";
 import TeachersPage from "@/pages/teachers/TeachersPage";
 import PayPage from "@/pages/pay/PayPage";
+import PaymentHistoryPage from "@/pages/pay/PaymentHistoryPage";
+import PaymentTrashPage from "@/pages/pay/PaymentTrashPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
 import UserManagementPage from "@/pages/users/UserManagementPage";
 import { clearSession } from "@/lib/session";
 
-const menuItems = [
+type MenuKey =
+  | "students"
+  | "teachers"
+  | "pay"
+  | "pay-history"
+  | "pay-trash"
+  | "absence"
+  | "publications"
+  | "users";
+
+interface MenuItem {
+  key: MenuKey;
+  label: string;
+  icon: LucideIcon;
+  children?: { key: MenuKey; label: string }[];
+}
+
+const menuItems: MenuItem[] = [
   { key: "students", label: "Students", icon: Users },
   { key: "teachers", label: "Teachers", icon: GraduationCap },
-  { key: "pay", label: "Pay", icon: DollarSign },
+  {
+    key: "pay",
+    label: "Pay",
+    icon: DollarSign,
+    children: [
+      { key: "pay", label: "Payments" },
+      { key: "pay-history", label: "History" },
+      { key: "pay-trash", label: "Trash" },
+    ],
+  },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "publications", label: "Publications", icon: BookOpen },
   { key: "users", label: "User Management", icon: UserCog },
-] as const;
-
-type MenuKey = (typeof menuItems)[number]["key"];
+];
 
 const pages: Record<MenuKey, React.ReactNode> = {
   students: <StudentsPage />,
   teachers: <TeachersPage />,
   pay: <PayPage />,
+  "pay-history": <PaymentHistoryPage />,
+  "pay-trash": <PaymentTrashPage />,
   absence: <AbsencePage />,
   publications: <PublicationsPage />,
   users: <UserManagementPage />,
@@ -40,11 +71,24 @@ const pages: Record<MenuKey, React.ReactNode> = {
 
 export default function Layout() {
   const [active, setActive] = useState<MenuKey>("students");
+  const [payExpanded, setPayExpanded] = useState(true);
   const navigate = useNavigate();
 
   const handleLogout = () => {
     clearSession();
     navigate("/login");
+  };
+
+  const inPaySection =
+    active === "pay" || active === "pay-history" || active === "pay-trash";
+
+  const handlePayParentClick = () => {
+    if (inPaySection) {
+      setPayExpanded((open) => !open);
+    } else {
+      setPayExpanded(true);
+      setActive("pay");
+    }
   };
 
   return (
@@ -57,19 +101,61 @@ export default function Layout() {
         <Separator />
         <nav className="flex-1 space-y-1 p-2">
           {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = active === item.key;
+            if (item.children) {
+              const expanded = payExpanded && inPaySection;
+              return (
+                <div key={item.key}>
+                  <button
+                    onClick={handlePayParentClick}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      inPaySection
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                    <ChevronDown
+                      className={cn(
+                        "ml-auto h-4 w-4 transition-transform",
+                        expanded && "rotate-180",
+                      )}
+                    />
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 space-y-1">
+                      {item.children.map((child) => (
+                        <button
+                          key={child.key}
+                          onClick={() => setActive(child.key)}
+                          className={cn(
+                            "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors",
+                            active === child.key
+                              ? "bg-accent text-accent-foreground"
+                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                          )}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             return (
               <button
                 key={item.key}
                 onClick={() => setActive(item.key)}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  active === item.key
                     ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                }`}
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                )}
               >
-                <Icon className="h-4 w-4" />
+                <item.icon className="h-4 w-4" />
                 {item.label}
               </button>
             );
