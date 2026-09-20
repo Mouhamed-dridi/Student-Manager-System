@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  deleteAttendanceRecord,
   errorMessage,
   insertAttendanceRecords,
   loadAttendanceRecords,
@@ -17,6 +18,7 @@ export default function AbsencePage() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<AttendanceRecord | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -40,7 +42,24 @@ export default function AbsencePage() {
 
   const handleAddSaved = () => {
     setSummary(null);
+    setEditing(null);
     void refresh();
+  };
+
+  const handleEdit = (record: AttendanceRecord) => {
+    setEditing(record);
+    setAddOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      setError(null);
+      await deleteAttendanceRecord(id);
+      await refresh();
+      setSummary("Attendance record deleted.");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -116,13 +135,20 @@ export default function AbsencePage() {
           records={records}
           error={error}
           loading={records === null && !error}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
         />
       </div>
 
       {addOpen && (
         <AddAbsenceDialog
+          key={editing?.id ?? "new"}
+          initial={editing ?? undefined}
           onSaved={handleAddSaved}
-          onClose={() => setAddOpen(false)}
+          onClose={() => {
+            setAddOpen(false);
+            setEditing(null);
+          }}
         />
       )}
     </div>

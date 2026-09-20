@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Pencil, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -9,6 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import type { AttendanceRecord } from "@/lib/api";
 
@@ -16,12 +18,16 @@ interface AttendanceLogProps {
   records: AttendanceRecord[] | null;
   error: string | null;
   loading: boolean;
+  onEdit: (record: AttendanceRecord) => void;
+  onDelete: (id: string) => void;
 }
 
 export default function AttendanceLog({
   records,
   error,
   loading,
+  onEdit,
+  onDelete,
 }: AttendanceLogProps) {
   const [search, setSearch] = useState("");
 
@@ -67,6 +73,7 @@ export default function AttendanceLog({
               <TableHead>Class / Program / Specialty</TableHead>
               <TableHead className="w-36">Date</TableHead>
               <TableHead className="w-28">Time</TableHead>
+              <TableHead className="w-24">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -87,6 +94,47 @@ export default function AttendanceLog({
                 <TableCell>{r.className?.trim() ? r.className : "—"}</TableCell>
                 <TableCell>{r.date}</TableCell>
                 <TableCell>{r.time ?? "—"}</TableCell>
+                <TableCell>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => onEdit(r)}
+                      aria-label={`Edit ${r.fullName}`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Delete ${r.fullName}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        }
+                      />
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete attendance record?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {r.fullName} on {r.date}
+                            {r.time ? ` at ${r.time}` : ""} will be permanently
+                            removed from the attendance log.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => onDelete(r.id)}>
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

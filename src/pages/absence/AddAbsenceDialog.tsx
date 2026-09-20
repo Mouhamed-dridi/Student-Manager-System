@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +20,9 @@ import {
   insertAttendanceRecords,
   listStudents,
   listTeachers,
+  listTrainings,
+  updateAttendanceRecord,
+  type AttendanceRecord,
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { Student } from "@/pages/students/StudentForm";
@@ -30,6 +33,7 @@ interface PersonOption {
 }
 
 interface AddAbsenceDialogProps {
+  initial?: AttendanceRecord;
   onSaved: () => void;
   onClose: () => void;
 }
@@ -47,17 +51,23 @@ function nowTime(): string {
 }
 
 export default function AddAbsenceDialog({
+  initial,
   onSaved,
   onClose,
 }: AddAbsenceDialogProps) {
-  const [type, setType] = useState<"student" | "teacher">("student");
+  const [type, setType] = useState<"student" | "teacher">(
+    initial?.type ?? "student",
+  );
   const [people, setPeople] = useState<PersonOption[]>([]);
-  const [personName, setPersonName] = useState("");
-  const [className, setClassName] = useState("");
-  const [date, setDate] = useState(todayLocal);
-  const [time, setTime] = useState(nowTime);
+  const [trainings, setTrainings] = useState<string[]>([]);
+  const [personName, setPersonName] = useState(initial?.fullName ?? "");
+  const [className, setClassName] = useState(initial?.className ?? "");
+  const [date, setDate] = useState(initial?.date || todayLocal);
+  const [time, setTime] = useState(initial?.time ?? nowTime);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isEditing = initial !== undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -66,7 +76,7 @@ export default function AddAbsenceDialog({
         ? listStudents().then((students) =>
             students.map((s: Student) => ({
               name: s.fullName,
-              className: [s.training, s.program].filter(Boolean).join(" · "),
+              className: s.training || s.program,
             })),
           )
         : listTeachers().then((teachers) =>
@@ -75,9 +85,13 @@ export default function AddAbsenceDialog({
               className: t.specialty,
             })),
           );
-    load
-      .then((options) => {
-        if (!cancelled) setPeople(options);
+    Promise.all([load, listTrainings()])
+      .then(([options, trainingRows]) => {
+        if (cancelled) return;
+        setPeople(options);
+        setTrainings([
+          ...new Set(trainingRows.map((t) => t.name).filter(Boolean)),
+        ]);
       })
       .catch(() => {});
     return () => {
@@ -85,35 +99,49 @@ export default function AddAbsenceDialog({
     };
   }, [type]);
 
+  const classOptions = useMemo(() => {
+    const options = [...trainings];
+    if (className.trim() && !options.includes(className.trim())) {
+      options.unshift(className.trim());
+    }
+    return options;
+  }, [trainings, className]);
+
   const handleTypeChange = (value: string | null) => {
     const next = value === "teacher" ? "teacher" : "student";
-    setType(next);
-    setPersonName("");
-    setClassName("");
-    setPeople([]);
+    if (!isEditing) {
+      setType(next);
+      setPersonName("");
+      setClassName("");
+      setPeople([]);
+      setTrainings([]);
+    }
   };
 
   const handlePersonChange = (value: string | null) => {
     const name = value ?? "";
     setPersonName(name);
     const person = people.find((p) => p.name === name);
-    setClassName(person?.className ?? "");
+    if (person && person.className) setClassName(person.className);
   };
 
   const handleSave = async () => {
     if (!personName.trim() || !date) return;
     setSaving(true);
     setError(null);
+    const input = {
+      type,
+      fullName: personName.trim(),
+      className: className.trim() || null,
+      date,
+      time: time || null,
+    };
     try {
-      await insertAttendanceRecords([
-        {
-          type,
-          fullName: personName.trim(),
-          className: className.trim() || null,
-          date,
-          time: time || null,
-        },
-      ]);
+      if (isEditing && initial) {
+        await updateAttendanceRecord(initial.id, input);
+      } else {
+        await insertAttendanceRecords([input]);
+      }
       onSaved();
       onClose();
     } catch (err) {
@@ -126,7 +154,7 @@ export default function AddAbsenceDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Absence</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit Absence" : "Add Absence"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -135,6 +163,7 @@ export default function AddAbsenceDialog({
             <Select
               value={type}
               onValueChange={handleTypeChange}
+              disabled={isEditing}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -163,6 +192,9 @@ export default function AddAbsenceDialog({
                 />
               </SelectTrigger>
               <SelectContent>
+                {personName && !people.some((p) => p.name === personName) && (
+                  <SelectItem value={personName}>{personName}</SelectItem>
+                )}
                 {people.map((p) => (
                   <SelectItem key={p.name} value={p.name}>
                     {p.name}
@@ -173,13 +205,33 @@ export default function AddAbsenceDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="absence-class">Class Name</Label>
-            <Input
-              id="absence-class"
-              placeholder="Class / program / specialty"
+            <Label>Class Name</Label>
+            <Select
               value={className}
-              onChange={(e) => setClassName(e.target.value)}
-            />
+              onValueChange={(value) => setClassName(value ?? "")}
+              disabled={classOptions.length === 0}
+            >
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    classOptions.length === 0
+                      ? "No trainings defined"
+                      : "Select class or training"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {classOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Loaded from the trainings table; auto-filled when a person is
+              picked.
+            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -213,9 +265,13 @@ export default function AddAbsenceDialog({
           </Button>
           <Button
             onClick={handleSave}
-            disabled={!personName.trim() || !date || saving || people.length === 0}
+            disabled={!personName.trim() || !date || saving}
           >
-            {saving ? "Saving…" : "Save Absence"}
+            {saving
+              ? "Saving…"
+              : isEditing
+                ? "Save Changes"
+                : "Save Absence"}
           </Button>
         </DialogFooter>
       </DialogContent>

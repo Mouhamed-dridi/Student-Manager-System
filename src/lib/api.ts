@@ -1294,6 +1294,34 @@ export async function insertAttendanceRecords(
   if (error) throw new Error(error.message);
 }
 
+/** Updates an existing attendance row in place. */
+export async function updateAttendanceRecord(
+  id: string,
+  input: AttendanceInput,
+): Promise<void> {
+  const { error } = await withTimeout(
+    supabase
+      .from("attendance")
+      .update({
+        type: input.type,
+        full_name: input.fullName,
+        class_name: input.className?.trim() ? input.className.trim() : null,
+        date: input.date || null,
+        time: input.time?.trim() ? input.time.trim() : null,
+      })
+      .eq("id", id),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Permanently deletes a single attendance row. */
+export async function deleteAttendanceRecord(id: string): Promise<void> {
+  const { error } = await withTimeout(
+    supabase.from("attendance").delete().eq("id", id),
+  );
+  if (error) throw new Error(error.message);
+}
+
 // ---------------------------------------------------------------- courses
 
 interface CourseRow {
