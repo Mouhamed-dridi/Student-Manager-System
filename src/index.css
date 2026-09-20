@@ -128,3 +128,38 @@
     @apply font-sans;
     }
 }
+
+@media print {
+  @page {
+    margin: 0;
+    }
+
+  body.receipt-printing * {
+    visibility: hidden;
+    }
+
+  body.receipt-printing #receipt-print-area,
+  body.receipt-printing #receipt-print-area * {
+    visibility: visible;
+    }
+
+  body.receipt-printing #receipt-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 12px;
+    background: #ffffff;
+    color: #171717;
+    box-shadow: none;
+    border: 0;
+    border-radius: 0;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    }
+
+  body.receipt-printing .receipt-no-print {
+    display: none !important;
+    }
+}

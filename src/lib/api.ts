@@ -450,6 +450,8 @@ interface TeacherRow {
   company: string | null;
   location: string | null;
   education: string | null;
+  program: string | null;
+  training: string | null;
   password: string | null;
   blocked: boolean | null;
   is_deleted?: boolean;
@@ -463,6 +465,8 @@ function teacherFromRow(row: TeacherRow): Teacher {
     specialty: row.specialty ?? "",
     phone: row.phone ?? "",
     email: row.email ?? "",
+    program: (row.program ?? undefined) as Teacher["program"],
+    training: row.training ?? undefined,
     jobTitle: row.job_title ?? undefined,
     company: row.company ?? undefined,
     location: row.location ?? undefined,
@@ -479,6 +483,8 @@ async function teacherToRow(teacher: Teacher) {
     specialty: teacher.specialty ?? "",
     phone: teacher.phone,
     email: teacher.email,
+    program: teacher.program ?? null,
+    training: teacher.training ?? null,
     job_title: teacher.jobTitle ?? null,
     company: teacher.company ?? null,
     location: teacher.location ?? null,
@@ -550,6 +556,8 @@ export async function updateTeacherProfile(
     | "company"
     | "location"
     | "education"
+    | "program"
+    | "training"
   >,
 ): Promise<void> {
   const { error } = await withTimeout(
@@ -564,6 +572,8 @@ export async function updateTeacherProfile(
         company: profile.company ?? null,
         location: profile.location ?? null,
         education: profile.education ?? null,
+        program: profile.program ?? null,
+        training: profile.training ?? null,
       })
       .eq("id", id),
   );
@@ -1030,6 +1040,7 @@ export interface TrashCapabilities {
   students: boolean;
   teachers: boolean;
   publications: boolean;
+  attendance: boolean;
 }
 
 let generalTrashCapabilitiesPromise: Promise<TrashCapabilities> | null = null;
@@ -1046,12 +1057,16 @@ async function hasColumn(table: string, column: string): Promise<boolean> {
 export async function generalTrashCapabilities(): Promise<TrashCapabilities> {
   if (!generalTrashCapabilitiesPromise) {
     generalTrashCapabilitiesPromise = (async () => {
-      const [students, teachers, publications] = await Promise.all([
+      const [students, teachers, publications, attendance] = await Promise.all([
         Promise.all([hasColumn("students", "is_deleted"), hasColumn("students", "deleted_at")]),
         Promise.all([hasColumn("teachers", "is_deleted"), hasColumn("teachers", "deleted_at")]),
         Promise.all([
           hasColumn("publications", "is_deleted"),
           hasColumn("publications", "deleted_at"),
+        ]),
+        Promise.all([
+          hasColumn("attendance", "is_deleted"),
+          hasColumn("attendance", "deleted_at"),
         ]),
       ]);
       const and = (flags: boolean[]) => flags.every(Boolean);
@@ -1059,8 +1074,14 @@ export async function generalTrashCapabilities(): Promise<TrashCapabilities> {
         students: and(students),
         teachers: and(teachers),
         publications: and(publications),
+        attendance: and(attendance),
       };
-    })().catch(() => ({ students: false, teachers: false, publications: false }));
+    })().catch(() => ({
+      students: false,
+      teachers: false,
+      publications: false,
+      attendance: false,
+    }));
   }
   return generalTrashCapabilitiesPromise;
 }
@@ -1071,11 +1092,13 @@ const generalTrashKey = (table: string, id: string) => `${table}:${id}`;
 
 /** One row in the general Trash page, built across all trashable tables. */
 export interface TrashItem {
-  table: "students" | "teachers" | "publications";
+  table: "students" | "teachers" | "publications" | "attendance";
   id: string;
   name: string;
   detail: string;
   deletedAt: string | null;
+  /** For attendance rows: whether the absent person was a student or teacher. */
+  personType?: "student" | "teacher";
 }
 
 /** Every soft-deleted row from the trashable tables, newest first. */
@@ -1198,6 +1221,72 @@ const p = (
     }
   }
 
+  if (capabilities.attendance) {
+    const { data, error } = await withTimeout(
+      supabase
+        .from("attendance")
+        .select("id, type, full_name, program, training, class_name, deleted_at")
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false }),
+    );
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      const a = row as {
+        id: string;
+        type: "student" | "teacher";
+        full_name: string;
+        program: string | null;
+        training: string | null;
+        class_name: string | null;
+        deleted_at?: string | null;
+      };
+      items.push({
+        table: "attendance",
+        id: a.id,
+        name: a.full_name,
+        detail:
+          [a.program, a.training].filter(Boolean).join(" - ") ||
+          a.class_name ||
+          "—",
+        personType: a.type,
+        deletedAt: a.deleted_at ?? null,
+      });
+    }
+  } else {
+    for (const [key, deletedAt] of localGeneralTrashDeletedAt) {
+      if (!key.startsWith("attendance:")) continue;
+      const id = key.slice("attendance:".length);
+      const a = (
+        await withTimeout(
+          supabase
+            .from("attendance")
+            .select("id, type, full_name, program, training, class_name")
+            .eq("id", id)
+            .maybeSingle(),
+        )
+      ).data as {
+        id: string;
+        type: "student" | "teacher";
+        full_name: string;
+        program: string | null;
+        training: string | null;
+        class_name: string | null;
+      } | null;
+      if (a)
+        items.push({
+          table: "attendance",
+          id,
+          name: a.full_name,
+          detail:
+            [a.program, a.training].filter(Boolean).join(" - ") ||
+            a.class_name ||
+            "—",
+          personType: a.type,
+          deletedAt,
+        });
+    }
+  }
+
   items.sort((a, b) => (b.deletedAt ?? "").localeCompare(a.deletedAt ?? ""));
   return { items, capabilities };
 }
@@ -1209,6 +1298,8 @@ export interface AttendanceRecord {
   type: "student" | "teacher";
   fullName: string;
   className: string | null;
+  program: string | null;
+  training: string | null;
   date: string;
   time: string | null;
 }
@@ -1218,11 +1309,13 @@ interface AttendanceRow {
   type: "student" | "teacher";
   full_name: string;
   class_name: string | null;
+  program: string | null;
+  training: string | null;
   date: string;
   time: string | null;
 }
 
-const ATTENDANCE_SELECT = "id, type, full_name, class_name, date, time";
+const ATTENDANCE_SELECT = "id, type, full_name, class_name, program, training, date, time";
 
 function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
   return {
@@ -1230,43 +1323,116 @@ function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
     type: row.type,
     fullName: row.full_name,
     className: row.class_name,
+    program: row.program,
+    training: row.training,
     date: row.date,
     time: row.time,
   };
 }
 
 /**
- * All attendance log rows, newest date/time first. No filters are applied
- * here; the page renders every row returned by Supabase and filters the
- * rendered rows client-side by name/class.
+ * All attendance log rows, newest date/time first. Program/training are
+ * resolved from the students/teachers tables when a row lacks them, so the
+ * grid never shows dashes for records written before those columns existed.
  */
 export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
-  const { data, error } = await withTimeout(
-    supabase
-      .from("attendance")
-      .select(ATTENDANCE_SELECT)
-      .order("date", { ascending: false })
-      .order("time", { ascending: false }),
-  );
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.attendance
+    ? await withTimeout(
+        supabase
+          .from("attendance")
+          .select(ATTENDANCE_SELECT)
+          .or("is_deleted.is.false,is_deleted.is.null")
+          .order("date", { ascending: false })
+          .order("time", { ascending: false }),
+      )
+    : await withTimeout(
+        supabase
+          .from("attendance")
+          .select(ATTENDANCE_SELECT)
+          .order("date", { ascending: false })
+          .order("time", { ascending: false }),
+      );
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
+  let records = (data ?? []).map((row) =>
+    attendanceFromRow(row as AttendanceRow),
+  );
+  if (!capabilities.attendance) {
+    records = records.filter(
+      (a) => !localGeneralTrashDeletedAt.has(generalTrashKey("attendance", a.id)),
+    );
+  }
+  return enrichAttendancePrograms(records);
+}
+
+/**
+ * Backfills program/training (and class_name) for attendance rows that were
+ * saved before those columns existed by looking up the person's own record.
+ */
+async function enrichAttendancePrograms(
+  records: AttendanceRecord[],
+): Promise<AttendanceRecord[]> {
+  if (!records.some((r) => !r.program || !r.training)) return records;
+  const [students, teachers] = await Promise.all([listStudents(), listTeachers()]);
+  const studentByLowerName = new Map<string, Student>();
+  for (const s of students) studentByLowerName.set(s.fullName.toLowerCase(), s);
+  const teacherByLowerName = new Map<string, Teacher>();
+  for (const t of teachers) teacherByLowerName.set(t.fullName.toLowerCase(), t);
+  return records.map((r) => {
+    if (r.type === "student") {
+      const s = studentByLowerName.get(r.fullName.toLowerCase());
+      if (!s) return r;
+      return {
+        ...r,
+        program: r.program ?? s.program ?? null,
+        training: r.training ?? s.training ?? null,
+        className: r.className ?? s.training ?? null,
+      };
+    }
+    const t = teacherByLowerName.get(r.fullName.toLowerCase());
+    if (!t) return r;
+    return {
+      ...r,
+      program: r.program ?? t.program ?? null,
+      training: r.training ?? t.training ?? null,
+      className: r.className ?? t.specialty ?? null,
+    };
+  });
 }
 
 /** A student's own attendance history (type=student), newest date first. */
 export async function loadStudentAttendance(
   fullName: string,
 ): Promise<AttendanceRecord[]> {
-  const { data, error } = await withTimeout(
-    supabase
-      .from("attendance")
-      .select(ATTENDANCE_SELECT)
-      .eq("type", "student")
-      .eq("full_name", fullName)
-      .order("date", { ascending: false })
-      .order("time", { ascending: false }),
-  );
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.attendance
+    ? await withTimeout(
+        supabase
+          .from("attendance")
+          .select(ATTENDANCE_SELECT)
+          .eq("type", "student")
+          .eq("full_name", fullName)
+          .or("is_deleted.is.false,is_deleted.is.null")
+          .order("date", { ascending: false })
+          .order("time", { ascending: false }),
+      )
+    : await withTimeout(
+        supabase
+          .from("attendance")
+          .select(ATTENDANCE_SELECT)
+          .eq("type", "student")
+          .eq("full_name", fullName)
+          .order("date", { ascending: false })
+          .order("time", { ascending: false }),
+      );
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
+  let rows = (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
+  if (!capabilities.attendance) {
+    rows = rows.filter(
+      (a) => !localGeneralTrashDeletedAt.has(generalTrashKey("attendance", a.id)),
+    );
+  }
+  return rows;
 }
 
 /** Shape accepted for writing attendance rows (modal + Excel import). */
@@ -1274,8 +1440,78 @@ export interface AttendanceInput {
   type: "student" | "teacher";
   fullName: string;
   className?: string | null;
+  program?: string | null;
+  training?: string | null;
   date: string;
   time?: string | null;
+}
+
+interface AttendanceWriteRow {
+  type: "student" | "teacher";
+  full_name: string;
+  class_name: string;
+  program: string | null;
+  training: string | null;
+  date: string | null;
+  time: string | null;
+}
+
+interface AttendancePersonFallback {
+  program: string | null;
+  training: string | null;
+  classFallback: string | null;
+}
+
+/**
+ * Builds a lookup of program/training/class fallbacks for every person whose
+ * attendance rows are missing them, so writes never leave the columns NULL
+ * when the person's students/teachers record carries the values.
+ */
+async function resolveAttendancePeople(
+  records: AttendanceInput[],
+): Promise<Map<string, AttendancePersonFallback>> {
+  const needed = records.some((r) => !r.program?.trim() || !r.training?.trim());
+  if (!needed) return new Map();
+  const [students, teachers] = await Promise.all([listStudents(), listTeachers()]);
+  const people = new Map<string, AttendancePersonFallback>();
+  for (const s of students) {
+    people.set(`student:${s.fullName.toLowerCase()}`, {
+      program: s.program ?? null,
+      training: s.training ?? null,
+      classFallback: s.training ?? null,
+    });
+  }
+  for (const t of teachers) {
+    people.set(`teacher:${t.fullName.toLowerCase()}`, {
+      program: t.program ?? null,
+      training: t.training ?? null,
+      classFallback: t.specialty ?? null,
+    });
+  }
+  return people;
+}
+
+async function attendanceToWriteRows(
+  records: AttendanceInput[],
+): Promise<AttendanceWriteRow[]> {
+  const people = await resolveAttendancePeople(records);
+  return records.map((r) => {
+    const person = people.get(`${r.type}:${r.fullName.toLowerCase()}`);
+    const program = r.program?.trim() || person?.program?.trim() || null;
+    const training = r.training?.trim() || person?.training?.trim() || null;
+    return {
+      type: r.type,
+      full_name: r.fullName,
+      // class_name is NOT NULL in live deployments — always supply a value so
+      // inserts never fail on the constraint (default matches existing rows).
+      class_name:
+        r.className?.trim() || training || program || person?.classFallback || "General",
+      program,
+      training,
+      date: r.date || null,
+      time: r.time?.trim() ? r.time.trim() : null,
+    };
+  });
 }
 
 /** Writes attendance rows straight into the attendance table. */
@@ -1283,13 +1519,7 @@ export async function insertAttendanceRecords(
   records: AttendanceInput[],
 ): Promise<void> {
   if (records.length === 0) return;
-  const rows = records.map((r) => ({
-    type: r.type,
-    full_name: r.fullName,
-    class_name: r.className?.trim() ? r.className.trim() : null,
-    date: r.date || null,
-    time: r.time?.trim() ? r.time.trim() : null,
-  }));
+  const rows = await attendanceToWriteRows(records);
   const { error } = await withTimeout(supabase.from("attendance").insert(rows));
   if (error) throw new Error(error.message);
 }
@@ -1299,25 +1529,56 @@ export async function updateAttendanceRecord(
   id: string,
   input: AttendanceInput,
 ): Promise<void> {
+  const [row] = await attendanceToWriteRows([input]);
   const { error } = await withTimeout(
-    supabase
-      .from("attendance")
-      .update({
-        type: input.type,
-        full_name: input.fullName,
-        class_name: input.className?.trim() ? input.className.trim() : null,
-        date: input.date || null,
-        time: input.time?.trim() ? input.time.trim() : null,
-      })
-      .eq("id", id),
+    supabase.from("attendance").update(row).eq("id", id),
   );
   if (error) throw new Error(error.message);
 }
 
-/** Permanently deletes a single attendance row. */
-export async function deleteAttendanceRecord(id: string): Promise<void> {
+/** Soft-deletes: moves rows to the general Trash when the columns exist. */
+export async function softDeleteAttendance(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.attendance) {
+    const now = new Date().toISOString();
+    for (const id of ids)
+      localGeneralTrashDeletedAt.set(generalTrashKey("attendance", id), now);
+    return;
+  }
+  const now = new Date().toISOString();
   const { error } = await withTimeout(
-    supabase.from("attendance").delete().eq("id", id),
+    supabase
+      .from("attendance")
+      .update({ is_deleted: true, deleted_at: now })
+      .in("id", ids),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Restores soft-deleted attendance rows back to the active log. */
+export async function restoreAttendance(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const capabilities = await generalTrashCapabilities();
+  if (!capabilities.attendance) {
+    for (const id of ids)
+      localGeneralTrashDeletedAt.delete(generalTrashKey("attendance", id));
+    return;
+  }
+  const { error } = await withTimeout(
+    supabase
+      .from("attendance")
+      .update({ is_deleted: false, deleted_at: null })
+      .in("id", ids),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Permanent delete: destroys rows immediately (used by the Trash page). */
+export async function hardDeleteAttendance(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await withTimeout(
+    supabase.from("attendance").delete().in("id", ids),
   );
   if (error) throw new Error(error.message);
 }

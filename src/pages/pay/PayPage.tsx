@@ -21,6 +21,7 @@ import {
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
+  getSystemName,
   insertPayments,
   listPayments,
   listStudents,
@@ -30,10 +31,13 @@ import {
 import type { Student } from "@/pages/students/StudentForm";
 import PaymentForm, { type Payment } from "./PaymentForm";
 import PaymentList from "./PaymentList";
+import PaymentReceiptModal from "./PaymentReceiptModal";
 
 export default function PayPage() {
   const [students, setStudents] = useState<Student[] | null>(null);
   const [payments, setPayments] = useState<Payment[] | null>(null);
+  const [centerName, setCenterName] = useState("SSM");
+  const [receiptTarget, setReceiptTarget] = useState<Payment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Payment | null>(null);
@@ -41,10 +45,11 @@ export default function PayPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([listStudents(), listPayments()])
-      .then(([nextStudents, nextPayments]) => {
+    Promise.all([listStudents(), listPayments(), getSystemName()])
+      .then(([nextStudents, nextPayments, nextName]) => {
         setStudents(nextStudents);
         setPayments(nextPayments);
+        setCenterName(nextName);
       })
       .catch((err) => setError(errorMessage(err)));
   }, []);
@@ -122,6 +127,7 @@ export default function PayPage() {
             payments={paymentsWithNames ?? []}
             onEdit={setEditing}
             onDelete={setDeleteTarget}
+            onPrint={setReceiptTarget}
           />
         )}
       </div>
@@ -190,6 +196,17 @@ export default function PayPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    {students && receiptTarget && (
+        <PaymentReceiptModal
+          payment={receiptTarget}
+          student={
+            students.find((s) => s.id === receiptTarget.studentId) ?? undefined
+          }
+          centerName={centerName}
+          open={receiptTarget !== null}
+          onClose={() => setReceiptTarget(null)}
+        />
+      )}
     </div>
   );
 }

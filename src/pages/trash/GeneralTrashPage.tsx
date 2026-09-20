@@ -23,10 +23,12 @@ import {
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
+  hardDeleteAttendance,
   hardDeletePublication,
   hardDeleteStudents,
   hardDeleteTeachers,
   listGeneralTrash,
+  restoreAttendance,
   restorePublication,
   restoreStudents,
   restoreTeachers,
@@ -34,7 +36,7 @@ import {
   type TrashItem,
 } from "@/lib/api";
 
-const TYPE_LABELS: Record<TrashItem["table"], string> = {
+const TYPE_LABELS: Record<Exclude<TrashItem["table"], "attendance">, string> = {
   students: "Student",
   teachers: "Teacher",
   publications: "Publication",
@@ -91,10 +93,14 @@ export default function GeneralTrashPage() {
       if (action === "restore") {
         if (target.table === "students") await restoreStudents([target.id]);
         else if (target.table === "teachers") await restoreTeachers([target.id]);
+        else if (target.table === "attendance")
+          await restoreAttendance([target.id]);
         else await restorePublication(target.id);
       } else {
         if (target.table === "students") await hardDeleteStudents([target.id]);
         else if (target.table === "teachers") await hardDeleteTeachers([target.id]);
+        else if (target.table === "attendance")
+          await hardDeleteAttendance([target.id]);
         else await hardDeletePublication(target.id);
       }
       setData(await load());
@@ -108,7 +114,12 @@ export default function GeneralTrashPage() {
   };
 
   const supportedModules = data
-    ? [data.capabilities.students, data.capabilities.teachers, data.capabilities.publications]
+    ? [
+        data.capabilities.students,
+        data.capabilities.teachers,
+        data.capabilities.publications,
+        data.capabilities.attendance,
+      ]
     : [];
   const noneSupported = data !== null && supportedModules.every((v) => !v);
 
@@ -118,8 +129,8 @@ export default function GeneralTrashPage() {
         <h2 className="text-2xl font-semibold">Trash</h2>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Deleted students, teachers and publications are kept here for recovery.
-        Restore an item or permanently delete it.
+        Deleted students, teachers, publications and absences are kept here for
+        recovery. Restore an item or permanently delete it.
       </p>
 
       <div className="mt-4">{error && <DataError message={error} />}</div>
@@ -140,7 +151,7 @@ export default function GeneralTrashPage() {
         ) : filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             {noneSupported
-              ? "Trash is not available on this database — the students/teachers/publications tables have no is_deleted/deleted_at columns, so deletions are only tracked for the current session."
+              ? "Trash is not available on this database — the students/teachers/publications/attendance tables have no is_deleted/deleted_at columns, so deletions are only tracked for the current session."
               : data.items.length === 0
                 ? "The trash is empty."
                 : "No items match your search."}
@@ -160,9 +171,21 @@ export default function GeneralTrashPage() {
               {filtered.map((item) => (
                 <TableRow key={`${item.table}-${item.id}`}>
                   <TableCell>
-                    <span className="text-xs font-medium text-muted-foreground uppercase">
-                      {TYPE_LABELS[item.table]}
-                    </span>
+                    {item.table === "attendance" ? (
+                      <span
+                        className={
+                          item.personType === "teacher"
+                            ? "inline-flex rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-400"
+                            : "inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400"
+                        }
+                      >
+                        {item.personType === "teacher" ? "Teacher" : "Student"}
+                      </span>
+                    ) : (
+                      <span className="text-xs font-medium text-muted-foreground uppercase">
+                        {TYPE_LABELS[item.table]}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="font-medium">{item.name}</TableCell>
                   <TableCell>{item.detail || "—"}</TableCell>

@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { listPrograms, listTrainings } from "@/lib/api";
 import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Teacher {
@@ -10,6 +18,8 @@ export interface Teacher {
   specialty: string;
   phone: string;
   email: string;
+  program?: "BTP" | "BTS" | "CAP";
+  training?: string;
   jobTitle?: string;
   company?: string;
   location?: string;
@@ -31,6 +41,10 @@ export default function TeacherForm({
 }: TeacherFormProps) {
   const [fullName, setFullName] = useState(initialData?.fullName ?? "");
   const [specialty, setSpecialty] = useState(initialData?.specialty ?? "");
+  const [program, setProgram] = useState<string | null>(
+    initialData?.program ?? null,
+  );
+  const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
   const [jobTitle, setJobTitle] = useState(initialData?.jobTitle ?? "");
@@ -41,6 +55,44 @@ export default function TeacherForm({
     initialData?.password ?? DEFAULT_TEACHER_PASSWORD,
   );
 
+  const [programOptions, setProgramOptions] = useState<
+    { id: string; code: string }[]
+  >([]);
+  const [allTrainings, setAllTrainings] = useState<
+    { id: string; name: string; programId: string }[]
+  >([]);
+
+  useEffect(() => {
+    listPrograms().then(setProgramOptions).catch(() => {});
+    listTrainings()
+      .then((rows) =>
+        setAllTrainings(
+          rows.map((r) => ({ id: r.id, name: r.name, programId: r.program_id })),
+        ),
+      )
+      .catch(() => {});
+  }, []);
+
+  const selectedProgramId = useMemo(
+    () => programOptions.find((p) => p.code === program)?.id,
+    [program, programOptions],
+  );
+
+  const trainingOptions = useMemo(
+    () =>
+      selectedProgramId
+        ? allTrainings
+            .filter((t) => t.programId === selectedProgramId)
+            .map((t) => t.name)
+        : allTrainings.map((t) => t.name),
+    [selectedProgramId, allTrainings],
+  );
+
+  const handleProgramChange = (value: string | null) => {
+    setProgram(value);
+    setTraining("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!specialty.trim()) return;
@@ -48,6 +100,8 @@ export default function TeacherForm({
       id: initialData?.id ?? crypto.randomUUID(),
       fullName,
       specialty: specialty.trim(),
+      program: (program as Teacher["program"]) ?? undefined,
+      training: training || undefined,
       phone,
       email,
       jobTitle: jobTitle.trim() || undefined,
@@ -86,6 +140,50 @@ export default function TeacherForm({
           onChange={(e) => setSpecialty(e.target.value)}
           required
         />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Program</Label>
+          <Select value={program} onValueChange={handleProgramChange}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select program" />
+            </SelectTrigger>
+            <SelectContent>
+              {programOptions.map((p) => (
+                <SelectItem key={p.id} value={p.code}>
+                  {p.code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Training</Label>
+          <Select
+            value={training}
+            onValueChange={(value) => setTraining(value ?? "")}
+            disabled={trainingOptions.length === 0}
+          >
+            <SelectTrigger>
+              <SelectValue
+                placeholder={
+                  trainingOptions.length === 0
+                    ? "No trainings yet"
+                    : "Select training"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {trainingOptions.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="space-y-2">

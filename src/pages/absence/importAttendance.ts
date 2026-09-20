@@ -6,7 +6,14 @@ export interface AttendanceImportResult {
   skipped: number;
 }
 
-type Field = "type" | "fullname" | "classname" | "date" | "time";
+type Field =
+  | "type"
+  | "fullname"
+  | "classname"
+  | "program"
+  | "training"
+  | "date"
+  | "time";
 
 const HEADER_MAP: Record<string, Field> = {
   type: "type",
@@ -16,6 +23,9 @@ const HEADER_MAP: Record<string, Field> = {
   classname: "classname",
   class: "classname",
   classroom: "classname",
+  program: "program",
+  training: "training",
+  formation: "training",
   date: "date",
   day: "date",
   time: "time",
@@ -108,6 +118,8 @@ export async function parseAttendanceFile(
       type,
       fullName,
       className: record.get("classname"),
+      program: record.get("program"),
+      training: record.get("training"),
       date,
       time: record.get("time"),
     });

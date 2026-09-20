@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import {
   insertAttendanceRecords,
+  listPrograms,
   listStudents,
   listTeachers,
   listTrainings,
@@ -27,9 +28,22 @@ import {
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { Student } from "@/pages/students/StudentForm";
 
+const PROGRAMS = ["BTP", "BTS", "CAP"] as const;
+
+interface ProgramOption {
+  id: string;
+  code: string;
+}
+
+interface TrainingOption {
+  name: string;
+  programId: string;
+}
+
 interface PersonOption {
   name: string;
-  className: string;
+  program: string;
+  training: string;
 }
 
 interface AddAbsenceDialogProps {
@@ -59,9 +73,11 @@ export default function AddAbsenceDialog({
     initial?.type ?? "student",
   );
   const [people, setPeople] = useState<PersonOption[]>([]);
-  const [trainings, setTrainings] = useState<string[]>([]);
+  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
+  const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
   const [personName, setPersonName] = useState(initial?.fullName ?? "");
-  const [className, setClassName] = useState(initial?.className ?? "");
+  const [program, setProgram] = useState(initial?.program ?? "");
+  const [training, setTraining] = useState(initial?.training ?? "");
   const [date, setDate] = useState(initial?.date || todayLocal);
   const [time, setTime] = useState(initial?.time ?? nowTime);
   const [saving, setSaving] = useState(false);
@@ -76,22 +92,32 @@ export default function AddAbsenceDialog({
         ? listStudents().then((students) =>
             students.map((s: Student) => ({
               name: s.fullName,
-              className: s.training || s.program,
+              program: s.program,
+              training: s.training,
             })),
           )
         : listTeachers().then((teachers) =>
             teachers.map((t: Teacher) => ({
               name: t.fullName,
-              className: t.specialty,
+              program: t.program ?? "",
+              training: t.training ?? "",
             })),
           );
-    Promise.all([load, listTrainings()])
-      .then(([options, trainingRows]) => {
+    Promise.all([
+      load,
+      listPrograms(),
+      listTrainings(),
+    ])
+      .then(([options, programs, trainings]) => {
         if (cancelled) return;
         setPeople(options);
-        setTrainings([
-          ...new Set(trainingRows.map((t) => t.name).filter(Boolean)),
-        ]);
+        setProgramOptions(programs.map((p) => ({ id: p.id, code: p.code })));
+        setAllTrainings(
+          trainings.map((t) => ({
+            name: t.name,
+            programId: t.program_id,
+          })),
+        );
       })
       .catch(() => {});
     return () => {
@@ -99,30 +125,42 @@ export default function AddAbsenceDialog({
     };
   }, [type]);
 
-  const classOptions = useMemo(() => {
-    const options = [...trainings];
-    if (className.trim() && !options.includes(className.trim())) {
-      options.unshift(className.trim());
+  const selectedProgramId = useMemo(
+    () => programOptions.find((p) => p.code === program)?.id,
+    [program, programOptions],
+  );
+
+  const trainingOptions = useMemo(() => {
+    const options = allTrainings
+      .filter(
+        (t) => !selectedProgramId || t.programId === selectedProgramId,
+      )
+      .map((t) => t.name);
+    if (training.trim() && !options.includes(training.trim())) {
+      options.unshift(training.trim());
     }
-    return options;
-  }, [trainings, className]);
+    return [...new Set(options)];
+  }, [allTrainings, selectedProgramId, training]);
 
   const handleTypeChange = (value: string | null) => {
     const next = value === "teacher" ? "teacher" : "student";
-    if (!isEditing) {
-      setType(next);
-      setPersonName("");
-      setClassName("");
-      setPeople([]);
-      setTrainings([]);
-    }
+    if (isEditing) return;
+    setType(next);
+    setPersonName("");
+    setProgram("");
+    setTraining("");
+    setPeople([]);
   };
 
   const handlePersonChange = (value: string | null) => {
     const name = value ?? "";
     setPersonName(name);
     const person = people.find((p) => p.name === name);
-    if (person && person.className) setClassName(person.className);
+    if (!person) return;
+    // Auto-fill from the selected person's profile, overridable below. For
+    // teachers the values come from their teachers-table record.
+    setProgram(person.program);
+    setTraining(person.training);
   };
 
   const handleSave = async () => {
@@ -132,7 +170,8 @@ export default function AddAbsenceDialog({
     const input = {
       type,
       fullName: personName.trim(),
-      className: className.trim() || null,
+      program: program.trim() || null,
+      training: training.trim() || null,
       date,
       time: time || null,
     };
@@ -204,34 +243,54 @@ export default function AddAbsenceDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Class Name</Label>
-            <Select
-              value={className}
-              onValueChange={(value) => setClassName(value ?? "")}
-              disabled={classOptions.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    classOptions.length === 0
-                      ? "No trainings defined"
-                      : "Select class or training"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {classOptions.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {option}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Loaded from the trainings table; auto-filled when a person is
-              picked.
-            </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Program</Label>
+              <Select
+                value={program}
+                onValueChange={(value) => {
+                  setProgram(value ?? "");
+                  setTraining("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select program" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROGRAMS.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Training</Label>
+              <Select
+                value={training}
+                onValueChange={(value) => setTraining(value ?? "")}
+                disabled={trainingOptions.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      trainingOptions.length === 0
+                        ? "No trainings for this program"
+                        : "Select training"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {trainingOptions.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -255,6 +314,11 @@ export default function AddAbsenceDialog({
               />
             </div>
           </div>
+
+          <p className="text-xs text-muted-foreground">
+            Picking a student or teacher auto-fills their program and training
+            from their profile; you can still override them.
+          </p>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

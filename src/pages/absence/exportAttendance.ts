@@ -6,12 +6,14 @@ export function exportAttendance(records: AttendanceRecord[]): void {
   const rows = records.map((r) => [
     r.type,
     r.fullName,
+    r.program ?? "",
+    r.training ?? "",
     r.className ?? "",
     r.date,
     r.time ?? "",
   ]);
   const worksheet = XLSX.utils.aoa_to_sheet([
-    ["Type", "Full Name", "Class Name", "Date", "Time"],
+    ["Type", "Full Name", "Program", "Training", "Class Name", "Date", "Time"],
     ...rows,
   ]);
   const workbook = XLSX.utils.book_new();

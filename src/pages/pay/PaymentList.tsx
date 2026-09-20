@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Pencil, Search, Trash2 } from "lucide-react";
+import { Pencil, Printer, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,6 +16,7 @@ interface PaymentListProps {
   payments: Payment[];
   onEdit: (payment: Payment) => void;
   onDelete: (payment: Payment) => void;
+  onPrint: (payment: Payment) => void;
 }
 
 const PLAN_LABELS: Record<Payment["planType"], string> = {
@@ -32,6 +33,7 @@ export default function PaymentList({
   payments,
   onEdit,
   onDelete,
+  onPrint,
 }: PaymentListProps) {
   const [search, setSearch] = useState("");
 
@@ -94,6 +96,15 @@ export default function PaymentList({
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Print receipt"
+                      aria-label={`Print receipt for ${p.studentName}`}
+                      onClick={() => onPrint(p)}
+                    >
+                      <Printer className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

@@ -59,7 +59,9 @@ alter table if exists public.teachers
   add column if not exists job_title text,
   add column if not exists company text,
   add column if not exists location text,
-  add column if not exists education text;
+  add column if not exists education text,
+  add column if not exists program text,
+  add column if not exists training text;
 
 -- -------------------------------------------------------------- payments ---
 -- One row per recorded payment. Student details are not snapshotted here;
@@ -129,6 +131,14 @@ create table if not exists public.attendance (
   time text,
   created_at timestamptz not null default now()
 );
+
+-- Program/training tracking and shared-trash support for absences
+-- (idempotent: databases that already carry these columns keep them untouched).
+alter table if exists public.attendance
+  add column if not exists program text,
+  add column if not exists training text,
+  add column if not exists is_deleted boolean not null default false,
+  add column if not exists deleted_at timestamptz;
 
 create index if not exists attendance_log_idx
   on public.attendance (date, full_name);

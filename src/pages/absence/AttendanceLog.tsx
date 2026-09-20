@@ -39,7 +39,9 @@ export default function AttendanceLog({
           (r) =>
             query === "" ||
             r.fullName.toLowerCase().includes(query) ||
-            (r.className ?? "").toLowerCase().includes(query),
+            (r.className ?? "").toLowerCase().includes(query) ||
+            (r.program ?? "").toLowerCase().includes(query) ||
+            (r.training ?? "").toLowerCase().includes(query),
         );
 
   return (
@@ -70,7 +72,8 @@ export default function AttendanceLog({
             <TableRow>
               <TableHead className="w-28">Type</TableHead>
               <TableHead>Full Name</TableHead>
-              <TableHead>Class / Program / Specialty</TableHead>
+              <TableHead className="w-24">Program</TableHead>
+              <TableHead>Training</TableHead>
               <TableHead className="w-36">Date</TableHead>
               <TableHead className="w-28">Time</TableHead>
               <TableHead className="w-24">Actions</TableHead>
@@ -91,7 +94,8 @@ export default function AttendanceLog({
                   </span>
                 </TableCell>
                 <TableCell>{r.fullName}</TableCell>
-                <TableCell>{r.className?.trim() ? r.className : "—"}</TableCell>
+                <TableCell>{r.program?.trim() ? r.program : "—"}</TableCell>
+                <TableCell>{r.training?.trim() ? r.training : "—"}</TableCell>
                 <TableCell>{r.date}</TableCell>
                 <TableCell>{r.time ?? "—"}</TableCell>
                 <TableCell>
@@ -118,11 +122,12 @@ export default function AttendanceLog({
                       />
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Delete attendance record?</AlertDialogTitle>
+                          <AlertDialogTitle>Move to Trash?</AlertDialogTitle>
                           <AlertDialogDescription>
                             {r.fullName} on {r.date}
-                            {r.time ? ` at ${r.time}` : ""} will be permanently
-                            removed from the attendance log.
+                            {r.time ? ` at ${r.time}` : ""} will move to the Trash,
+                            where you can restore it later or delete it
+                            permanently.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

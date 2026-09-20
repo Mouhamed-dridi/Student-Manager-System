@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  deleteAttendanceRecord,
   errorMessage,
   insertAttendanceRecords,
   loadAttendanceRecords,
+  softDeleteAttendance,
   type AttendanceRecord,
 } from "@/lib/api";
 import AttendanceLog from "./AttendanceLog";
@@ -54,9 +54,9 @@ export default function AbsencePage() {
   const handleDelete = async (id: string) => {
     try {
       setError(null);
-      await deleteAttendanceRecord(id);
+      await softDeleteAttendance([id]);
       await refresh();
-      setSummary("Attendance record deleted.");
+      setSummary("Attendance record moved to the Trash.");
     } catch (err) {
       setError(errorMessage(err));
     }
