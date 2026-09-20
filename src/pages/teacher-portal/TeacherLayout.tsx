@@ -7,6 +7,7 @@ import MyCoursesPage from "./MyCoursesPage";
 import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
+import UserAvatar from "@/components/UserAvatar";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
@@ -106,9 +107,12 @@ export default function TeacherLayout() {
               "Teacher Portal"
             )}
           </span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            Logout
-          </Button>
+          <div className="flex items-center gap-3">
+            <UserAvatar name={teacher?.fullName} fallback="T" />
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
         </header>
 
         {/* Content */}

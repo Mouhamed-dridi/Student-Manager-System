@@ -12,6 +12,7 @@ import CoursesPage from "./CoursesPage";
 import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
+import UserAvatar from "@/components/UserAvatar";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
@@ -112,9 +113,12 @@ export default function StudentLayout() {
               "Student Portal"
             )}
           </span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            Logout
-          </Button>
+          <div className="flex items-center gap-3">
+            <UserAvatar name={student?.fullName} fallback="S" />
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
         </header>
 
         {/* Content */}

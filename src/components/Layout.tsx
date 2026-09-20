@@ -27,6 +27,7 @@ import PublicationsPage from "@/pages/publications/PublicationsPage";
 import UserManagementPage from "@/pages/users/UserManagementPage";
 import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
+import UserAvatar from "@/components/UserAvatar";
 import { clearSession } from "@/lib/session";
 import { getSystemName } from "@/lib/api";
 
@@ -193,9 +194,12 @@ export default function Layout() {
           <span className="text-sm font-medium text-muted-foreground">
             {systemName === "SSM" ? "Student Manager System" : systemName}
           </span>
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            Logout
-          </Button>
+          <div className="flex items-center gap-3">
+            <UserAvatar name="Admin" fallback="A" />
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
         </header>
 
         {/* Content */}
