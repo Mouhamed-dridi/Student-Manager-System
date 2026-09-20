@@ -21,9 +21,25 @@ export interface Student {
   trainingId?: string;
   phone: string;
   email: string;
+  location?: string;
+  education?: string;
+  age?: number;
+  engagement?: string;
   password?: string;
   blocked?: boolean;
 }
+
+const EDUCATION_OPTIONS = [
+  "Bac",
+  "Master",
+  "Licence",
+  "Engineer",
+  "1an",
+  "2an",
+  "9anne",
+];
+
+const ENGAGEMENT_OPTIONS = ["New Student", "Second Year"];
 
 interface ProgramOption {
   id: string;
@@ -54,6 +70,12 @@ export default function StudentForm({
   const [training, setTraining] = useState(initialData?.training ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
+  const [location, setLocation] = useState(initialData?.location ?? "");
+  const [education, setEducation] = useState(initialData?.education ?? "");
+  const [age, setAge] = useState(
+    initialData?.age ? String(initialData.age) : "",
+  );
+  const [engagement, setEngagement] = useState(initialData?.engagement ?? "");
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
@@ -88,6 +110,7 @@ export default function StudentForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!program || !training) return;
+    const parsedAge = age.trim() === "" ? undefined : Math.round(Number(age));
     onSave({
       id: initialData?.id ?? crypto.randomUUID(),
       fullName,
@@ -95,6 +118,10 @@ export default function StudentForm({
       training,
       phone,
       email,
+      location: location.trim() || undefined,
+      education: education || undefined,
+      age: Number.isFinite(parsedAge) ? parsedAge : undefined,
+      engagement: engagement || undefined,
       // New students start with the default password; edits leave login
       // data untouched (StudentsPage merge-preserves it).
       ...(initialData ? { password: DEFAULT_STUDENT_PASSWORD } : {}),
@@ -174,6 +201,68 @@ export default function StudentForm({
           onChange={(e) => setEmail(e.target.value)}
           required
         />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="location">Location</Label>
+          <Input
+            id="location"
+            placeholder="City or address"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="age">Age</Label>
+          <Input
+            id="age"
+            type="number"
+            min={1}
+            placeholder="Age"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Education</Label>
+          <Select
+            value={education}
+            onValueChange={(value) => setEducation(value ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select education level" />
+            </SelectTrigger>
+            <SelectContent>
+              {EDUCATION_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Engagement</Label>
+          <Select
+            value={engagement}
+            onValueChange={(value) => setEngagement(value ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select engagement" />
+            </SelectTrigger>
+            <SelectContent>
+              {ENGAGEMENT_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="flex gap-2">

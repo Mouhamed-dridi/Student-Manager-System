@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,30 +10,20 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
-import {
-  errorMessage,
-  loadAttendanceRecords,
-  type AttendanceRecord,
-} from "@/lib/api";
+import type { AttendanceRecord } from "@/lib/api";
 
-export default function AttendanceLog() {
-  const [records, setRecords] = useState<AttendanceRecord[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+interface AttendanceLogProps {
+  records: AttendanceRecord[] | null;
+  error: string | null;
+  loading: boolean;
+}
+
+export default function AttendanceLog({
+  records,
+  error,
+  loading,
+}: AttendanceLogProps) {
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    loadAttendanceRecords()
-      .then((rows) => {
-        if (!cancelled) setRecords(rows);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(errorMessage(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const query = search.trim().toLowerCase();
   const filtered =
@@ -60,8 +50,8 @@ export default function AttendanceLog() {
 
       {error && <DataError message={error} />}
 
-      {records === null ? (
-        !error && <DataLoading label="Loading attendance…" />
+      {loading ? (
+        <DataLoading label="Loading attendance…" />
       ) : filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {query !== ""

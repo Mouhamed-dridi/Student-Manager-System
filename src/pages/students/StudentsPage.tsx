@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
+  importStudentRecords,
   insertStudents,
   listStudents,
   softDeleteStudents,
@@ -15,6 +16,7 @@ import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 import StudentForm, { type Student } from "./StudentForm";
 import { parseStudentFile, type ImportResult } from "./importStudents";
+import { exportStudents } from "./exportStudents";
 import StudentImportPreview from "./StudentImportPreview";
 import StudentListView from "./StudentListView";
 
@@ -124,21 +126,38 @@ export default function StudentsPage() {
 
   const handleConfirmImport = async () => {
     if (!pendingImport) return;
-    const { students: imported, skipped } = pendingImport;
-    // Imported students start with the default login password.
+    const { students: imported, skipped: invalid } = pendingImport;
+    // Imported students start with the default login password; the import
+    // writer only touches profile fields on existing records, so updates
+    // never overwrite existing passwords.
     const withLogins = imported.map((s) => ({
       ...s,
       password: DEFAULT_STUDENT_PASSWORD,
     }));
     try {
       setError(null);
-      await insertStudents(withLogins);
+      const summary = await importStudentRecords(withLogins, students ?? []);
       await refresh();
-      setImportSummary(
-        skipped > 0
-          ? `Imported ${withLogins.length} student${withLogins.length === 1 ? "" : "s"}, skipped ${skipped} row${skipped === 1 ? "" : "s"} with missing or invalid data.`
-          : `Imported ${withLogins.length} student${withLogins.length === 1 ? "" : "s"}.`,
-      );
+
+      const parts: string[] = [
+        `Imported ${summary.added} student${summary.added === 1 ? "" : "s"}`,
+      ];
+      if (summary.updated > 0) {
+        parts.push(
+          `updated ${summary.updated} existing record${summary.updated === 1 ? "" : "s"}`,
+        );
+      }
+      if (summary.skipped > 0) {
+        parts.push(
+          `skipped ${summary.skipped} duplicate${summary.skipped === 1 ? "" : "s"}`,
+        );
+      }
+      if (invalid > 0) {
+        parts.push(
+          `skipped ${invalid} row${invalid === 1 ? "" : "s"} with missing or invalid data`,
+        );
+      }
+      setImportSummary(parts.join(", ") + ".");
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -175,6 +194,16 @@ export default function StudentsPage() {
             >
               <Upload className="h-4 w-4" />
               Import Excel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (students && students.length > 0) exportStudents(students);
+              }}
+              disabled={!students || students.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
             </Button>
             <input
               ref={fileInputRef}

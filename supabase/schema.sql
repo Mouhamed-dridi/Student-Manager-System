@@ -34,6 +34,14 @@ create table if not exists public.students (
   created_at timestamptz not null default now()
 );
 
+-- Extended student profile (idempotent: databases that already carry these
+-- columns keep them untouched).
+alter table if exists public.students
+  add column if not exists location text,
+  add column if not exists education text,
+  add column if not exists age integer,
+  add column if not exists engagement text;
+
 create table if not exists public.teachers (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
@@ -44,6 +52,14 @@ create table if not exists public.teachers (
   blocked boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- Extended teacher professional profile (idempotent: databases that already
+-- carry these columns keep them untouched).
+alter table if exists public.teachers
+  add column if not exists job_title text,
+  add column if not exists company text,
+  add column if not exists location text,
+  add column if not exists education text;
 
 -- -------------------------------------------------------------- payments ---
 -- One row per recorded payment. Student details are not snapshotted here;

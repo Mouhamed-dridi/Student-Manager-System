@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Upload } from "lucide-react";
+import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
@@ -15,6 +15,7 @@ import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 import TeacherForm, { type Teacher } from "./TeacherForm";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
+import { exportTeachers } from "./exportTeachers";
 import TeacherImportPreview from "./TeacherImportPreview";
 import TeacherListView from "./TeacherListView";
 
@@ -189,6 +190,16 @@ export default function TeachersPage() {
             >
               <Upload className="h-4 w-4" />
               Import Excel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (teachers && teachers.length > 0) exportTeachers(teachers);
+              }}
+              disabled={!teachers || teachers.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export Excel
             </Button>
             <input
               ref={fileInputRef}

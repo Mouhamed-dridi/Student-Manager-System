@@ -127,6 +127,10 @@ interface StudentRow {
   trainings: { name: string } | null;
   phone: string;
   email: string;
+  location: string | null;
+  education: string | null;
+  age: number | null;
+  engagement: string | null;
   password: string | null;
   blocked: boolean | null;
   is_deleted?: boolean;
@@ -143,6 +147,10 @@ function studentFromRow(row: StudentRow): Student {
     trainingId: row.training_id ?? undefined,
     phone: row.phone ?? "",
     email: row.email ?? "",
+    location: row.location ?? undefined,
+    education: row.education ?? undefined,
+    age: row.age ?? undefined,
+    engagement: row.engagement ?? undefined,
     password: row.password ?? undefined,
     blocked: row.blocked === true ? true : undefined,
   };
@@ -160,6 +168,10 @@ async function studentToRow(student: Student) {
     training_id: trainingId || null,
     phone: student.phone,
     email: student.email,
+    location: student.location ?? null,
+    education: student.education ?? null,
+    age: student.age ?? null,
+    engagement: student.engagement ?? null,
     password: student.password ?? null,
     blocked: student.blocked === true,
   };
@@ -216,13 +228,105 @@ export async function insertStudents(students: Student[]): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export interface StudentsImportSummary {
+  added: number;
+  updated: number;
+  skipped: number;
+}
+
+/**
+ * Excel-import writer with duplicate-email handling. Emails already present
+ * in `existing` are UPDATEd in place (profile fields only — login data is
+ * preserved); brand-new emails are INSERTed. Within-file duplicate rows are
+ * collapsed (last row wins) and counted as skipped. As a safety net against
+ * two operators importing the same email at the same time, the insert batch
+ * retries row-by-row and counts late unique collisions as skipped instead of
+ * throwing an unhandled constraint error.
+ */
+export async function importStudentRecords(
+  students: Student[],
+  existing: Student[],
+): Promise<StudentsImportSummary> {
+  if (students.length === 0) return { added: 0, updated: 0, skipped: 0 };
+
+  const existingByEmail = new Map<string, Student>();
+  for (const s of existing) {
+    const key = s.email.trim().toLowerCase();
+    if (key && !existingByEmail.has(key)) existingByEmail.set(key, s);
+  }
+
+  const byEmail = new Map<string, Student>();
+  let skipped = 0;
+  for (const s of students) {
+    const key = s.email.trim().toLowerCase();
+    if (!key) {
+      skipped += 1;
+      continue;
+    }
+    if (byEmail.has(key)) skipped += 1;
+    byEmail.set(key, s);
+  }
+
+  let updated = 0;
+  const fresh: Student[] = [];
+  for (const [key, s] of byEmail) {
+    const current = existingByEmail.get(key);
+    if (current) {
+      await updateStudentProfile(current.id, s);
+      updated += 1;
+    } else {
+      fresh.push(s);
+    }
+  }
+
+  let added = fresh.length;
+  if (fresh.length > 0) {
+    try {
+      await insertStudents(fresh);
+    } catch {
+      // Uniqueness race — a matching record appeared between the page load
+      // and this import. Try each row alone and skip genuine duplicate-key
+      // collisions so the import never crashes.
+      added = 0;
+      for (const s of fresh) {
+        try {
+          await insertStudent(s);
+          added += 1;
+        } catch (err) {
+          if (
+            err instanceof Error &&
+            err.message.includes("duplicate key value")
+          ) {
+            skipped += 1;
+          } else {
+            throw err;
+          }
+        }
+      }
+    }
+  }
+
+  return { added, updated, skipped };
+}
+
 /**
  * Updates only the profile fields the Add/Edit form owns. Login data
  * (password/blocked) is intentionally left untouched on edits.
  */
 export async function updateStudentProfile(
   id: string,
-  profile: Pick<Student, "fullName" | "program" | "training" | "phone" | "email">,
+  profile: Pick<
+    Student,
+    | "fullName"
+    | "program"
+    | "training"
+    | "phone"
+    | "email"
+    | "location"
+    | "education"
+    | "age"
+    | "engagement"
+  >,
 ): Promise<void> {
   const { programId, trainingId } = await resolveProgramTrainingIds(
     profile.program,
@@ -237,6 +341,10 @@ export async function updateStudentProfile(
         training_id: trainingId || null,
         phone: profile.phone,
         email: profile.email,
+        location: profile.location ?? null,
+        education: profile.education ?? null,
+        age: profile.age ?? null,
+        engagement: profile.engagement ?? null,
       })
       .eq("id", id),
   );
@@ -338,6 +446,10 @@ interface TeacherRow {
   specialty: string | null;
   phone: string;
   email: string;
+  job_title: string | null;
+  company: string | null;
+  location: string | null;
+  education: string | null;
   password: string | null;
   blocked: boolean | null;
   is_deleted?: boolean;
@@ -351,6 +463,10 @@ function teacherFromRow(row: TeacherRow): Teacher {
     specialty: row.specialty ?? "",
     phone: row.phone ?? "",
     email: row.email ?? "",
+    jobTitle: row.job_title ?? undefined,
+    company: row.company ?? undefined,
+    location: row.location ?? undefined,
+    education: row.education ?? undefined,
     password: row.password ?? undefined,
     blocked: row.blocked === true ? true : undefined,
   };
@@ -363,6 +479,10 @@ async function teacherToRow(teacher: Teacher) {
     specialty: teacher.specialty ?? "",
     phone: teacher.phone,
     email: teacher.email,
+    job_title: teacher.jobTitle ?? null,
+    company: teacher.company ?? null,
+    location: teacher.location ?? null,
+    education: teacher.education ?? null,
     password: teacher.password ?? null,
     blocked: teacher.blocked === true,
   };
@@ -420,7 +540,17 @@ export async function insertTeachers(teachers: Teacher[]): Promise<void> {
 
 export async function updateTeacherProfile(
   id: string,
-  profile: Pick<Teacher, "fullName" | "specialty" | "phone" | "email">,
+  profile: Pick<
+    Teacher,
+    | "fullName"
+    | "specialty"
+    | "phone"
+    | "email"
+    | "jobTitle"
+    | "company"
+    | "location"
+    | "education"
+  >,
 ): Promise<void> {
   const { error } = await withTimeout(
     supabase
@@ -430,6 +560,10 @@ export async function updateTeacherProfile(
         specialty: profile.specialty ?? "",
         phone: profile.phone,
         email: profile.email,
+        job_title: profile.jobTitle ?? null,
+        company: profile.company ?? null,
+        location: profile.location ?? null,
+        education: profile.education ?? null,
       })
       .eq("id", id),
   );
@@ -1133,6 +1267,31 @@ export async function loadStudentAttendance(
   );
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
+}
+
+/** Shape accepted for writing attendance rows (modal + Excel import). */
+export interface AttendanceInput {
+  type: "student" | "teacher";
+  fullName: string;
+  className?: string | null;
+  date: string;
+  time?: string | null;
+}
+
+/** Writes attendance rows straight into the attendance table. */
+export async function insertAttendanceRecords(
+  records: AttendanceInput[],
+): Promise<void> {
+  if (records.length === 0) return;
+  const rows = records.map((r) => ({
+    type: r.type,
+    full_name: r.fullName,
+    class_name: r.className?.trim() ? r.className.trim() : null,
+    date: r.date || null,
+    time: r.time?.trim() ? r.time.trim() : null,
+  }));
+  const { error } = await withTimeout(supabase.from("attendance").insert(rows));
+  if (error) throw new Error(error.message);
 }
 
 // ---------------------------------------------------------------- courses

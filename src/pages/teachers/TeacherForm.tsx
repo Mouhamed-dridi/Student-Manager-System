@@ -10,6 +10,10 @@ export interface Teacher {
   specialty: string;
   phone: string;
   email: string;
+  jobTitle?: string;
+  company?: string;
+  location?: string;
+  education?: string;
   password?: string;
   blocked?: boolean;
 }
@@ -29,6 +33,10 @@ export default function TeacherForm({
   const [specialty, setSpecialty] = useState(initialData?.specialty ?? "");
   const [phone, setPhone] = useState(initialData?.phone ?? "");
   const [email, setEmail] = useState(initialData?.email ?? "");
+  const [jobTitle, setJobTitle] = useState(initialData?.jobTitle ?? "");
+  const [company, setCompany] = useState(initialData?.company ?? "");
+  const [location, setLocation] = useState(initialData?.location ?? "");
+  const [education, setEducation] = useState(initialData?.education ?? "");
   const [password, setPassword] = useState(
     initialData?.password ?? DEFAULT_TEACHER_PASSWORD,
   );
@@ -42,6 +50,10 @@ export default function TeacherForm({
       specialty: specialty.trim(),
       phone,
       email,
+      jobTitle: jobTitle.trim() || undefined,
+      company: company.trim() || undefined,
+      location: location.trim() || undefined,
+      education: education.trim() || undefined,
       // New teachers get the operator-chosen login password; edits leave
       // login data untouched (TeachersPage merge-preserves it).
       ...(initialData
@@ -97,6 +109,48 @@ export default function TeacherForm({
           onChange={(e) => setEmail(e.target.value)}
           required
         />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="jobTitle">Job Title</Label>
+          <Input
+            id="jobTitle"
+            placeholder="Job title"
+            value={jobTitle}
+            onChange={(e) => setJobTitle(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="company">Company</Label>
+          <Input
+            id="company"
+            placeholder="Company"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="location">Location</Label>
+          <Input
+            id="location"
+            placeholder="City or address"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="education">Education</Label>
+          <Input
+            id="education"
+            placeholder="Highest qualification"
+            value={education}
+            onChange={(e) => setEducation(e.target.value)}
+          />
+        </div>
       </div>
 
       {!initialData && (
