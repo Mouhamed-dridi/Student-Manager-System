@@ -28,7 +28,11 @@ export default function TeachersPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
-    setTeachers(await listTeachers());
+    try {
+      setTeachers(await listTeachers());
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }, []);
 
   useEffect(() => {

@@ -17,6 +17,36 @@ export function errorMessage(error: unknown): string {
   return "Could not reach the database. Check your connection and try again.";
 }
 
+const DEFAULT_TIMEOUT_MS = 15000;
+const PROBE_TIMEOUT_MS = 8000;
+
+/**
+ * Guarantees a query settles even when the underlying Supabase fetch stalls
+ * (a request can hang indefinitely if the network silently drops). On
+ * timeout the promise rejects instead of freezing a page on Loading.
+ */
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  ms = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("The request timed out. Please try again.")),
+      ms,
+    );
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 async function rows<T>(
   table: string,
   query?: {
@@ -34,7 +64,7 @@ async function rows<T>(
       ascending: query.order.ascending ?? true,
     });
   }
-  const { data, error } = await builder;
+  const { data, error } = await withTimeout(builder);
   if (error) throw new Error(error.message);
   return (data ?? []) as T[];
 }
@@ -71,18 +101,14 @@ async function resolveProgramTrainingIds(
   trainingName: string,
 ): Promise<{ programId: string; trainingId: string }> {
   const program = (
-    await supabase
-      .from("programs")
-      .select("id")
-      .eq("code", programCode)
-      .maybeSingle()
+    await withTimeout(
+      supabase.from("programs").select("id").eq("code", programCode).maybeSingle(),
+    )
   ).data;
   const training = (
-    await supabase
-      .from("trainings")
-      .select("id")
-      .eq("name", trainingName)
-      .maybeSingle()
+    await withTimeout(
+      supabase.from("trainings").select("id").eq("name", trainingName).maybeSingle(),
+    )
   ).data;
   return {
     programId: program?.id ?? "",
@@ -144,11 +170,13 @@ const STUDENT_SELECT = "*, programs(code), trainings(name)";
 export async function listStudents(): Promise<Student[]> {
   const capabilities = await generalTrashCapabilities();
   const { data, error } = capabilities.students
-    ? await supabase
-        .from("students")
-        .select(STUDENT_SELECT)
-        .or("is_deleted.is.false,is_deleted.is.null")
-    : await supabase.from("students").select(STUDENT_SELECT);
+    ? await withTimeout(
+        supabase
+          .from("students")
+          .select(STUDENT_SELECT)
+          .or("is_deleted.is.false,is_deleted.is.null"),
+      )
+    : await withTimeout(supabase.from("students").select(STUDENT_SELECT));
   if (error) throw new Error(error.message);
   let students = (data ?? []).map((row) => studentFromRow(row as StudentRow));
   if (!capabilities.students) {
@@ -160,11 +188,9 @@ export async function listStudents(): Promise<Student[]> {
 }
 
 export async function getStudentById(id: string): Promise<Student | null> {
-  const { data, error } = await supabase
-    .from("students")
-    .select(STUDENT_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withTimeout(
+    supabase.from("students").select(STUDENT_SELECT).eq("id", id).maybeSingle(),
+  );
   if (error) throw new Error(error.message);
   if (!data) return null;
   const row = data as StudentRow;
@@ -175,11 +201,9 @@ export async function getStudentById(id: string): Promise<Student | null> {
 /** Inserts a student; login fields are included when present. */
 export async function insertStudent(student: Student): Promise<Student> {
   const row = await studentToRow(student);
-  const { data, error } = await supabase
-    .from("students")
-    .insert(row)
-    .select(STUDENT_SELECT)
-    .single();
+  const { data, error } = await withTimeout(
+    supabase.from("students").insert(row).select(STUDENT_SELECT).single(),
+  );
   if (error) throw new Error(error.message);
   return studentFromRow(data as StudentRow);
 }
@@ -188,7 +212,7 @@ export async function insertStudent(student: Student): Promise<Student> {
 export async function insertStudents(students: Student[]): Promise<void> {
   if (students.length === 0) return;
   const mapped = await Promise.all(students.map(studentToRow));
-  const { error } = await supabase.from("students").insert(mapped);
+  const { error } = await withTimeout(supabase.from("students").insert(mapped));
   if (error) throw new Error(error.message);
 }
 
@@ -204,23 +228,27 @@ export async function updateStudentProfile(
     profile.program,
     profile.training,
   );
-  const { error } = await supabase
-    .from("students")
-    .update({
-      full_name: profile.fullName,
-      program_id: programId || null,
-      training_id: trainingId || null,
-      phone: profile.phone,
-      email: profile.email,
-    })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("students")
+      .update({
+        full_name: profile.fullName,
+        program_id: programId || null,
+        training_id: trainingId || null,
+        phone: profile.phone,
+        email: profile.email,
+      })
+      .eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
 /** Permanent delete: destroys rows immediately (used by the Trash page). */
 export async function hardDeleteStudents(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
-  const { error } = await supabase.from("students").delete().in("id", ids);
+  const { error } = await withTimeout(
+    supabase.from("students").delete().in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -235,10 +263,12 @@ export async function softDeleteStudents(ids: string[]): Promise<void> {
     return;
   }
   const now = new Date().toISOString();
-  const { error } = await supabase
-    .from("students")
-    .update({ is_deleted: true, deleted_at: now })
-    .in("id", ids);
+  const { error } = await withTimeout(
+    supabase
+      .from("students")
+      .update({ is_deleted: true, deleted_at: now })
+      .in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -251,10 +281,12 @@ export async function restoreStudents(ids: string[]): Promise<void> {
       localGeneralTrashDeletedAt.delete(generalTrashKey("students", id));
     return;
   }
-  const { error } = await supabase
-    .from("students")
-    .update({ is_deleted: false, deleted_at: null })
-    .in("id", ids);
+  const { error } = await withTimeout(
+    supabase
+      .from("students")
+      .update({ is_deleted: false, deleted_at: null })
+      .in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -280,7 +312,7 @@ export async function listStudentAccounts(): Promise<AccountInfo[]> {
     : supabase
         .from("students")
         .select("id, full_name, password, blocked, programs(code), trainings(name)");
-  const { data, error } = await builder;
+  const { data, error } = await withTimeout(builder);
   if (error) throw new Error(error.message);
   let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
@@ -341,11 +373,13 @@ const TEACHER_SELECT = "*";
 export async function listTeachers(): Promise<Teacher[]> {
   const capabilities = await generalTrashCapabilities();
   const { data, error } = capabilities.teachers
-    ? await supabase
-        .from("teachers")
-        .select(TEACHER_SELECT)
-        .or("is_deleted.is.false,is_deleted.is.null")
-    : await supabase.from("teachers").select(TEACHER_SELECT);
+    ? await withTimeout(
+        supabase
+          .from("teachers")
+          .select(TEACHER_SELECT)
+          .or("is_deleted.is.false,is_deleted.is.null"),
+      )
+    : await withTimeout(supabase.from("teachers").select(TEACHER_SELECT));
   if (error) throw new Error(error.message);
   let teachers = (data ?? []).map((row) => teacherFromRow(row as TeacherRow));
   if (!capabilities.teachers) {
@@ -357,11 +391,9 @@ export async function listTeachers(): Promise<Teacher[]> {
 }
 
 export async function getTeacherById(id: string): Promise<Teacher | null> {
-  const { data, error } = await supabase
-    .from("teachers")
-    .select(TEACHER_SELECT)
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withTimeout(
+    supabase.from("teachers").select(TEACHER_SELECT).eq("id", id).maybeSingle(),
+  );
   if (error) throw new Error(error.message);
   if (!data) return null;
   const row = data as TeacherRow;
@@ -371,11 +403,9 @@ export async function getTeacherById(id: string): Promise<Teacher | null> {
 
 export async function insertTeacher(teacher: Teacher): Promise<Teacher> {
   const row = await teacherToRow(teacher);
-  const { data, error } = await supabase
-    .from("teachers")
-    .insert(row)
-    .select(TEACHER_SELECT)
-    .single();
+  const { data, error } = await withTimeout(
+    supabase.from("teachers").insert(row).select(TEACHER_SELECT).single(),
+  );
   if (error) throw new Error(error.message);
   return teacherFromRow(data as TeacherRow);
 }
@@ -384,7 +414,7 @@ export async function insertTeacher(teacher: Teacher): Promise<Teacher> {
 export async function insertTeachers(teachers: Teacher[]): Promise<void> {
   if (teachers.length === 0) return;
   const mapped = await Promise.all(teachers.map(teacherToRow));
-  const { error } = await supabase.from("teachers").insert(mapped);
+  const { error } = await withTimeout(supabase.from("teachers").insert(mapped));
   if (error) throw new Error(error.message);
 }
 
@@ -392,22 +422,26 @@ export async function updateTeacherProfile(
   id: string,
   profile: Pick<Teacher, "fullName" | "specialty" | "phone" | "email">,
 ): Promise<void> {
-  const { error } = await supabase
-    .from("teachers")
-    .update({
-      full_name: profile.fullName,
-      specialty: profile.specialty ?? "",
-      phone: profile.phone,
-      email: profile.email,
-    })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("teachers")
+      .update({
+        full_name: profile.fullName,
+        specialty: profile.specialty ?? "",
+        phone: profile.phone,
+        email: profile.email,
+      })
+      .eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
 /** Permanent delete: destroys rows immediately (used by the Trash page). */
 export async function hardDeleteTeachers(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
-  const { error } = await supabase.from("teachers").delete().in("id", ids);
+  const { error } = await withTimeout(
+    supabase.from("teachers").delete().in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -422,10 +456,12 @@ export async function softDeleteTeachers(ids: string[]): Promise<void> {
     return;
   }
   const now = new Date().toISOString();
-  const { error } = await supabase
-    .from("teachers")
-    .update({ is_deleted: true, deleted_at: now })
-    .in("id", ids);
+  const { error } = await withTimeout(
+    supabase
+      .from("teachers")
+      .update({ is_deleted: true, deleted_at: now })
+      .in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -438,10 +474,12 @@ export async function restoreTeachers(ids: string[]): Promise<void> {
       localGeneralTrashDeletedAt.delete(generalTrashKey("teachers", id));
     return;
   }
-  const { error } = await supabase
-    .from("teachers")
-    .update({ is_deleted: false, deleted_at: null })
-    .in("id", ids);
+  const { error } = await withTimeout(
+    supabase
+      .from("teachers")
+      .update({ is_deleted: false, deleted_at: null })
+      .in("id", ids),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -455,7 +493,7 @@ export async function listTeacherAccounts(): Promise<AccountInfo[]> {
     : supabase
         .from("teachers")
         .select("id, full_name, password, blocked, specialty");
-  const { data, error } = await builder;
+  const { data, error } = await withTimeout(builder);
   if (error) throw new Error(error.message);
   let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
@@ -490,16 +528,16 @@ export async function updateAccount(
   const payload: Record<string, string | boolean | null> = {};
   if (patch.password !== undefined) payload.password = patch.password;
   if (patch.blocked !== undefined) payload.blocked = patch.blocked;
-  const { error } = await supabase.from(kind).update(payload).eq("id", id);
+  const { error } = await withTimeout(
+    supabase.from(kind).update(payload).eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
 export async function getBlocked(kind: AccountKind, id: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from(kind)
-    .select("blocked")
-    .eq("id", id)
-    .single();
+  const { data, error } = await withTimeout(
+    supabase.from(kind).select("blocked").eq("id", id).single(),
+  );
   if (error) throw new Error(error.message);
   return (data as { blocked: boolean | null }).blocked === true;
 }
@@ -585,15 +623,19 @@ const localEditHistory: PaymentHistoryItem[] = [];
 export async function listPayments(): Promise<Payment[]> {
   const caps = await detectPaymentsCapabilities();
   const { data, error } = caps.supportsTrash
-    ? await supabase
-        .from("payments")
-        .select("*")
-        .or("is_deleted.is.false,is_deleted.is.null")
-        .order("created_at", { ascending: false })
-    : await supabase
-        .from("payments")
-        .select("*")
-        .order("created_at", { ascending: false });
+    ? await withTimeout(
+        supabase
+          .from("payments")
+          .select("*")
+          .or("is_deleted.is.false,is_deleted.is.null")
+          .order("created_at", { ascending: false }),
+      )
+    : await withTimeout(
+        supabase
+          .from("payments")
+          .select("*")
+          .order("created_at", { ascending: false }),
+      );
   if (error) throw new Error(error.message);
   const rows = (data ?? []).map((row) => paymentFromRow(row as PaymentRow));
   if (!caps.supportsTrash) {
@@ -606,16 +648,20 @@ export async function listPayments(): Promise<Payment[]> {
 export async function listDeletedPayments(): Promise<Payment[]> {
   const caps = await detectPaymentsCapabilities();
   if (caps.supportsTrash) {
-    const { data, error } = await supabase
-      .from("payments")
-      .select("*")
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false });
+    const { data, error } = await withTimeout(
+      supabase
+        .from("payments")
+        .select("*")
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false }),
+    );
     if (error) throw new Error(error.message);
     return (data ?? []).map((row) => paymentFromRow(row as PaymentRow));
   }
   if (localTrashDeletedAt.size === 0) return [];
-  const { data, error } = await supabase.from("payments").select("*");
+  const { data, error } = await withTimeout(
+    supabase.from("payments").select("*"),
+  );
   if (error) throw new Error(error.message);
   return (data ?? [])
     .map((row) => paymentFromRow(row as PaymentRow))
@@ -628,36 +674,40 @@ export async function listDeletedPayments(): Promise<Payment[]> {
 }
 
 export async function insertPayment(payment: Payment): Promise<Payment> {
-  const { data, error } = await supabase
-    .from("payments")
-    .insert({
-      id: payment.id,
-      student_id: payment.studentId,
-      amount: payment.amount,
-      plan_type: payment.planType,
-      payment_date: payment.paymentDate,
-      status: payment.status ?? null,
-    })
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("payments")
+      .insert({
+        id: payment.id,
+        student_id: payment.studentId,
+        amount: payment.amount,
+        plan_type: payment.planType,
+        payment_date: payment.paymentDate,
+        status: payment.status ?? null,
+      })
+      .select()
+      .single(),
+  );
   if (error) throw new Error(error.message);
   return paymentFromRow(data as PaymentRow);
 }
 
 export async function insertPayments(payments: Payment[]): Promise<void> {
   if (payments.length === 0) return;
-  const { error } = await supabase
-    .from("payments")
-    .insert(
-      payments.map((p) => ({
-        id: p.id,
-        student_id: p.studentId,
-        amount: p.amount,
-        plan_type: p.planType,
-        payment_date: p.paymentDate,
-        status: p.status ?? null,
-      })),
-    );
+  const { error } = await withTimeout(
+    supabase
+      .from("payments")
+      .insert(
+        payments.map((p) => ({
+          id: p.id,
+          student_id: p.studentId,
+          amount: p.amount,
+          plan_type: p.planType,
+          payment_date: p.paymentDate,
+          status: p.status ?? null,
+        })),
+      ),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -739,11 +789,13 @@ export async function updatePayment(
   };
   const caps = await detectPaymentsCapabilities();
   if (caps.supportsHistory) {
-    const { data: current } = await supabase
-      .from("payments")
-      .select("edit_history")
-      .eq("id", after.id)
-      .maybeSingle();
+    const { data: current } = await withTimeout(
+      supabase
+        .from("payments")
+        .select("edit_history")
+        .eq("id", after.id)
+        .maybeSingle(),
+    );
     const existing = Array.isArray(
       (current as { edit_history?: unknown } | null)?.edit_history,
     )
@@ -758,10 +810,9 @@ export async function updatePayment(
       entry,
     });
   }
-  const { error } = await supabase
-    .from("payments")
-    .update(payload)
-    .eq("id", after.id);
+  const { error } = await withTimeout(
+    supabase.from("payments").update(payload).eq("id", after.id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -777,10 +828,12 @@ export async function softDeletePayment(payment: Payment): Promise<void> {
     localTrashDeletedAt.set(payment.id, new Date().toISOString());
     return;
   }
-  const { error } = await supabase
-    .from("payments")
-    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-    .eq("id", payment.id);
+  const { error } = await withTimeout(
+    supabase
+      .from("payments")
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq("id", payment.id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -791,10 +844,12 @@ export async function restorePayment(payment: Payment): Promise<void> {
     localTrashDeletedAt.delete(payment.id);
     return;
   }
-  const { error } = await supabase
-    .from("payments")
-    .update({ is_deleted: false, deleted_at: null })
-    .eq("id", payment.id);
+  const { error } = await withTimeout(
+    supabase
+      .from("payments")
+      .update({ is_deleted: false, deleted_at: null })
+      .eq("id", payment.id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -807,9 +862,9 @@ export async function listPaymentHistory(): Promise<PaymentHistoryItem[]> {
   const caps = await detectPaymentsCapabilities();
   const items: PaymentHistoryItem[] = [...localEditHistory];
   if (caps.supportsHistory) {
-    const { data, error } = await supabase
-      .from("payments")
-      .select("id, student_id, edit_history");
+    const { data, error } = await withTimeout(
+      supabase.from("payments").select("id, student_id, edit_history"),
+    );
     if (error) throw new Error(error.message);
     const students = await listStudents();
     const studentNameFor = new Map(students.map((s) => [s.id, s.fullName]));
@@ -846,7 +901,10 @@ export interface TrashCapabilities {
 let generalTrashCapabilitiesPromise: Promise<TrashCapabilities> | null = null;
 
 async function hasColumn(table: string, column: string): Promise<boolean> {
-  const { error } = await supabase.from(table).select(column).limit(1);
+  const { error } = await withTimeout(
+    supabase.from(table).select(column).limit(1),
+    PROBE_TIMEOUT_MS,
+  );
   return !error;
 }
 
@@ -895,11 +953,13 @@ export async function listGeneralTrash(): Promise<{
   const items: TrashItem[] = [];
 
   if (capabilities.students) {
-    const { data, error } = await supabase
-      .from("students")
-      .select(STUDENT_SELECT)
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false });
+    const { data, error } = await withTimeout(
+      supabase
+        .from("students")
+        .select(STUDENT_SELECT)
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false }),
+    );
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const s = studentFromRow(row as StudentRow);
@@ -929,11 +989,13 @@ export async function listGeneralTrash(): Promise<{
   }
 
   if (capabilities.teachers) {
-    const { data, error } = await supabase
-      .from("teachers")
-      .select(TEACHER_SELECT)
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false });
+    const { data, error } = await withTimeout(
+      supabase
+        .from("teachers")
+        .select(TEACHER_SELECT)
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false }),
+    );
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const t = teacherFromRow(row as TeacherRow);
@@ -963,11 +1025,13 @@ export async function listGeneralTrash(): Promise<{
   }
 
   if (capabilities.publications) {
-    const { data, error } = await supabase
-      .from("publications")
-      .select("*")
-      .eq("is_deleted", true)
-      .order("deleted_at", { ascending: false });
+    const { data, error } = await withTimeout(
+      supabase
+        .from("publications")
+        .select("*")
+        .eq("is_deleted", true)
+        .order("deleted_at", { ascending: false }),
+    );
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const p = publicationFromRow(row as PublicationRow);
@@ -984,11 +1048,11 @@ export async function listGeneralTrash(): Promise<{
     for (const [key, deletedAt] of localGeneralTrashDeletedAt) {
       if (!key.startsWith("publications:")) continue;
       const id = key.slice("publications:".length);
-      const p = (await supabase
-        .from("publications")
-        .select("*")
-        .eq("id", id)
-        .maybeSingle()).data as PublicationRow | null;
+const p = (
+      await withTimeout(
+        supabase.from("publications").select("*").eq("id", id).maybeSingle(),
+      )
+    ).data as PublicationRow | null;
       if (p)
         items.push({
           table: "publications",
@@ -1043,11 +1107,13 @@ function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
  * rendered rows client-side by name/class.
  */
 export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
-  const { data, error } = await supabase
-    .from("attendance")
-    .select(ATTENDANCE_SELECT)
-    .order("date", { ascending: false })
-    .order("time", { ascending: false });
+  const { data, error } = await withTimeout(
+    supabase
+      .from("attendance")
+      .select(ATTENDANCE_SELECT)
+      .order("date", { ascending: false })
+      .order("time", { ascending: false }),
+  );
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
 }
@@ -1056,13 +1122,15 @@ export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
 export async function loadStudentAttendance(
   fullName: string,
 ): Promise<AttendanceRecord[]> {
-  const { data, error } = await supabase
-    .from("attendance")
-    .select(ATTENDANCE_SELECT)
-    .eq("type", "student")
-    .eq("full_name", fullName)
-    .order("date", { ascending: false })
-    .order("time", { ascending: false });
+  const { data, error } = await withTimeout(
+    supabase
+      .from("attendance")
+      .select(ATTENDANCE_SELECT)
+      .eq("type", "student")
+      .eq("full_name", fullName)
+      .order("date", { ascending: false })
+      .order("time", { ascending: false }),
+  );
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
 }
@@ -1129,14 +1197,18 @@ export async function saveTeacherCourse(
     published_at: record.published ?? null,
     materials: record.materials ?? null,
   };
-  const { error } = await supabase.from("courses").upsert(payload, {
-    onConflict: "id",
-  });
+  const { error } = await withTimeout(
+    supabase.from("courses").upsert(payload, {
+      onConflict: "id",
+    }),
+  );
   return !error;
 }
 
 export async function deleteTeacherCourse(id: string): Promise<boolean> {
-  const { error } = await supabase.from("courses").delete().eq("id", id);
+  const { error } = await withTimeout(
+    supabase.from("courses").delete().eq("id", id),
+  );
   return !error;
 }
 
@@ -1203,32 +1275,35 @@ export async function listExams(): Promise<ExamRecord[]> {
 }
 
 export async function upsertExam(exam: ExamRecord): Promise<void> {
-  const { error } = await supabase
-    .from("exams")
-    .upsert(
-      {
-        id: exam.id,
-        teacher_id: exam.teacherId,
-        program: exam.program,
-        training: exam.training,
-        title: exam.title,
-        date: exam.date,
-        course: exam.course ?? null,
-        file_name: exam.attachment ?? null,
-      },
-      { onConflict: "id" },
-    );
+  const { error } = await withTimeout(
+    supabase
+      .from("exams")
+      .upsert(
+        {
+          id: exam.id,
+          teacher_id: exam.teacherId,
+          program: exam.program,
+          training: exam.training,
+          title: exam.title,
+          date: exam.date,
+          course: exam.course ?? null,
+          file_name: exam.attachment ?? null,
+        },
+        { onConflict: "id" },
+      ),
+  );
   if (error) throw new Error(error.message);
 }
 
 /** Deletes an exam together with its recorded grades. */
 export async function deleteExamCascade(examId: string): Promise<void> {
-  const { error: gradesError } = await supabase
-    .from("grades")
-    .delete()
-    .eq("exam_id", examId);
+  const { error: gradesError } = await withTimeout(
+    supabase.from("grades").delete().eq("exam_id", examId),
+  );
   if (gradesError) throw new Error(gradesError.message);
-  const { error } = await supabase.from("exams").delete().eq("id", examId);
+  const { error } = await withTimeout(
+    supabase.from("exams").delete().eq("id", examId),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1255,10 +1330,12 @@ export async function listGrades(): Promise<GradeRecord[]> {
 }
 
 export async function countGradesForExam(examId: string): Promise<number> {
-  const { count, error } = await supabase
-    .from("grades")
-    .select("id", { count: "exact", head: true })
-    .eq("exam_id", examId);
+  const { count, error } = await withTimeout(
+    supabase
+      .from("grades")
+      .select("id", { count: "exact", head: true })
+      .eq("exam_id", examId),
+  );
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
@@ -1271,18 +1348,19 @@ export async function saveGradesForExam(
   examId: string,
   scores: { studentId: string; score: number }[],
 ): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from("grades")
-    .delete()
-    .eq("exam_id", examId);
+  const { error: deleteError } = await withTimeout(
+    supabase.from("grades").delete().eq("exam_id", examId),
+  );
   if (deleteError) throw new Error(deleteError.message);
   if (scores.length === 0) return;
-  const { error } = await supabase.from("grades").insert(
-    scores.map((s) => ({
-      exam_id: examId,
-      student_id: s.studentId,
-      score: s.score,
-    })),
+  const { error } = await withTimeout(
+    supabase.from("grades").insert(
+      scores.map((s) => ({
+        exam_id: examId,
+        student_id: s.studentId,
+        score: s.score,
+      })),
+    ),
   );
   if (error) throw new Error(error.message);
 }
@@ -1314,15 +1392,19 @@ function publicationFromRow(row: PublicationRow): Publication {
 export async function listPublications(): Promise<Publication[]> {
   const capabilities = await generalTrashCapabilities();
   const { data, error } = capabilities.publications
-    ? await supabase
-        .from("publications")
-        .select("*")
-        .or("is_deleted.is.false,is_deleted.is.null")
-        .order("sent_at", { ascending: false })
-    : await supabase
-        .from("publications")
-        .select("*")
-        .order("sent_at", { ascending: false });
+    ? await withTimeout(
+        supabase
+          .from("publications")
+          .select("*")
+          .or("is_deleted.is.false,is_deleted.is.null")
+          .order("sent_at", { ascending: false }),
+      )
+    : await withTimeout(
+        supabase
+          .from("publications")
+          .select("*")
+          .order("sent_at", { ascending: false }),
+      );
   if (error) throw new Error(error.message);
   let rowsArr = (data ?? []).map((row) =>
     publicationFromRow(row as PublicationRow),
@@ -1338,28 +1420,29 @@ export async function listPublications(): Promise<Publication[]> {
 export async function insertPublication(
   publication: Publication,
 ): Promise<Publication> {
-  const { data, error } = await supabase
-    .from("publications")
-    .insert({
-      id: publication.id,
-      title: publication.title,
-      message: publication.message,
-      recipients: publication.recipients,
-      channels: publication.channels,
-      sent_at: publication.createdAt,
-    })
-    .select()
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("publications")
+      .insert({
+        id: publication.id,
+        title: publication.title,
+        message: publication.message,
+        recipients: publication.recipients,
+        channels: publication.channels,
+        sent_at: publication.createdAt,
+      })
+      .select()
+      .single(),
+  );
   if (error) throw new Error(error.message);
   return publicationFromRow(data as PublicationRow);
 }
 
 /** Permanent delete: destroys the publication immediately (Trash page). */
 export async function hardDeletePublication(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("publications")
-    .delete()
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase.from("publications").delete().eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1373,10 +1456,12 @@ export async function softDeletePublication(id: string): Promise<void> {
     );
     return;
   }
-  const { error } = await supabase
-    .from("publications")
-    .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("publications")
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1387,10 +1472,12 @@ export async function restorePublication(id: string): Promise<void> {
     localGeneralTrashDeletedAt.delete(generalTrashKey("publications", id));
     return;
   }
-  const { error } = await supabase
-    .from("publications")
-    .update({ is_deleted: false, deleted_at: null })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("publications")
+      .update({ is_deleted: false, deleted_at: null })
+      .eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1419,13 +1506,15 @@ export async function listPlanning(): Promise<PlanningRecord[]> {
 }
 
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
-  const { error } = await supabase.from("planning").insert({
-    id: record.id,
-    teacher_id: record.teacherId,
-    date: record.date,
-    course: record.course ?? null,
-    topic: record.content,
-  });
+  const { error } = await withTimeout(
+    supabase.from("planning").insert({
+      id: record.id,
+      teacher_id: record.teacherId,
+      date: record.date,
+      course: record.course ?? null,
+      topic: record.content,
+    }),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1433,15 +1522,19 @@ export async function updatePlanning(
   id: string,
   values: Pick<PlanningRecord, "course" | "content">,
 ): Promise<void> {
-  const { error } = await supabase
-    .from("planning")
-    .update({ course: values.course ?? null, topic: values.content })
-    .eq("id", id);
+  const { error } = await withTimeout(
+    supabase
+      .from("planning")
+      .update({ course: values.course ?? null, topic: values.content })
+      .eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
 export async function deletePlanning(id: string): Promise<void> {
-  const { error } = await supabase.from("planning").delete().eq("id", id);
+  const { error } = await withTimeout(
+    supabase.from("planning").delete().eq("id", id),
+  );
   if (error) throw new Error(error.message);
 }
 
@@ -1545,53 +1638,118 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
 // ----------------------------------------------------------------- settings
 
-export interface AppNotifications {
-  email: boolean;
-  sms: boolean;
-  inApp: boolean;
-}
-
 export interface AppSettings {
   systemName?: string;
+  universityName?: string;
+  logoUrl?: string;
   language?: string;
-  notifications?: AppNotifications;
-  adminName?: string;
-  adminEmail?: string;
+  darkMode?: boolean;
 }
 
-/** Reads all operator-level settings from the key/value settings table. */
-export async function getSettings(): Promise<AppSettings> {
-  const { data, error } = await supabase.from("settings").select("key, value");
-  if (error) throw new Error(error.message);
-  const store: Record<string, unknown> = {};
-  for (const row of data ?? []) store[row.key as string] = row.value;
+type SettingsStore = Record<string, unknown>;
+
+const SETTINGS_LOCAL_KEY = "ssm-settings";
+
+/**
+ * Settings are key/value rows in the `settings` table. When that table is
+ * missing (or any read/write fails) the app degrades to a localStorage cache
+ * instead of erroring, so the Settings page always renders. The cache is
+ * written on every save, so dark mode can also be applied synchronously at
+ * bootstrap (src/main.tsx) before Supabase responds.
+ */
+function readLocalSettingsStore(): SettingsStore {
+  try {
+    const raw = localStorage.getItem(SETTINGS_LOCAL_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : {};
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as SettingsStore)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalSettingsStore(store: SettingsStore): void {
+  try {
+    localStorage.setItem(SETTINGS_LOCAL_KEY, JSON.stringify(store));
+  } catch {
+    // Quota/private-mode storage unavailable — the DB row is enough.
+  }
+}
+
+function settingsFromStore(store: SettingsStore): AppSettings {
   return {
     systemName:
-      typeof store.system_name === "string" ? (store.system_name as string) : undefined,
+      typeof store.system_name === "string"
+        ? (store.system_name as string)
+        : undefined,
+    universityName:
+      typeof store.university_name === "string"
+        ? (store.university_name as string)
+        : undefined,
+    logoUrl:
+      typeof store.logo_url === "string" ? (store.logo_url as string) : undefined,
     language:
       typeof store.language === "string" ? (store.language as string) : undefined,
-    notifications: store.notifications as AppNotifications | undefined,
-    adminName:
-      typeof store.admin_name === "string" ? (store.admin_name as string) : undefined,
-    adminEmail:
-      typeof store.admin_email === "string" ? (store.admin_email as string) : undefined,
+    darkMode: typeof store.dark_mode === "boolean" ? store.dark_mode : undefined,
   };
 }
 
-/** Writes every settings key (empty values are stored as JSON null). */
+/** Synchronous localStorage-only lookup; used at bootstrap by main.tsx. */
+export function getCachedSettings(): AppSettings {
+  return settingsFromStore(readLocalSettingsStore());
+}
+
+/** Applies (or clears) the app-wide `.dark` class on <html>. */
+export function applyDarkMode(enabled: boolean): void {
+  document.documentElement.classList.toggle("dark", enabled);
+}
+
+/** Session key → value snapshot for the current settings (DB with local fallback). */
+async function loadSettingsStore(): Promise<SettingsStore> {
+  const { data, error } = await withTimeout(
+    supabase.from("settings").select("key, value"),
+  );
+  if (error) return readLocalSettingsStore();
+  const store: SettingsStore = {};
+  for (const row of data ?? []) store[row.key as string] = row.value;
+  return store;
+}
+
+/** Reads settings, falling back to the localStorage cache when the table is missing. */
+export async function getSettings(): Promise<AppSettings> {
+  return settingsFromStore(await loadSettingsStore());
+}
+
+/** Persists settings; the localStorage cache is always kept, DB failures fall back to it. */
 export async function saveSettings(settings: AppSettings): Promise<void> {
+  const store: SettingsStore = {
+    system_name: settings.systemName ?? null,
+    university_name: settings.universityName ?? null,
+    logo_url: settings.logoUrl ?? null,
+    language: settings.language ?? null,
+    dark_mode: settings.darkMode ?? null,
+  };
+  writeLocalSettingsStore(store);
   const now = new Date().toISOString();
   const rows = [
-    { key: "system_name", value: settings.systemName ?? null, updated_at: now },
-    { key: "language", value: settings.language ?? null, updated_at: now },
-    { key: "notifications", value: settings.notifications ?? null, updated_at: now },
-    { key: "admin_name", value: settings.adminName ?? null, updated_at: now },
-    { key: "admin_email", value: settings.adminEmail ?? null, updated_at: now },
+    { key: "system_name", value: store.system_name, updated_at: now },
+    { key: "university_name", value: store.university_name, updated_at: now },
+    { key: "logo_url", value: store.logo_url, updated_at: now },
+    { key: "language", value: store.language, updated_at: now },
+    { key: "dark_mode", value: store.dark_mode, updated_at: now },
   ];
-  const { error } = await supabase
-    .from("settings")
-    .upsert(rows as Record<string, unknown>[], { onConflict: "key" });
-  if (error) throw new Error(error.message);
+  try {
+    const { error } = await withTimeout(
+      supabase
+        .from("settings")
+        .upsert(rows as Record<string, unknown>[], { onConflict: "key" }),
+    );
+    if (error) throw new Error(error.message);
+  } catch {
+    // Table missing — the localStorage cache already holds the values, so
+    // the Settings page still works without a database round trip.
+  }
 }
 
 /** Sidebar/top-bar branding; resilient to a missing settings table. */
