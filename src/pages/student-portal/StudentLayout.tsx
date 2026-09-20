@@ -13,6 +13,7 @@ import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import UserAvatar from "@/components/UserAvatar";
+import { useBranding } from "@/lib/branding";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
@@ -42,6 +43,7 @@ export default function StudentLayout() {
   // undefined = still fetching the record; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
+  const branding = useBranding();
 
   useEffect(() => {
     let cancelled = false;
@@ -70,8 +72,15 @@ export default function StudentLayout() {
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 items-center px-4 text-lg font-semibold">
-          SSM
+        <div className="flex min-h-14 flex-col justify-center px-4">
+          <span className="truncate text-lg font-semibold leading-tight">
+            {branding.systemName}
+          </span>
+          {branding.universityName && (
+            <span className="truncate text-xs text-muted-foreground">
+              {branding.universityName}
+            </span>
+          )}
         </div>
         <Separator />
         <nav className="flex-1 space-y-1 p-2">

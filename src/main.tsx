@@ -4,10 +4,14 @@ import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App.tsx";
 import { applyDarkMode, getCachedSettings, getSettings } from "@/lib/api";
+import { setBrandingFromSettings } from "@/lib/branding";
 
 applyDarkMode(getCachedSettings().darkMode === true);
 getSettings()
-  .then((settings) => applyDarkMode(settings.darkMode === true))
+  .then((settings) => {
+    applyDarkMode(settings.darkMode === true);
+    setBrandingFromSettings(settings);
+  })
   .catch(() => {});
 
 createRoot(document.getElementById("root")!).render(

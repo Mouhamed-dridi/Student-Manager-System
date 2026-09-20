@@ -8,6 +8,7 @@ import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import UserAvatar from "@/components/UserAvatar";
+import { useBranding } from "@/lib/branding";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
@@ -37,6 +38,7 @@ export default function TeacherLayout() {
   // undefined = still fetching the record; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const navigate = useNavigate();
+  const branding = useBranding();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,8 +67,15 @@ export default function TeacherLayout() {
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 items-center px-4 text-lg font-semibold">
-          SSM
+        <div className="flex min-h-14 flex-col justify-center px-4">
+          <span className="truncate text-lg font-semibold leading-tight">
+            {branding.systemName}
+          </span>
+          {branding.universityName && (
+            <span className="truncate text-xs text-muted-foreground">
+              {branding.universityName}
+            </span>
+          )}
         </div>
         <Separator />
         <nav className="flex-1 space-y-1 p-2">

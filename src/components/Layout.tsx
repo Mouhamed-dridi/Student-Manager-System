@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -29,7 +29,8 @@ import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
 import UserAvatar from "@/components/UserAvatar";
 import { clearSession } from "@/lib/session";
-import { getSystemName } from "@/lib/api";
+import { useAuthDisplayName } from "@/lib/authDisplay";
+import { brandTitle, useBranding } from "@/lib/branding";
 
 type MenuKey =
   | "dashboard"
@@ -89,14 +90,9 @@ const pages: Record<MenuKey, React.ReactNode> = {
 export default function Layout() {
   const [active, setActive] = useState<MenuKey>("dashboard");
   const [payExpanded, setPayExpanded] = useState(true);
-  const [systemName, setSystemName] = useState("SSM");
   const navigate = useNavigate();
-
-  useEffect(() => {
-    getSystemName()
-      .then(setSystemName)
-      .catch(() => {});
-  }, []);
+  const branding = useBranding();
+  const displayName = useAuthDisplayName("Admin");
 
   const handleLogout = () => {
     clearSession();
@@ -119,8 +115,15 @@ export default function Layout() {
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 items-center px-4 text-lg font-semibold">
-          {systemName}
+        <div className="flex min-h-14 flex-col justify-center px-4">
+          <span className="truncate text-lg font-semibold leading-tight">
+            {branding.systemName}
+          </span>
+          {branding.universityName && (
+            <span className="truncate text-xs text-muted-foreground">
+              {branding.universityName}
+            </span>
+          )}
         </div>
         <Separator />
         <nav className="flex-1 space-y-1 p-2">
@@ -192,10 +195,13 @@ export default function Layout() {
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
           <span className="text-sm font-medium text-muted-foreground">
-            {systemName === "SSM" ? "Student Manager System" : systemName}
+            {brandTitle(branding)}
           </span>
           <div className="flex items-center gap-3">
-            <UserAvatar name="Admin" fallback="A" />
+            <UserAvatar name={displayName} fallback="A" />
+            <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+              {displayName}
+            </span>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               Logout
             </Button>

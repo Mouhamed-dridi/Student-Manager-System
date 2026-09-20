@@ -41,6 +41,7 @@ import {
   APP_SHORT_NAME,
   APP_VERSION,
 } from "@/lib/appInfo";
+import { setBrandingFromSettings } from "@/lib/branding";
 
 const LANGUAGE_OPTIONS = [
   { value: "en", label: "English" },
@@ -153,6 +154,7 @@ export default function SettingsPage() {
       setSaving(true);
       setError(null);
       await saveSettings(settings);
+      setBrandingFromSettings(settings);
       setSuccessMessage("Settings saved.");
     } catch (err) {
       setError(errorMessage(err));
