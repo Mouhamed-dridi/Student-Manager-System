@@ -3,6 +3,7 @@ import { version as reactVersion } from "react";
 import {
   Building2,
   CheckCircle2,
+  Database,
   ImagePlus,
   RefreshCw,
   Trash2,
@@ -32,8 +33,10 @@ import {
   applyDarkMode,
   errorMessage,
   getSettings,
+  reconcileAttendanceProfiles,
   saveSettings,
   type AppSettings,
+  type AttendanceSyncSummary,
 } from "@/lib/api";
 import {
   APP_DESCRIPTION,
@@ -107,6 +110,10 @@ export default function SettingsPage() {
 
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<AttendanceSyncSummary | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -185,6 +192,19 @@ export default function SettingsPage() {
         `${APP_SHORT_NAME} ${APP_VERSION} is up to date (last checked just now).`,
       );
     }, 1200);
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncError(null);
+    setSyncResult(null);
+    try {
+      setSyncResult(await reconcileAttendanceProfiles());
+    } catch (err) {
+      setSyncError(errorMessage(err));
+    } finally {
+      setSyncing(false);
+    }
   };
 
   if (loading) return <DataLoading label="Loading settings…" />;
@@ -379,6 +399,93 @@ export default function SettingsPage() {
                   {updateResult}
                 </p>
               )}
+
+              <Separator />
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <Label>Sync & validate data</Label>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Scans the attendance log for records missing program,
+                      training or class info and backfills them from the
+                      matching student/teacher profiles. Stored values are
+                      never overwritten, only gaps are filled.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSync}
+                    disabled={syncing}
+                  >
+                    <Database className="h-4 w-4" />
+                    {syncing ? "Syncing…" : "Sync Data"}
+                  </Button>
+                </div>
+
+                {syncError && <DataError message={syncError} />}
+
+                {syncResult && (
+                  <div className="space-y-3 rounded-md border bg-muted/50 p-3">
+                    <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Scanned</p>
+                        <p className="font-semibold">{syncResult.scanned}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Fixed</p>
+                        <p className="font-semibold text-green-700 dark:text-green-400">
+                          {syncResult.updated}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Unmatched</p>
+                        <p className="font-semibold">
+                          {syncResult.unmatched}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Failed</p>
+                        <p className="font-semibold">
+                          {syncResult.failed}
+                        </p>
+                      </div>
+                    </div>
+
+                    {syncResult.details.length > 0 && (
+                      <div className="max-h-48 overflow-y-auto rounded-md border bg-background">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            {syncResult.details.map((d) => (
+                              <tr
+                                key={d.id}
+                                className="border-b last:border-b-0"
+                              >
+                                <td className="px-3 py-1.5 font-medium">
+                                  {d.fullName}
+                                </td>
+                                <td className="px-3 py-1.5 text-xs text-muted-foreground uppercase">
+                                  {d.type}
+                                </td>
+                                <td className="px-3 py-1.5 text-xs">
+                                  {[
+                                    d.changed.program && "program",
+                                    d.changed.training && "training",
+                                    d.changed.className && "class",
+                                  ]
+                                    .filter(Boolean)
+                                    .join(", ") || "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

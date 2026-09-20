@@ -1536,7 +1536,136 @@ export async function updateAttendanceRecord(
   if (error) throw new Error(error.message);
 }
 
-/** Soft-deletes: moves rows to the general Trash when the columns exist. */
+/** One attendance row fixed by the reconciliation sync. */
+export interface AttendanceSyncDetail {
+  id: string;
+  type: "student" | "teacher";
+  fullName: string;
+  changed: {
+    program: boolean;
+    training: boolean;
+    className: boolean;
+  };
+}
+
+/** Result of a sync run, for the Settings > System "Sync Data" control. */
+export interface AttendanceSyncSummary {
+  scanned: number;
+  needingFix: number;
+  matched: number;
+  updated: number;
+  unmatched: number;
+  failed: number;
+  details: AttendanceSyncDetail[];
+}
+
+/**
+ * Data reconciliation: scans the attendance log for rows where program,
+ * training or class_name are missing, cross-references every row with the
+ * students/teachers tables by matching full_name (case-insensitive) and
+ * UPDATEs the attendance columns with the person's profile values. Explicit
+ * values already stored are never overwritten — only NULLs and the generic
+ * "General" class_name sentinel are backfilled.
+ */
+export async function reconcileAttendanceProfiles(): Promise<AttendanceSyncSummary> {
+  const capabilities = await generalTrashCapabilities();
+  const { data, error } = capabilities.attendance
+    ? await withTimeout(
+        supabase
+          .from("attendance")
+          .select(ATTENDANCE_SELECT)
+          .or("is_deleted.is.false,is_deleted.is.null"),
+      )
+    : await withTimeout(supabase.from("attendance").select(ATTENDANCE_SELECT));
+  if (error) throw new Error(error.message);
+
+  const rows = (data ?? []) as AttendanceRow[];
+
+  const [students, teachers] = await Promise.all([listStudents(), listTeachers()]);
+  const people = new Map<
+    string,
+    { program: string | null; training: string | null; specialty: string | null }
+  >();
+  for (const s of students) {
+    people.set(`student:${s.fullName.toLowerCase()}`, {
+      program: s.program ?? null,
+      training: s.training ?? null,
+      specialty: null,
+    });
+  }
+  for (const t of teachers) {
+    people.set(`teacher:${t.fullName.toLowerCase()}`, {
+      program: t.program ?? null,
+      training: t.training ?? null,
+      specialty: t.specialty?.trim() || null,
+    });
+  }
+
+  const summary: AttendanceSyncSummary = {
+    scanned: rows.length,
+    needingFix: 0,
+    matched: 0,
+    updated: 0,
+    unmatched: 0,
+    failed: 0,
+    details: [],
+  };
+
+  for (const row of rows) {
+    const needsProgram = !row.program?.trim();
+    const needsTraining = !row.training?.trim();
+    const hasGenericClass =
+      !row.class_name?.trim() || row.class_name.trim() === "General";
+    if (!needsProgram && !needsTraining && !hasGenericClass) continue;
+    summary.needingFix += 1;
+
+    const person = people.get(`${row.type}:${row.full_name.toLowerCase()}`);
+    if (!person) {
+      summary.unmatched += 1;
+      continue;
+    }
+    summary.matched += 1;
+
+    const changed = {
+      program: needsProgram && !!person.program?.trim(),
+      training: needsTraining && !!person.training?.trim(),
+      className:
+        hasGenericClass &&
+        (!!person.training?.trim() || !!person.program?.trim() || !!person.specialty),
+    };
+    if (!changed.program && !changed.training && !changed.className) continue;
+
+    const patch: { program: string | null; training: string | null; class_name: string | null } = {
+      program: changed.program ? person.program!.trim() : row.program ?? null,
+      training: changed.training ? person.training!.trim() : row.training ?? null,
+      class_name:
+        changed.className
+          ? person.training?.trim() || person.program?.trim() || person.specialty || "General"
+          : row.class_name ?? null,
+    };
+
+    const { error: updateError } = await withTimeout(
+      supabase.from("attendance").update(patch).eq("id", row.id),
+    );
+    if (updateError) {
+      summary.failed += 1;
+      continue;
+    }
+    summary.updated += 1;
+    summary.details.push({
+      id: row.id,
+      type: row.type,
+      fullName: row.full_name,
+      changed,
+    });
+  }
+
+  return summary;
+}
+
+/**
+ * Soft-deletes: moves rows to the general Trash when the columns exist.
+ */
 export async function softDeleteAttendance(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const capabilities = await generalTrashCapabilities();

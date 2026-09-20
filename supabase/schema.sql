@@ -143,6 +143,58 @@ alter table if exists public.attendance
 create index if not exists attendance_log_idx
   on public.attendance (date, full_name);
 
+-- Reconciliation: backfills NULL program/training on attendance rows from the
+-- matching student/teacher profiles (case-insensitive full_name match, same
+-- rule the app uses). Explicit stored values are never overwritten. Run from
+-- the SQL Editor or via the Settings > System "Sync Data" button (JS path is
+-- src/lib/api.ts -> reconcileAttendanceProfiles).
+create or replace function public.reconcile_attendance_profiles()
+returns table (
+  scanned bigint,
+  needing_fix bigint,
+  updated bigint,
+  unmatched bigint
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_updated bigint;
+begin
+  select count(*) into scanned from public.attendance;
+  select count(*) into needing_fix
+    from public.attendance
+    where program is null or training is null;
+
+  with people as (
+    select 'student'::text as person_type, lower(full_name) as lower_name,
+           program, training
+    from public.students
+    union all
+    select 'teacher'::text, lower(full_name), program, training
+    from public.teachers
+  )
+  update public.attendance a
+  set program = coalesce(a.program, p.program),
+      training = coalesce(a.training, p.training)
+  from people p
+  where p.person_type = a.type
+    and p.lower_name = lower(a.full_name)
+    and (a.program is null or a.training is null)
+    and coalesce(p.program, p.training) is not null;
+
+  get diagnostics v_updated = row_count;
+  updated := v_updated;
+
+  select count(*) into unmatched
+    from public.attendance
+    where program is null or training is null;
+end;
+$$;
+
+grant execute on function public.reconcile_attendance_profiles() to anon, authenticated;
+
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code
 -- (src/lib/trainings.ts), not here. materials holds {name, type} metadata.
