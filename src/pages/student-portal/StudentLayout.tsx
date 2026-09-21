@@ -4,14 +4,18 @@ import {
   BookOpen,
   DollarSign,
   CalendarX,
+  LayoutDashboard,
   Megaphone,
+  Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import StudentDashboardPage from "./StudentDashboardPage";
 import CoursesPage from "./CoursesPage";
 import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
+import StudentSettingsPage from "./StudentSettingsPage";
 import UserAvatar from "@/components/UserAvatar";
 import { useBranding } from "@/lib/branding";
 import { loadCurrentStudent } from "./currentStudent";
@@ -19,19 +23,23 @@ import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
 
 const menuItems = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpen },
   { key: "payments", label: "My Payment", icon: DollarSign },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "absence", label: "Absence", icon: CalendarX },
+  { key: "settings", label: "Settings", icon: Settings },
 ] as const;
 
 type MenuKey = (typeof menuItems)[number]["key"];
 
 const pages: Record<MenuKey, React.ReactNode> = {
+  dashboard: <StudentDashboardPage />,
   courses: <CoursesPage />,
   payments: <MyPaymentsPage />,
   announcements: <AnnouncementsPage />,
   absence: <MyAttendancePage />,
+  settings: <StudentSettingsPage />,
 };
 
 function clearStudentSession() {
@@ -39,7 +47,7 @@ function clearStudentSession() {
 }
 
 export default function StudentLayout() {
-  const [active, setActive] = useState<MenuKey>("courses");
+  const [active, setActive] = useState<MenuKey>("dashboard");
   // undefined = still fetching the record; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
@@ -109,21 +117,25 @@ export default function StudentLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <span className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
-            {student ? (
-              <>
-                {student.fullName}
-                <span className="text-xs font-normal">
-                  · {student.program}
-                  {student.training ? ` — ${student.training}` : ""}
-                </span>
-              </>
-            ) : (
-              "Student Portal"
-            )}
+          <span className="text-sm font-medium text-muted-foreground">
+            {menuItems.find((item) => item.key === active)?.label ??
+              "Student Portal"}
           </span>
           <div className="flex items-center gap-3">
-            <UserAvatar name={student?.fullName} fallback="S" />
+            <div className="flex items-center gap-2.5">
+              <UserAvatar name={student?.fullName} fallback="S" />
+              <div className="text-right">
+                <p className="text-sm font-semibold leading-tight">
+                  {student?.fullName ?? "Student"}
+                </p>
+                <p className="text-xs leading-tight text-muted-foreground">
+                  {student
+                    ? student.program +
+                      (student.training ? ` — ${student.training}` : "")
+                    : ""}
+                </p>
+              </div>
+            </div>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               Logout
             </Button>
