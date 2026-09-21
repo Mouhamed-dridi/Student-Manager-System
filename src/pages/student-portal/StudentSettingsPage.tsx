@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Card,
   CardContent,
@@ -11,6 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DataLoading } from "@/components/DataState";
 import UserAvatar from "@/components/UserAvatar";
 import {
@@ -18,11 +26,12 @@ import {
   errorMessage,
   getSettings,
   saveSettings,
-  updateAccount,
+  updateStudentProfile,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
-import { hasAccount } from "@/pages/users/userAccounts";
 import { loadCurrentStudent } from "./currentStudent";
+
+const ENGAGEMENT_OPTIONS = ["New Student", "Second Year"];
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -33,17 +42,153 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function EditableRow({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2">
+      <Label htmlFor={htmlFor} className="text-sm text-muted-foreground">
+        {label}
+      </Label>
+      <div className="w-44 shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function ProfileEditor({ student }: { student: Student }) {
+  const [location, setLocation] = useState(student.location ?? "");
+  const [age, setAge] = useState(student.age ? String(student.age) : "");
+  const [engagement, setEngagement] = useState(student.engagement ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!saveMessage) return;
+    const timeout = window.setTimeout(() => setSaveMessage(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [saveMessage]);
+
+  const handleSaveProfile = async () => {
+    const parsedAge = age.trim() === "" ? undefined : Math.round(Number(age));
+    if (age.trim() !== "" && !Number.isFinite(parsedAge)) {
+      setSaveError("Age must be a number.");
+      return;
+    }
+    setSaveError(null);
+    setSaveMessage(null);
+    setSaving(true);
+    try {
+      await updateStudentProfile(student.id, {
+        fullName: student.fullName,
+        program: student.program,
+        training: student.training,
+        phone: student.phone,
+        email: student.email,
+        location: location.trim() || undefined,
+        education: student.education,
+        age: Number.isFinite(parsedAge) ? parsedAge : undefined,
+        engagement: engagement.trim() || undefined,
+      });
+      setSaveMessage("Changes saved.");
+    } catch (err) {
+      setSaveError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="mt-4 max-w-xl">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <UserAvatar name={student.fullName} fallback="S" className="h-10 w-10" />
+          <div>
+            <CardTitle>{student.fullName}</CardTitle>
+            <CardDescription>Student account</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Separator />
+        <InfoRow label="Program" value={student.program} />
+        <Separator />
+        <InfoRow label="Training" value={student.training || "—"} />
+        <Separator />
+        <InfoRow label="Phone Number" value={student.phone || "—"} />
+        <Separator />
+        <InfoRow label="Email" value={student.email || "—"} />
+        <Separator />
+        <InfoRow label="Education" value={student.education || "—"} />
+
+        <Separator />
+        <EditableRow label="Location" htmlFor="student-location">
+          <Input
+            id="student-location"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            placeholder="Your location"
+          />
+        </EditableRow>
+        <Separator />
+        <EditableRow label="Age" htmlFor="student-age">
+          <Input
+            id="student-age"
+            type="number"
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            placeholder="Your age"
+            min={0}
+          />
+        </EditableRow>
+        <Separator />
+        <EditableRow label="Engagement">
+          <Select
+            value={engagement}
+            onValueChange={(value) => setEngagement(value ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select engagement" />
+            </SelectTrigger>
+            <SelectContent>
+              {ENGAGEMENT_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </EditableRow>
+
+        <Separator />
+        <div className="flex items-center gap-3 pt-4">
+          <Button onClick={handleSaveProfile} disabled={saving}>
+            {saving ? "Saving…" : "Save Changes"}
+          </Button>
+          {saveMessage && (
+            <p className="text-sm text-green-600 dark:text-green-400">
+              {saveMessage}
+            </p>
+          )}
+          {saveError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function StudentSettingsPage() {
   // undefined = session record still loading; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const [darkMode, setDarkMode] = useState(false);
-
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +218,6 @@ export default function StudentSettingsPage() {
     if (student !== undefined) applyDarkMode(darkMode);
   }, [darkMode, student]);
 
-  useEffect(() => {
-    if (!passwordMessage) return;
-    const timeout = window.setTimeout(() => setPasswordMessage(null), 4000);
-    return () => window.clearTimeout(timeout);
-  }, [passwordMessage]);
-
   const handleToggleDarkMode = async (checked: boolean) => {
     setDarkMode(checked);
     try {
@@ -86,37 +225,6 @@ export default function StudentSettingsPage() {
       await saveSettings({ ...settings, darkMode: checked });
     } catch {
       // Best effort — applyDarkMode already toggled the current view.
-    }
-  };
-
-  const handleSavePassword = async () => {
-    if (!student) return;
-    if (!newPassword.trim()) {
-      setPasswordError("Please enter a new password.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError("The new passwords do not match.");
-      return;
-    }
-    if (currentPassword !== (student.password ?? "")) {
-      setPasswordError("The current password is incorrect.");
-      return;
-    }
-    setPasswordError(null);
-    setSavingPassword(true);
-    try {
-      await updateAccount("students", student.id, {
-        password: newPassword.trim(),
-      });
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      setPasswordMessage("Password updated.");
-    } catch (err) {
-      setPasswordError(errorMessage(err));
-    } finally {
-      setSavingPassword(false);
     }
   };
 
@@ -145,98 +253,7 @@ export default function StudentSettingsPage() {
     <div>
       <h2 className="text-2xl font-semibold">Settings</h2>
 
-      <Card className="mt-4 max-w-xl">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <UserAvatar name={student.fullName} fallback="S" className="h-10 w-10" />
-            <div>
-              <CardTitle>{student.fullName}</CardTitle>
-              <CardDescription>Student account</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <Separator />
-          <InfoRow label="Program" value={student.program} />
-          <Separator />
-          <InfoRow label="Training" value={student.training || "—"} />
-          <Separator />
-          <InfoRow label="Phone Number" value={student.phone || "—"} />
-          <Separator />
-          <InfoRow label="Email" value={student.email || "—"} />
-          <Separator />
-          <InfoRow label="Location" value={student.location || "—"} />
-          <Separator />
-          <InfoRow label="Education" value={student.education || "—"} />
-          <Separator />
-          <InfoRow label="Age" value={student.age ? String(student.age) : "—"} />
-          <Separator />
-          <InfoRow label="Engagement" value={student.engagement || "—"} />
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4 max-w-xl">
-        <CardHeader>
-          <CardTitle>Login Account</CardTitle>
-          <CardDescription>
-            Set a new password for logging into the student portal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {hasAccount(student) ? (
-            <div className="space-y-4">
-              {passwordError && (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  {passwordError}
-                </p>
-              )}
-              {passwordMessage && (
-                <p className="text-sm text-green-600 dark:text-green-400">
-                  {passwordMessage}
-                </p>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="current-password">Current password</Label>
-                <Input
-                  id="current-password"
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="Your current password"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-password">New password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="New password"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm new password</Label>
-                <Input
-                  id="confirm-password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Repeat the new password"
-                />
-              </div>
-              <Button onClick={handleSavePassword} disabled={savingPassword}>
-                {savingPassword ? "Saving…" : "Update Password"}
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              You have no login account yet. Ask the center to create one for
-              you.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      <ProfileEditor key={student.id} student={student} />
 
       <Card className="mt-4 max-w-xl">
         <CardHeader>

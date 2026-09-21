@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { CalendarX, Hourglass, Wallet } from "lucide-react";
+import type { ReactNode } from "react";
+import { BookOpen, CalendarX, Hourglass, type LucideIcon } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -27,16 +28,26 @@ const DAY_ORDER = [
   "Friday",
 ];
 
-function formatUSD(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(amount);
+function nextUpcoming(
+  courses: ScheduledCourseView[],
+  today: Date,
+): ScheduledCourseView | null {
+  if (courses.length === 0) return null;
+  const todayIdx = (today.getDay() + 6) % 7; // Monday = 0
+  const nowSlot = `${String(today.getHours()).padStart(2, "0")}:${String(
+    today.getMinutes(),
+  ).padStart(2, "0")}`;
+  const upcoming = courses.find((c) => {
+    const dayIdx = DAY_ORDER.indexOf(c.day);
+    if (dayIdx < todayIdx) return false;
+    if (dayIdx > todayIdx) return true;
+    const start = (c.time.split(/[–-]/)[0] ?? "").trim();
+    return !start || start >= nowSlot;
+  });
+  return upcoming ?? courses[0];
 }
 
 interface StudentStats {
-  totalPaid: number;
   pending: number;
   absences: number;
 }
@@ -46,9 +57,9 @@ function StatCard({
   label,
   value,
 }: {
-  icon: typeof Wallet;
+  icon: LucideIcon;
   label: string;
-  value: string;
+  value: ReactNode;
 }) {
   return (
     <Card>
@@ -97,9 +108,6 @@ export default function StudentDashboardPage() {
           if (cancelled) return;
           const mine = payments.filter((p) => p.studentId === record.id);
           setStats({
-            totalPaid: mine
-              .filter((p) => p.status !== "pending")
-              .reduce((sum, p) => sum + Number(p.amount), 0),
             pending: mine.filter((p) => p.status === "pending").length,
             absences: attendance.length,
           });
@@ -147,6 +155,7 @@ export default function StudentDashboardPage() {
         DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day) ||
         a.time.localeCompare(b.time),
     );
+  const latestCourse = nextUpcoming(weekCourses, new Date());
 
   return (
     <div>
@@ -167,9 +176,20 @@ export default function StudentDashboardPage() {
       ) : (
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <StatCard
-            icon={Wallet}
-            label="Total Paid"
-            value={formatUSD(stats.totalPaid)}
+            icon={BookOpen}
+            label="Latest Course"
+            value={
+              latestCourse ? (
+                <>
+                  <span className="block truncate">{latestCourse.name}</span>
+                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                    {latestCourse.day} · {latestCourse.time}
+                  </span>
+                </>
+              ) : (
+                "No courses yet"
+              )
+            }
           />
           <StatCard
             icon={Hourglass}

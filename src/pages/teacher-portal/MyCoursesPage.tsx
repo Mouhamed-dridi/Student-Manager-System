@@ -222,7 +222,7 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
             value={day}
             onValueChange={(value) => setDay(value ?? DAY_OPTIONS[0])}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="flex w-full items-center px-3 py-2">
               <SelectValue placeholder="Select day" />
             </SelectTrigger>
             <SelectContent>
