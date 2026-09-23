@@ -32,6 +32,7 @@ import {
   listTrainings,
   saveTeacherCourse,
   subscribeToTable,
+  uploadCourseThumbnail,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import type {
@@ -42,18 +43,11 @@ import type {
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
-const DAY_OPTIONS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-
-const TIME_SLOTS = [
-  "08:00–10:00",
-  "10:15–12:15",
-  "13:00–15:00",
-  "15:15–17:15",
-];
-
 const THUMBNAIL_MAX_WIDTH = 400;
 
-async function fileToThumbnailDataUrl(file: File): Promise<string> {
+// Downscales a picked image to a ≤400px-wide JPEG blob that will be uploaded
+// to Supabase Storage (keeps the stored thumbnails small).
+async function fileToThumbnailJpeg(file: File): Promise<Blob> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -71,11 +65,18 @@ async function fileToThumbnailDataUrl(file: File): Promise<string> {
   canvas.width = Math.max(1, Math.round(img.width * scale));
   canvas.height = Math.max(1, Math.round(img.height * scale));
   const ctx = canvas.getContext("2d");
-  if (!ctx) return dataUrl;
+  if (!ctx) return file;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(
+      (blob) =>
+        blob ? resolve(blob) : reject(new Error("Image could not be encoded")),
+      "image/jpeg",
+      0.75,
+    ),
+  );
 }
 
 type ViewKey = "my-courses" | "add-course";
@@ -84,9 +85,9 @@ interface CourseFormValues {
   name: string;
   program: string;
   training: string;
-  day: string;
-  time: string;
   thumbnail?: string;
+  /** Newly picked image, downscaled to a JPEG blob, to upload to Storage. */
+  thumbnailFile?: Blob;
   materials?: CourseMaterial[];
 }
 
@@ -103,7 +104,7 @@ interface TrainingOption {
 
 interface CourseFormProps {
   initialData?: TeacherCourseRecord;
-  onSubmit: (values: CourseFormValues) => boolean | Promise<boolean>;
+  onSubmit: (values: CourseFormValues) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -111,24 +112,15 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
   const [name, setName] = useState(initialData?.name ?? "");
   const [program, setProgram] = useState(initialData?.program ?? "");
   const [training, setTraining] = useState(initialData?.training ?? "");
-  const [day, setDay] = useState(
-    initialData?.day && DAY_OPTIONS.includes(initialData.day)
-      ? initialData.day
-      : DAY_OPTIONS[0],
-  );
-  const [time, setTime] = useState(
-    initialData?.time && TIME_SLOTS.includes(initialData.time)
-      ? initialData.time
-      : TIME_SLOTS[0],
-  );
   const [pickedImage, setPickedImage] = useState<{
     name: string;
-    dataUrl: string;
+    file: Blob;
   } | null>(null);
   const [materials, setMaterials] = useState<CourseMaterial[]>(
     initialData?.materials ?? [],
   );
-  const [saveError, setSaveError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
@@ -217,42 +209,6 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Day</Label>
-          <Select
-            value={day}
-            onValueChange={(value) => setDay(value ?? DAY_OPTIONS[0])}
-          >
-            <SelectTrigger className="flex w-full items-center px-3 py-2">
-              <SelectValue placeholder="Select day" />
-            </SelectTrigger>
-            <SelectContent>
-              {DAY_OPTIONS.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Time</Label>
-          <Select
-            value={time}
-            onValueChange={(value) => setTime(value ?? TIME_SLOTS[0])}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select time slot" />
-            </SelectTrigger>
-            <SelectContent>
-              {TIME_SLOTS.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
           <Label htmlFor="course-thumbnail">Thumbnail image (optional)</Label>
           <Input
             id="course-thumbnail"
@@ -262,8 +218,8 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
               const input = e.currentTarget;
               const file = input.files?.[0];
               if (!file) return;
-              fileToThumbnailDataUrl(file)
-                .then((dataUrl) => setPickedImage({ name: file.name, dataUrl }))
+              fileToThumbnailJpeg(file)
+                .then((blob) => setPickedImage({ name: file.name, file: blob }))
                 .catch(() => {
                   setPickedImage(null);
                   input.value = "";
@@ -323,29 +279,32 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
         </div>
 
         {saveError ? (
-          <p className="text-sm text-destructive">
-            Couldn't save the course — please try again.
-          </p>
+          <p className="text-sm text-destructive">{saveError}</p>
         ) : null}
 
         <div className="flex gap-2">
           <Button
-            disabled={!valid}
-            onClick={() => {
-              setSaveError(false);
+            disabled={!valid || saving}
+            onClick={async () => {
+              setSaving(true);
+              setSaveError(null);
               const values: CourseFormValues = {
                 name: name.trim(),
                 program,
                 training,
-                day,
-                time,
               };
-              if (pickedImage) values.thumbnail = pickedImage.dataUrl;
+              if (pickedImage) values.thumbnailFile = pickedImage.file;
               values.materials = materials.length > 0 ? materials : undefined;
-              if (!onSubmit(values)) setSaveError(true);
+              try {
+                await onSubmit(values);
+              } catch (err) {
+                setSaveError(errorMessage(err));
+              } finally {
+                setSaving(false);
+              }
             }}
           >
-            {initialData ? "Save Changes" : "Add Course"}
+            {saving ? "Saving…" : initialData ? "Save Changes" : "Add Course"}
           </Button>
           <Button variant="outline" onClick={onCancel}>
             Cancel
@@ -445,26 +404,28 @@ export default function MyCoursesPage() {
     setView("add-course");
   };
 
-  const handleSubmit = async (values: CourseFormValues): Promise<boolean> => {
+  const handleSubmit = async (values: CourseFormValues): Promise<void> => {
+    const { thumbnailFile, ...courseValues } = values;
     let record: TeacherCourseRecord;
     if (editing) {
-      // Edits keep the course's publish date; an uploaded thumbnail replaces
-      // the old one. Program/Training are picked in the form itself.
-      record = { ...editing, ...values };
+      // Edits keep the course's publish date; a newly uploaded thumbnail
+      // replaces the old one. Program/Training are picked in the form itself.
+      record = { ...editing, ...courseValues };
     } else {
       record = {
         id: crypto.randomUUID(),
         teacherId: teacher.id,
         published: new Date().toISOString(),
-        ...values,
+        ...courseValues,
       };
     }
-    const ok = await saveTeacherCourse(record);
-    if (!ok) return false;
+    if (thumbnailFile) {
+      record.thumbnail = await uploadCourseThumbnail(thumbnailFile, teacher.id);
+    }
+    await saveTeacherCourse(record);
     setEditing(null);
     setView("my-courses");
     await refresh();
-    return true;
   };
 
   const confirmDelete = async () => {

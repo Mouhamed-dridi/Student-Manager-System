@@ -24,8 +24,9 @@ export const TRAININGS: Record<Program, string[]> = {
 
 export interface ScheduledCourse {
   name: string;
-  day: string;
-  time: string;
+  /** Optional now: teacher-created courses carry no manual schedule slot. */
+  day?: string;
+  time?: string;
 }
 
 // Prototype schedule data: courses offered per program and training.
@@ -91,8 +92,8 @@ export interface TeacherCourseRecord {
   programId?: string;
   trainingId?: string;
   name: string;
-  day: string;
-  time: string;
+  day?: string;
+  time?: string;
   thumbnail?: string;
   published?: string;
   materials?: CourseMaterial[];

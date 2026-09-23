@@ -38,10 +38,10 @@ function nextUpcoming(
     today.getMinutes(),
   ).padStart(2, "0")}`;
   const upcoming = courses.find((c) => {
-    const dayIdx = DAY_ORDER.indexOf(c.day);
+    const dayIdx = DAY_ORDER.indexOf(c.day ?? "");
     if (dayIdx < todayIdx) return false;
     if (dayIdx > todayIdx) return true;
-    const start = (c.time.split(/[–-]/)[0] ?? "").trim();
+    const start = ((c.time ?? "").split(/[–-]/)[0] ?? "").trim();
     return !start || start >= nowSlot;
   });
   return upcoming ?? courses[0];
@@ -152,8 +152,8 @@ export default function StudentDashboardPage() {
     .slice()
     .sort(
       (a, b) =>
-        DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day) ||
-        a.time.localeCompare(b.time),
+        DAY_ORDER.indexOf(a.day ?? "") - DAY_ORDER.indexOf(b.day ?? "") ||
+        (a.time ?? "").localeCompare(b.time ?? ""),
     );
   const latestCourse = nextUpcoming(weekCourses, new Date());
 
@@ -182,9 +182,11 @@ export default function StudentDashboardPage() {
               latestCourse ? (
                 <>
                   <span className="block truncate">{latestCourse.name}</span>
-                  <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                    {latestCourse.day} · {latestCourse.time}
-                  </span>
+                  {latestCourse.day && latestCourse.time ? (
+                    <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                      {latestCourse.day} · {latestCourse.time}
+                    </span>
+                  ) : null}
                 </>
               ) : (
                 "No courses yet"
@@ -225,7 +227,7 @@ export default function StudentDashboardPage() {
                   >
                     <span className="font-medium">{c.name}</span>
                     <span className="text-xs text-muted-foreground">
-                      {c.day} · {c.time}
+                      {c.day && c.time ? `${c.day} · ${c.time}` : ""}
                     </span>
                   </li>
                 ))}

@@ -1723,7 +1723,7 @@ interface CourseRow {
   programs: { code: string } | null;
   trainings: { name: string } | null;
   day: string;
-  time: string;
+  time_slot: string;
   thumbnail_url: string | null;
   published_at: string | null;
   materials: CourseMaterial[] | null;
@@ -1738,8 +1738,8 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
     programId: row.program_id ?? undefined,
     trainingId: row.training_id ?? undefined,
     name: row.title,
-    day: row.day,
-    time: row.time,
+    day: row.day ?? undefined,
+    time: row.time_slot ?? undefined,
     thumbnail: row.thumbnail_url ?? undefined,
     published: row.published_at ?? undefined,
     materials: row.materials ?? undefined,
@@ -1748,16 +1748,55 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
 
 const COURSE_SELECT = "*, programs(code), trainings(name)";
 
+const COURSE_THUMBNAILS_BUCKET = "cours";
+
+/**
+ * Uploads a course thumbnail to Supabase Storage and returns its public URL.
+ * The file must be a JPEG (the form downscales before this call). Throws with
+ * a readable message when the bucket is missing or the upload fails so the
+ * caller can surface the error instead of failing silently.
+ */
+export async function uploadCourseThumbnail(
+  image: Blob,
+  teacherId: string,
+): Promise<string> {
+  const filePath = `teacher-${teacherId}/${crypto.randomUUID()}.jpg`;
+  const { error } = await withTimeout(
+    supabase.storage.from(COURSE_THUMBNAILS_BUCKET).upload(filePath, image, {
+      cacheControl: "3600",
+      contentType: "image/jpeg",
+      upsert: false,
+    }),
+  );
+  if (error) {
+    const statusCode = (error as { statusCode?: string | number } | undefined)
+      ?.statusCode;
+    const message = `${error.message ?? ""}`;
+    if (
+      statusCode === "404" ||
+      statusCode === 404 ||
+      /bucket .*not found|does not exist|not found/i.test(message)
+    ) {
+      throw new Error(
+        "Thumbnail upload failed: the 'cours' storage bucket does not exist yet. Ask the administrator to create it in Supabase (run the Storage block in supabase/schema.sql).",
+      );
+    }
+    throw new Error(`Thumbnail upload failed: ${message}`);
+  }
+  return supabase.storage.from(COURSE_THUMBNAILS_BUCKET).getPublicUrl(filePath)
+    .data.publicUrl;
+}
+
 export async function listTeacherCourses(): Promise<TeacherCourseRecord[]> {
   return (await rows<CourseRow>("courses", undefined, COURSE_SELECT)).map(
     courseFromRow,
   );
 }
 
-/** Insert-or-update by id. Returns false when the write failed. */
+/** Insert-or-update by id. Throws with the database message on failure. */
 export async function saveTeacherCourse(
   record: TeacherCourseRecord,
-): Promise<boolean> {
+): Promise<void> {
   const { programId, trainingId } = await resolveProgramTrainingIds(
     record.program,
     record.training,
@@ -1767,19 +1806,16 @@ export async function saveTeacherCourse(
     title: record.name,
     program_id: programId || null,
     training_id: trainingId || null,
-    day: record.day,
-    time: record.time,
     teacher_id: record.teacherId,
     thumbnail_url: record.thumbnail ?? null,
     published_at: record.published ?? null,
-    materials: record.materials ?? null,
   };
   const { error } = await withTimeout(
     supabase.from("courses").upsert(payload, {
       onConflict: "id",
     }),
   );
-  return !error;
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteTeacherCourse(id: string): Promise<boolean> {

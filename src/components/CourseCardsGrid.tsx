@@ -95,14 +95,18 @@ function CourseCard({
         <CardTitle>{course.name}</CardTitle>
       </CardContent>
       <CardFooter className="gap-4 text-xs text-muted-foreground">
-        <span className="flex items-center gap-1.5">
-          <CalendarDays className="h-3.5 w-3.5" />
-          {course.day}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5" />
-          {course.time}
-        </span>
+        {course.day ? (
+          <span className="flex items-center gap-1.5">
+            <CalendarDays className="h-3.5 w-3.5" />
+            {course.day}
+          </span>
+        ) : null}
+        {course.time ? (
+          <span className="flex items-center gap-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            {course.time}
+          </span>
+        ) : null}
         {materialCount > 0 && onOpenMaterials ? (
           <button
             type="button"

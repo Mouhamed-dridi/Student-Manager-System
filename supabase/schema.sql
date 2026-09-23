@@ -197,7 +197,8 @@ grant execute on function public.reconcile_attendance_profiles() to anon, authen
 
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code
--- (src/lib/trainings.ts), not here. materials holds {name, type} metadata.
+-- (src/lib/trainings.ts), not here. Thumbnails are uploaded to the
+-- 'cours' Storage bucket; thumbnail_url holds the public URL.
 
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
@@ -205,13 +206,49 @@ create table if not exists public.courses (
   program_id uuid references programs(id),
   training_id uuid references trainings(id),
   day text,
-  time text,
+  time_slot text,
   teacher_id uuid,
   thumbnail_url text,
-  published_at timestamptz,
-  materials jsonb,
-  created_at timestamptz not null default now()
+  published_at timestamptz
 );
+
+-- -------------------------------------------- Storage: course thumbnails ---
+-- Course thumbnail images live in Supabase Storage, not in the database, in
+-- the 'cours' bucket. The bucket must exist before uploads succeed; paste
+-- this block into the SQL Editor (it is idempotent).
+--
+-- Roles: the app has NO Supabase Auth accounts — teachers use the anon/
+-- publishable key (cookie sessions), so uploads come in as `anon`.
+-- `authenticated` is added too so the bucket keeps working if real auth is
+-- ever enabled. Policy names must stay unique per role.
+
+insert into storage.buckets (id, name, public)
+values ('cours', 'cours', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "cours read anon" on storage.objects;
+create policy "cours read anon"
+  on storage.objects for select
+  to anon
+  using (bucket_id = 'cours');
+
+drop policy if exists "cours read authenticated" on storage.objects;
+create policy "cours read authenticated"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'cours');
+
+drop policy if exists "cours insert anon" on storage.objects;
+create policy "cours insert anon"
+  on storage.objects for insert
+  to anon
+  with check (bucket_id = 'cours');
+
+drop policy if exists "cours insert authenticated" on storage.objects;
+create policy "cours insert authenticated"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'cours');
 
 -- ------------------------------------------------------------------ exams --
 -- Owned by the teacher who created them; snapshots the course's program and
