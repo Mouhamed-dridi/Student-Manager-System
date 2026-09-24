@@ -93,6 +93,11 @@ function CourseCard({
       </div>
       <CardContent>
         <CardTitle>{course.name}</CardTitle>
+        {course.description ? (
+          <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+            {course.description}
+          </p>
+        ) : null}
       </CardContent>
       <CardFooter className="gap-4 text-xs text-muted-foreground">
         {course.day ? (

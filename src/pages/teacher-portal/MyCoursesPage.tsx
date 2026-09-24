@@ -17,12 +17,14 @@ import { DataError, DataLoading } from "@/components/DataState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   deleteTeacherCourse,
   errorMessage,
   listTeacherCourses,
   saveTeacherCourse,
   subscribeToTable,
+  teacherCourseAssignment,
   uploadCourseThumbnail,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
@@ -74,6 +76,7 @@ type ViewKey = "my-courses" | "add-course";
 
 interface CourseFormValues {
   name: string;
+  description: string;
   program: string;
   training: string;
   thumbnail?: string;
@@ -108,6 +111,9 @@ function CourseForm({
         }
       : null;
   const [name, setName] = useState(initialData?.name ?? "");
+  const [description, setDescription] = useState(
+    initialData?.description ?? "",
+  );
   const [pickedImage, setPickedImage] = useState<{
     name: string;
     file: Blob;
@@ -139,6 +145,18 @@ function CourseForm({
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="course-description">
+            Course Description
+          </Label>
+          <Textarea
+            id="course-description"
+            placeholder="What does this course cover?"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
           />
         </div>
         {assignment ? (
@@ -245,6 +263,7 @@ function CourseForm({
               setSaveError(null);
               const values: CourseFormValues = {
                 name: name.trim(),
+                description: description.trim(),
                 program: programValue,
                 training: trainingValue,
               };
@@ -273,6 +292,12 @@ function CourseForm({
 export default function MyCoursesPage() {
   // undefined = session record still loading; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
+  // Program/training the teacher teaches: profile value, else derived from
+  // the teacher's own courses (resolved once the session record loads).
+  const [assignment, setAssignment] = useState<{
+    program: string;
+    training: string;
+  } | null>(null);
   const [view, setView] = useState<ViewKey>("my-courses");
   const [editing, setEditing] = useState<TeacherCourseRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledCourseView | null>(
@@ -281,10 +306,12 @@ export default function MyCoursesPage() {
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (teacherId?: string) => {
     try {
       setError(null);
-      const all = await listTeacherCourses();
+      // Strictly this teacher's own courses — cross-teacher rows are never
+      // fetched (server-side .eq("teacher_id", ...)).
+      const all = await listTeacherCourses(teacherId);
       setCourses(all);
     } catch (err) {
       setError(errorMessage(err));
@@ -301,7 +328,14 @@ export default function MyCoursesPage() {
           return;
         }
         setTeacher(record);
-        await refresh();
+        teacherCourseAssignment(record.id)
+          .then((a) => {
+            if (!cancelled && a.program && a.training) {
+              setAssignment({ program: a.program, training: a.training });
+            }
+          })
+          .catch(() => {});
+await refresh(record.id);
       })
       .catch(() => {
         if (!cancelled) setTeacher(null);
@@ -315,13 +349,13 @@ export default function MyCoursesPage() {
   // here without a manual refresh. Runs once the teacher record resolves.
   useEffect(() => {
     if (!teacher) return;
-    return subscribeToTable("courses", () => void refresh());
+    return subscribeToTable("courses", () => void refresh(teacher?.id));
   }, [teacher, refresh]);
 
   // Quiet fallback: refresh courses once if the tab regains focus after a
   // while, in case the realtime connection dropped while backgrounded.
   useRefetchOnFocus(() => {
-    if (teacher) void refresh();
+    if (teacher) void refresh(teacher.id);
   });
 
   if (teacher === null) {
@@ -380,7 +414,7 @@ export default function MyCoursesPage() {
     await saveTeacherCourse(record);
     setEditing(null);
     setView("my-courses");
-    await refresh();
+    await refresh(teacher?.id);
   };
 
   const confirmDelete = async () => {
@@ -388,7 +422,7 @@ export default function MyCoursesPage() {
     try {
       setError(null);
       await deleteTeacherCourse(deleteTarget.id);
-      await refresh();
+      await refresh(teacher?.id);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -468,8 +502,8 @@ export default function MyCoursesPage() {
             key={editing?.id ?? "new"}
             initialData={editing ?? undefined}
             lockedAssignment={
-              teacher.program && teacher.training
-                ? { program: teacher.program, training: teacher.training }
+              assignment
+                ? { program: assignment.program, training: assignment.training }
                 : undefined
             }
             onSubmit={handleSubmit}

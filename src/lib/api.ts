@@ -1717,6 +1717,7 @@ export async function hardDeleteAttendance(ids: string[]): Promise<void> {
 interface CourseRow {
   id: string;
   title: string;
+  description: string | null;
   program_id: string | null;
   training_id: string | null;
   teacher_id: string | null;
@@ -1738,6 +1739,7 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
     programId: row.program_id ?? undefined,
     trainingId: row.training_id ?? undefined,
     name: row.title,
+    description: row.description ?? undefined,
     day: row.day ?? undefined,
     time: row.time_slot ?? undefined,
     thumbnail: row.thumbnail_url ?? undefined,
@@ -1787,10 +1789,21 @@ export async function uploadCourseThumbnail(
     .data.publicUrl;
 }
 
-export async function listTeacherCourses(): Promise<TeacherCourseRecord[]> {
-  return (await rows<CourseRow>("courses", undefined, COURSE_SELECT)).map(
-    courseFromRow,
-  );
+/**
+ * Teacher-created courses. Pass `teacherId` to fetch only that teacher's own
+ * rows (server-side `.eq("teacher_id", ...)`); omit it to get ALL courses
+ * (used by the student portal's merged schedule view).
+ */
+export async function listTeacherCourses(
+  teacherId?: string,
+): Promise<TeacherCourseRecord[]> {
+  return (
+    await rows<CourseRow>(
+      "courses",
+      teacherId ? { eq: { teacher_id: teacherId } } : undefined,
+      COURSE_SELECT,
+    )
+  ).map(courseFromRow);
 }
 
 /** Insert-or-update by id. Throws with the database message on failure. */
@@ -1801,6 +1814,7 @@ export async function saveTeacherCourse(
   const payload = {
     id: record.id,
     title: record.name,
+    description: record.description ?? null,
     program_id: programId || null,
     training_id: trainingId || null,
     teacher_id: record.teacherId,
@@ -1815,31 +1829,85 @@ export async function saveTeacherCourse(
   if (error) throw new Error(error.message);
 }
 
+export interface TeacherCourseAssignment {
+  program: string;
+  training: string;
+  programId: string;
+  trainingId: string;
+}
+
 /**
- * Resolves the program/training FK targets for a course write. When the
- * logged-in teacher's profile carries an assigned program/training, those
- * values win so the form can never create a course outside the teacher's
- * own assignment. Teachers without an assignment fall back to the values the
- * form supplied (legacy behavior).
+ * Resolves the program/training a teacher teaches in. The teacher's profile
+ * (teachers.program/training columns) wins when set; otherwise it falls back
+ * to the class of the teacher's own courses, so a teacher with existing
+ * courses keeps new ones in the same program/training even before the
+ * profile columns are populated.
+ */
+export async function teacherCourseAssignment(
+  teacherId: string,
+): Promise<TeacherCourseAssignment> {
+  const empty: TeacherCourseAssignment = {
+    program: "",
+    training: "",
+    programId: "",
+    trainingId: "",
+  };
+  try {
+    const teacher = await getTeacherById(teacherId);
+    if (teacher?.program && teacher?.training) {
+      const { programId, trainingId } = await resolveProgramTrainingIds(
+        teacher.program,
+        teacher.training,
+      );
+      return {
+        program: teacher.program,
+        training: teacher.training,
+        programId,
+        trainingId,
+      };
+    }
+  } catch {
+    // Profile unreachable — try the teacher's own courses below.
+  }
+  try {
+    const own = (await listTeacherCourses(teacherId)).find(
+      (c) => Boolean(c.programId && c.trainingId),
+    );
+    if (own?.programId && own.trainingId) {
+      return {
+        program: own.program,
+        training: own.training,
+        programId: own.programId,
+        trainingId: own.trainingId,
+      };
+    }
+  } catch {
+    // Courses unreachable — fall back to the record's own values.
+  }
+  return empty;
+}
+
+/**
+ * Resolves the program/training FK targets for a course write. The logged-in
+ * teacher's assignment (profile, else own courses) wins so the form can
+ * never create a course outside the teacher's class; an edited course keeps
+ * its original FKs when the teacher has no assignment; legacy text falls
+ * back to the tables' matching rows (or NULL).
  */
 async function courseTargetIds(
   record: TeacherCourseRecord,
 ): Promise<{ programId: string; trainingId: string }> {
-  let assignedProgram = "";
-  let assignedTraining = "";
-  try {
-    const teacher = await getTeacherById(record.teacherId);
-    if (teacher?.program && teacher?.training) {
-      assignedProgram = teacher.program;
-      assignedTraining = teacher.training;
-    }
-  } catch {
-    // Profile unreachable — fall back to the form's chosen values below.
+  const assignment = await teacherCourseAssignment(record.teacherId);
+  if (assignment.programId && assignment.trainingId) {
+    return {
+      programId: assignment.programId,
+      trainingId: assignment.trainingId,
+    };
   }
-  return resolveProgramTrainingIds(
-    assignedProgram || record.program,
-    assignedTraining || record.training,
-  );
+  if (record.programId && record.trainingId) {
+    return { programId: record.programId, trainingId: record.trainingId };
+  }
+  return resolveProgramTrainingIds(record.program, record.training);
 }
 
 export async function deleteTeacherCourse(id: string): Promise<boolean> {
@@ -1859,11 +1927,10 @@ export async function deleteTeacherCourse(id: string): Promise<boolean> {
 export async function classRosterForTeacher(
   teacherId: string,
 ): Promise<{ courses: TeacherCourseRecord[]; students: Student[] }> {
-  const [students, courses] = await Promise.all([
+  const [students, ownCourses] = await Promise.all([
     listStudents(),
-    listTeacherCourses(),
+    listTeacherCourses(teacherId),
   ]);
-  const ownCourses = courses.filter((c) => c.teacherId === teacherId);
   if (ownCourses.length === 0) return { courses: ownCourses, students: [] };
 
   const idPairs = new Set<string>();

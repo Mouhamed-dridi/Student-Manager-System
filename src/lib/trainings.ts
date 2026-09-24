@@ -92,6 +92,7 @@ export interface TeacherCourseRecord {
   programId?: string;
   trainingId?: string;
   name: string;
+  description?: string;
   day?: string;
   time?: string;
   thumbnail?: string;
@@ -106,6 +107,7 @@ export interface ScheduledCourseView extends ScheduledCourse {
   training?: string;
   programId?: string;
   trainingId?: string;
+  description?: string;
   thumbnail?: string;
   published?: string;
   materials?: CourseMaterial[];
@@ -149,6 +151,7 @@ export async function loadScheduledCourses(
         programId,
         trainingId,
         name,
+        description,
         day,
         time,
         thumbnail,
@@ -162,6 +165,7 @@ export async function loadScheduledCourses(
         programId,
         trainingId,
         name,
+        description,
         day,
         time,
         thumbnail,

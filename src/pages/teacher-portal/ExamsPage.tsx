@@ -162,12 +162,11 @@ export default function ExamsPage() {
         }
         setTeacher(record);
         try {
-          const [all, allCourses] = await Promise.all([
+          const [all, ownCourses] = await Promise.all([
             listExams(),
-            listTeacherCourses(),
+            listTeacherCourses(record.id),
           ]);
           if (cancelled) return;
-          const ownCourses = allCourses.filter((c) => c.teacherId === record.id);
           setExams(all);
           setCourseRecords(ownCourses);
           setCourses([...new Set(ownCourses.map((c) => c.name))]);

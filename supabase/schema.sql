@@ -203,6 +203,7 @@ grant execute on function public.reconcile_attendance_profiles() to anon, authen
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
   title text not null,
+  description text,
   program_id uuid references programs(id),
   training_id uuid references trainings(id),
   day text,
@@ -211,6 +212,11 @@ create table if not exists public.courses (
   thumbnail_url text,
   published_at timestamptz
 );
+
+-- Course description shown on teacher/student course cards (idempotent for
+-- databases that already have the column).
+alter table if exists public.courses
+  add column if not exists description text;
 
 -- -------------------------------------------- Storage: course thumbnails ---
 -- Course thumbnail images live in Supabase Storage, not in the database, in
