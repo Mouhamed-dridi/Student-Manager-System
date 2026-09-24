@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
 import { DataError, DataLoading } from "@/components/DataState";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, subscribeToTable } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type { ScheduledCourseView } from "@/lib/trainings";
 import type { Student } from "@/pages/students/StudentForm";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { loadCurrentStudent } from "./currentStudent";
 
 export default function CoursesPage() {
@@ -14,24 +15,30 @@ export default function CoursesPage() {
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const refresh = useCallback(async (record: Student) => {
+    try {
+      setError(null);
+      const list = await loadScheduledCourses(
+        record.program,
+        record.training,
+        {
+          programId: record.programId,
+          trainingId: record.trainingId,
+        },
+      );
+      setCourses(list);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     loadCurrentStudent()
       .then(async (record) => {
-        if (cancelled || !record) {
-          if (!cancelled) setStudent(record ?? null);
-          return;
-        }
+        if (cancelled) return;
         setStudent(record);
-        try {
-          const list = await loadScheduledCourses(record.program, record.training, {
-            programId: record.programId,
-            trainingId: record.trainingId,
-          });
-          if (!cancelled) setCourses(list);
-        } catch (err) {
-          if (!cancelled) setError(errorMessage(err));
-        }
+        if (record) await refresh(record);
       })
       .catch(() => {
         if (!cancelled) setStudent(null);
@@ -39,7 +46,16 @@ export default function CoursesPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!student) return;
+    return subscribeToTable("courses", () => void refresh(student));
+  }, [student, refresh]);
+
+  useRefetchOnFocus(() => {
+    if (student) void refresh(student);
+  });
 
   return (
     <div>

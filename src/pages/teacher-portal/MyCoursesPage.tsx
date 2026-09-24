@@ -311,7 +311,7 @@ export default function MyCoursesPage() {
       setError(null);
       // Strictly this teacher's own courses — cross-teacher rows are never
       // fetched (server-side .eq("teacher_id", ...)).
-      const all = await listTeacherCourses(teacherId);
+      const all = await listTeacherCourses({ teacherId });
       setCourses(all);
     } catch (err) {
       setError(errorMessage(err));

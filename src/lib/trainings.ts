@@ -115,24 +115,39 @@ export interface ScheduledCourseView extends ScheduledCourse {
 
 // Teacher-created courses are scoped to the teacher's class. Prefer matching
 // by the real foreign keys (program_id/training_id); fall back to the joined
-// program-code/training-name when the ids are not available.
+const norm = (s: string | undefined | null) =>
+  (s ?? "").trim().toLocaleLowerCase();
+
+// A course belongs to a student's class when either their UUID FKs agree
+// (both sides non-null) or the resolved program/training NAME text agrees
+// (trimmed, case-insensitive) — guarding against whitespace/case drift in the
+// joined programs(code)/trainings(name) strings.
 function courseInClass(
   c: TeacherCourseRecord,
   program: string,
   training: string,
   assignment?: { programId?: string; trainingId?: string },
 ): boolean {
-  if (assignment?.programId && assignment.trainingId) {
-    return (
-      c.programId === assignment.programId &&
-      c.trainingId === assignment.trainingId
-    );
+  if (
+    assignment?.programId &&
+    assignment.trainingId &&
+    c.programId &&
+    c.trainingId &&
+    c.programId === assignment.programId &&
+    c.trainingId === assignment.trainingId
+  ) {
+    return true;
   }
-  return c.program === program && c.training === training;
+  return (
+    norm(c.program) === norm(program) && norm(c.training) === norm(training)
+  );
 }
 
 // Seeded entries carry no id/teacherId; teacher-created ones do.
 // Teacher-created courses come from Supabase, so this is async now.
+// The class of the student (program_id/training_id) is used as a server-side
+// filter when both FKs exist; otherwise ALL course rows are fetched and the
+// robust name comparison above picks the matches.
 export async function loadScheduledCourses(
   program: string,
   training: string,
@@ -140,7 +155,14 @@ export async function loadScheduledCourses(
 ): Promise<ScheduledCourseView[]> {
   const seeded: ScheduledCourseView[] =
     COURSES[program as Program]?.[training] ?? [];
-  const added = (await listTeacherCourses())
+  const addedRows =
+    assignment?.programId && assignment.trainingId
+      ? await listTeacherCourses({
+          programId: assignment.programId,
+          trainingId: assignment.trainingId,
+        })
+      : await listTeacherCourses();
+  const added = addedRows
     .filter((c) => courseInClass(c, program, training, assignment))
     .map(
       ({

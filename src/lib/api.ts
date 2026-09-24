@@ -1790,17 +1790,27 @@ export async function uploadCourseThumbnail(
 }
 
 /**
- * Teacher-created courses. Pass `teacherId` to fetch only that teacher's own
- * rows (server-side `.eq("teacher_id", ...)`); omit it to get ALL courses
- * (used by the student portal's merged schedule view).
+ * Teacher-created courses. Server-side filter by ANY of the supplied options:
+ * - `teacherId` limits to that teacher's own rows (`.eq("teacher_id", ...)`)
+ * - `programId`/`trainingId` limit to a specific class (`.eq("program_id", ...)`
+ *   and `.eq("training_id", ...)`, matching the student portal's lookup)
+ * Pass `{}` to fetch ALL courses (the merged-schedule fallback).
  */
 export async function listTeacherCourses(
-  teacherId?: string,
+  options: {
+    teacherId?: string;
+    programId?: string;
+    trainingId?: string;
+  } = {},
 ): Promise<TeacherCourseRecord[]> {
+  const eq: Record<string, string> = {};
+  if (options.teacherId) eq.teacher_id = options.teacherId;
+  if (options.programId) eq.program_id = options.programId;
+  if (options.trainingId) eq.training_id = options.trainingId;
   return (
     await rows<CourseRow>(
       "courses",
-      teacherId ? { eq: { teacher_id: teacherId } } : undefined,
+      Object.keys(eq).length > 0 ? { eq } : undefined,
       COURSE_SELECT,
     )
   ).map(courseFromRow);
@@ -1870,7 +1880,7 @@ export async function teacherCourseAssignment(
     // Profile unreachable — try the teacher's own courses below.
   }
   try {
-    const own = (await listTeacherCourses(teacherId)).find(
+    const own = (await listTeacherCourses({ teacherId })).find(
       (c) => Boolean(c.programId && c.trainingId),
     );
     if (own?.programId && own.trainingId) {
@@ -1929,7 +1939,7 @@ export async function classRosterForTeacher(
 ): Promise<{ courses: TeacherCourseRecord[]; students: Student[] }> {
   const [students, ownCourses] = await Promise.all([
     listStudents(),
-    listTeacherCourses(teacherId),
+    listTeacherCourses({ teacherId }),
   ]);
   if (ownCourses.length === 0) return { courses: ownCourses, students: [] };
 

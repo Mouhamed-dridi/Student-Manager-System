@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { BookOpen, CalendarX, Hourglass, type LucideIcon } from "lucide-react";
 import {
@@ -13,11 +13,13 @@ import {
   listPayments,
   listPublications,
   loadStudentAttendance,
+  subscribeToTable,
 } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type { ScheduledCourseView } from "@/lib/trainings";
 import type { Publication } from "@/pages/publications/PublicationsPage";
 import type { Student } from "@/pages/students/StudentForm";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { loadCurrentStudent } from "./currentStudent";
 
 const DAY_ORDER = [
@@ -86,45 +88,46 @@ export default function StudentDashboardPage() {
   );
   const [error, setError] = useState<string | null>(null);
 
+  const refresh = useCallback(async (record: Student) => {
+    try {
+      setError(null);
+      const [payments, attendance, scheduled, pubs] = await Promise.all([
+        listPayments(),
+        loadStudentAttendance(record.fullName),
+        loadScheduledCourses(record.program, record.training, {
+          programId: record.programId,
+          trainingId: record.trainingId,
+        }).catch(() => []),
+        listPublications().catch(() => []),
+      ]);
+      const mine = payments.filter((p) => p.studentId === record.id);
+      setStats({
+        pending: mine.filter((p) => p.status === "pending").length,
+        absences: attendance.length,
+      });
+      setCourses(scheduled);
+      setAnnouncements(
+        pubs
+          .filter((p) => p.recipients.includes("students"))
+          .sort(
+            (a, b) =>
+              new Date(b.createdAt).getTime() -
+              new Date(a.createdAt).getTime(),
+          )
+          .slice(0, 3),
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     loadCurrentStudent()
       .then(async (record) => {
-        if (cancelled || !record) {
-          if (!cancelled) setStudent(record ?? null);
-          return;
-        }
+        if (cancelled) return;
         setStudent(record);
-        try {
-          const [payments, attendance, scheduled, pubs] = await Promise.all([
-            listPayments(),
-            loadStudentAttendance(record.fullName),
-            loadScheduledCourses(record.program, record.training, {
-              programId: record.programId,
-              trainingId: record.trainingId,
-            }).catch(() => []),
-            listPublications().catch(() => []),
-          ]);
-          if (cancelled) return;
-          const mine = payments.filter((p) => p.studentId === record.id);
-          setStats({
-            pending: mine.filter((p) => p.status === "pending").length,
-            absences: attendance.length,
-          });
-          setCourses(scheduled);
-          setAnnouncements(
-            pubs
-              .filter((p) => p.recipients.includes("students"))
-              .sort(
-                (a, b) =>
-                  new Date(b.createdAt).getTime() -
-                  new Date(a.createdAt).getTime(),
-              )
-              .slice(0, 3),
-          );
-        } catch (err) {
-          if (!cancelled) setError(errorMessage(err));
-        }
+        if (record) await refresh(record);
       })
       .catch(() => {
         if (!cancelled) setStudent(null);
@@ -132,7 +135,16 @@ export default function StudentDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!student) return;
+    return subscribeToTable("courses", () => void refresh(student));
+  }, [student, refresh]);
+
+  useRefetchOnFocus(() => {
+    if (student) void refresh(student);
+  });
 
   if (student === null) {
     return (

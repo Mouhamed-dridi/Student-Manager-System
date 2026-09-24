@@ -164,7 +164,7 @@ export default function ExamsPage() {
         try {
           const [all, ownCourses] = await Promise.all([
             listExams(),
-            listTeacherCourses(record.id),
+            listTeacherCourses({ teacherId: record.id }),
           ]);
           if (cancelled) return;
           setExams(all);

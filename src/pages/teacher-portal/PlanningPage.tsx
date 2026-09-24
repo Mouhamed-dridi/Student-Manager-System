@@ -54,7 +54,7 @@ import { loadCurrentTeacher } from "./currentTeacher";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 async function courseNameOptions(teacherId: string): Promise<string[]> {
-  const all = await listTeacherCourses(teacherId);
+  const all = await listTeacherCourses({ teacherId });
   return [...new Set(all.map((c) => c.name))];
 }
 
