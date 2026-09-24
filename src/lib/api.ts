@@ -1797,10 +1797,7 @@ export async function listTeacherCourses(): Promise<TeacherCourseRecord[]> {
 export async function saveTeacherCourse(
   record: TeacherCourseRecord,
 ): Promise<void> {
-  const { programId, trainingId } = await resolveProgramTrainingIds(
-    record.program,
-    record.training,
-  );
+  const { programId, trainingId } = await courseTargetIds(record);
   const payload = {
     id: record.id,
     title: record.name,
@@ -1816,6 +1813,33 @@ export async function saveTeacherCourse(
     }),
   );
   if (error) throw new Error(error.message);
+}
+
+/**
+ * Resolves the program/training FK targets for a course write. When the
+ * logged-in teacher's profile carries an assigned program/training, those
+ * values win so the form can never create a course outside the teacher's
+ * own assignment. Teachers without an assignment fall back to the values the
+ * form supplied (legacy behavior).
+ */
+async function courseTargetIds(
+  record: TeacherCourseRecord,
+): Promise<{ programId: string; trainingId: string }> {
+  let assignedProgram = "";
+  let assignedTraining = "";
+  try {
+    const teacher = await getTeacherById(record.teacherId);
+    if (teacher?.program && teacher?.training) {
+      assignedProgram = teacher.program;
+      assignedTraining = teacher.training;
+    }
+  } catch {
+    // Profile unreachable — fall back to the form's chosen values below.
+  }
+  return resolveProgramTrainingIds(
+    assignedProgram || record.program,
+    assignedTraining || record.training,
+  );
 }
 
 export async function deleteTeacherCourse(id: string): Promise<boolean> {

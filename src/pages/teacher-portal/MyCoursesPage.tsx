@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import {
   AlertDialog,
@@ -16,20 +16,11 @@ import CourseCardsGrid from "@/components/CourseCardsGrid";
 import { DataError, DataLoading } from "@/components/DataState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   deleteTeacherCourse,
   errorMessage,
-  listPrograms,
   listTeacherCourses,
-  listTrainings,
   saveTeacherCourse,
   subscribeToTable,
   uploadCourseThumbnail,
@@ -91,27 +82,32 @@ interface CourseFormValues {
   materials?: CourseMaterial[];
 }
 
-interface ProgramOption {
-  id: string;
-  code: string;
-}
-
-interface TrainingOption {
-  id: string;
-  name: string;
-  programId: string;
-}
-
 interface CourseFormProps {
   initialData?: TeacherCourseRecord;
+  /** Locked program/training pulled from the logged-in teacher's profile. */
+  lockedAssignment?: { program?: string; training?: string };
   onSubmit: (values: CourseFormValues) => Promise<void>;
   onCancel: () => void;
 }
 
-function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
+function CourseForm({
+  initialData,
+  lockedAssignment,
+  onSubmit,
+  onCancel,
+}: CourseFormProps) {
+  // Program/training come exclusively from the logged-in teacher's profile:
+  // the form has no selectors, so the submitted payload always matches the
+  // teacher's assignment. Teachers without an assignment (or the original
+  // class of a course being edited) keep whatever the record carries today.
+  const assignment =
+    lockedAssignment?.program && lockedAssignment.training
+      ? {
+          program: lockedAssignment.program,
+          training: lockedAssignment.training,
+        }
+      : null;
   const [name, setName] = useState(initialData?.name ?? "");
-  const [program, setProgram] = useState(initialData?.program ?? "");
-  const [training, setTraining] = useState(initialData?.training ?? "");
   const [pickedImage, setPickedImage] = useState<{
     name: string;
     file: Blob;
@@ -122,45 +118,16 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
-  const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
-
-  useEffect(() => {
-    listPrograms().then(setProgramOptions).catch(() => {});
-    listTrainings()
-      .then((rows) =>
-        setAllTrainings(
-          rows.map((r) => ({ id: r.id, name: r.name, programId: r.program_id })),
-        ),
-      )
-      .catch(() => {});
-  }, []);
-
-  const selectedProgramId = useMemo(
-    () => programOptions.find((p) => p.code === program)?.id,
-    [program, programOptions],
-  );
-
-  const trainingOptions = useMemo(
-    () =>
-      selectedProgramId
-        ? allTrainings.filter((t) => t.programId === selectedProgramId)
-        : [],
-    [selectedProgramId, allTrainings],
-  );
-
-  const handleProgramChange = (value: string | null) => {
-    setProgram(value ?? "");
-    setTraining("");
-  };
-
-  const valid =
-    name.trim() !== "" && program !== "" && training !== "";
+  const programValue = assignment?.program ?? initialData?.program ?? "";
+  const trainingValue = assignment?.training ?? initialData?.training ?? "";
+  const valid = name.trim() !== "";
 
   return (
     <div className="max-w-xl">
       <p className="text-sm text-muted-foreground">
-        Choose the program and training that will see this course.
+        {assignment
+          ? "Program and training are taken from your profile — no need to pick them."
+          : "Program and training now come from your profile automatically."}
       </p>
 
       <div className="mt-4 space-y-4">
@@ -174,40 +141,28 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
             required
           />
         </div>
-        <div className="space-y-2">
-          <Label>Program</Label>
-          <Select value={program} onValueChange={handleProgramChange}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select program" />
-            </SelectTrigger>
-            <SelectContent>
-              {programOptions.map((p) => (
-                <SelectItem key={p.id} value={p.code}>
-                  {p.code}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Training</Label>
-          <Select
-            value={training}
-            onValueChange={(value) => setTraining(value ?? "")}
-            disabled={!selectedProgramId}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select training" />
-            </SelectTrigger>
-            <SelectContent>
-              {trainingOptions.map((t) => (
-                <SelectItem key={t.id} value={t.name}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {assignment ? (
+          <>
+            <div className="space-y-2">
+              <Label>Program (from your profile)</Label>
+              <div className="rounded-lg border bg-muted/50 px-3 py-2 text-sm font-medium">
+                {assignment.program}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Training (from your profile)</Label>
+              <div className="rounded-lg border bg-muted/50 px-3 py-2 text-sm font-medium">
+                {assignment.training}
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Your profile has no assigned program or training yet, so this course
+            will be recorded without one until the center assigns you a
+            program/training.
+          </p>
+        )}
         <div className="space-y-2">
           <Label htmlFor="course-thumbnail">Thumbnail image (optional)</Label>
           <Input
@@ -290,8 +245,8 @@ function CourseForm({ initialData, onSubmit, onCancel }: CourseFormProps) {
               setSaveError(null);
               const values: CourseFormValues = {
                 name: name.trim(),
-                program,
-                training,
+                program: programValue,
+                training: trainingValue,
               };
               if (pickedImage) values.thumbnailFile = pickedImage.file;
               values.materials = materials.length > 0 ? materials : undefined;
@@ -512,6 +467,11 @@ export default function MyCoursesPage() {
           <CourseForm
             key={editing?.id ?? "new"}
             initialData={editing ?? undefined}
+            lockedAssignment={
+              teacher.program && teacher.training
+                ? { program: teacher.program, training: teacher.training }
+                : undefined
+            }
             onSubmit={handleSubmit}
             onCancel={() => {
               setEditing(null);
