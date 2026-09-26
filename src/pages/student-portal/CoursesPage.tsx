@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
-import CourseDetail from "@/components/CourseDetail";
+import StudentCourseDetail from "@/components/StudentCourseDetail";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, subscribeToTable } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
@@ -93,8 +93,10 @@ export default function CoursesPage() {
             !error && <DataLoading label="Loading courses…" />
           ) : selected ? (
             <div className="mt-4">
-              <CourseDetail
+              <StudentCourseDetail
                 course={selected}
+                studentId={student.id}
+                studentName={student.fullName}
                 onBack={() => setSelected(null)}
                 backLabel="Back to courses"
               />

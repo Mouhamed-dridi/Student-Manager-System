@@ -225,6 +225,53 @@ alter table if exists public.courses
 alter table if exists public.courses
   add column if not exists materials jsonb;
 
+-- Coursera-style course detail metadata, all optional so existing course rows
+-- stay valid. The app runtime-probes each column before writing it (same
+-- pattern as `materials`), so courses still save on a database where this
+-- block has not been run yet.
+alter table if exists public.courses
+  add column if not exists subtitle text;
+
+-- Difficulty level: 'beginner' | 'medium' | 'expert'
+alter table if exists public.courses
+  add column if not exists level text;
+
+-- Estimated length in minutes, e.g. 90 renders as "1h 30m".
+alter table if exists public.courses
+  add column if not exists duration_minutes integer;
+
+-- Delivery format: 'video' | 'document' | 'mixed'
+alter table if exists public.courses
+  add column if not exists format text;
+
+-- Key competencies shown as "Skills you'll gain", stored as a string array.
+alter table if exists public.courses
+  add column if not exists skills jsonb;
+
+-- Free-text syllabus: one topic per line, rendered as an ordered list.
+alter table if exists public.courses
+  add column if not exists syllabus text;
+
+-- ---------------------------------------------------------- course reviews --
+-- Student star ratings + comments on a course. Append-only: a student may post
+-- more than one review and the course average spans all of them.
+-- `student_name` is a denormalised snapshot (like the attendance log) so a
+-- renamed or trashed student never breaks an existing review. student_id has no
+-- FK for the same reason: students are soft-deleted, never removed.
+
+create table if not exists public.course_reviews (
+  id uuid primary key default gen_random_uuid(),
+  course_id uuid not null references courses(id) on delete cascade,
+  student_id uuid,
+  student_name text,
+  rating integer not null check (rating between 1 and 5),
+  comment text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists course_reviews_course_idx
+  on public.course_reviews (course_id, created_at desc);
+
 -- -------------------------------------------- Storage: course thumbnails ---
 -- Course thumbnail images live in Supabase Storage, not in the database, in
 -- the 'cours' bucket. The bucket must exist before uploads succeed; paste
@@ -321,7 +368,9 @@ do $$
 declare
   t text;
 begin
-  foreach t in array array['students', 'teachers', 'courses', 'publications']
+  foreach t in array array[
+    'students', 'teachers', 'courses', 'publications', 'course_reviews'
+  ]
   loop
     begin
       execute format(
@@ -342,7 +391,8 @@ declare
 begin
   foreach t in array array[
     'students', 'teachers', 'payments', 'attendance', 'courses',
-    'exams', 'grades', 'publications', 'planning', 'settings'
+    'exams', 'grades', 'publications', 'planning', 'settings',
+    'course_reviews'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

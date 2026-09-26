@@ -1728,6 +1728,14 @@ interface CourseRow {
   thumbnail_url: string | null;
   published_at: string | null;
   materials: CourseMaterial[] | null;
+  // Optional course-detail metadata. Undefined on databases where the
+  // courses block in supabase/schema.sql has not been run yet.
+  subtitle: string | null;
+  level: string | null;
+  duration_minutes: number | null;
+  format: string | null;
+  skills: string[] | null;
+  syllabus: string | null;
 }
 
 function courseFromRow(row: CourseRow): TeacherCourseRecord {
@@ -1745,6 +1753,12 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
     thumbnail: row.thumbnail_url ?? undefined,
     published: row.published_at ?? undefined,
     materials: row.materials ?? undefined,
+    subtitle: row.subtitle ?? undefined,
+    level: row.level ?? undefined,
+    durationMinutes: row.duration_minutes ?? undefined,
+    format: row.format ?? undefined,
+    skills: row.skills ?? undefined,
+    syllabus: row.syllabus ?? undefined,
   };
 }
 
@@ -1844,6 +1858,60 @@ async function hasCourseMaterialsColumn(): Promise<boolean> {
   return courseMaterialsColumnPromise;
 }
 
+// ------------------------------------------------- course detail capabilities
+//
+// The student portal's Coursera-style course detail reads optional metadata
+// (subtitle, level, duration, format, skills, syllabus) and student reviews.
+// Databases that have not run the courses/course_reviews block in
+// supabase/schema.sql lack these columns, and PostgREST rejects a write naming
+// an unknown column — so every one is probed once at runtime and the UI hides
+// the parts that are unavailable. Same pattern as hasCourseMaterialsColumn and
+// generalTrashCapabilities.
+
+export interface CourseDetailCapabilities {
+  subtitle: boolean;
+  level: boolean;
+  duration: boolean;
+  format: boolean;
+  skills: boolean;
+  syllabus: boolean;
+  /** The course_reviews table exists, so ratings can be read and written. */
+  reviews: boolean;
+}
+
+const NO_COURSE_DETAIL_CAPABILITIES: CourseDetailCapabilities = {
+  subtitle: false,
+  level: false,
+  duration: false,
+  format: false,
+  skills: false,
+  syllabus: false,
+  reviews: false,
+};
+
+let courseDetailCapabilitiesPromise: Promise<CourseDetailCapabilities> | null =
+  null;
+
+export function courseDetailCapabilities(): Promise<CourseDetailCapabilities> {
+  if (!courseDetailCapabilitiesPromise) {
+    courseDetailCapabilitiesPromise = (async () => {
+      const [subtitle, level, duration, format, skills, syllabus, reviews] =
+        await Promise.all([
+          hasColumn("courses", "subtitle"),
+          hasColumn("courses", "level"),
+          hasColumn("courses", "duration_minutes"),
+          hasColumn("courses", "format"),
+          hasColumn("courses", "skills"),
+          hasColumn("courses", "syllabus"),
+          // Probes the table as a whole: the select errors when it is absent.
+          hasColumn("course_reviews", "id"),
+        ]);
+      return { subtitle, level, duration, format, skills, syllabus, reviews };
+    })().catch(() => NO_COURSE_DETAIL_CAPABILITIES);
+  }
+  return courseDetailCapabilitiesPromise;
+}
+
 /**
  * Teacher-created courses. Server-side filter by ANY of the supplied options:
  * - `teacherId` limits to that teacher's own rows (`.eq("teacher_id", ...)`)
@@ -1896,6 +1964,18 @@ export async function saveTeacherCourse(
       payload.materials = record.materials;
     }
   }
+  // Course-detail metadata is optional AND probed per column: naming a column
+  // the live table lacks fails the whole upsert, so each key is only added once
+  // the probe confirms it exists.
+  const details = await courseDetailCapabilities();
+  if (details.subtitle) payload.subtitle = record.subtitle ?? null;
+  if (details.level) payload.level = record.level ?? null;
+  if (details.duration) payload.duration_minutes = record.durationMinutes ?? null;
+  if (details.format) payload.format = record.format ?? null;
+  if (details.syllabus) payload.syllabus = record.syllabus ?? null;
+  // An emptied skills list is a real value, so null clears it once the column
+  // exists rather than leaving a stale array behind.
+  if (details.skills) payload.skills = record.skills ?? null;
   const { error } = await withTimeout(
     supabase.from("courses").upsert(payload, {
       onConflict: "id",
@@ -2021,6 +2101,128 @@ export async function classRosterForTeacher(
     return namePairs.has(`${s.program}:${s.training}`);
   });
   return { courses: ownCourses, students: studentsInClass };
+}
+
+// ----------------------------------------------------------- course reviews
+//
+// Student star ratings and comments on a course. Append-only: a student may
+// post more than one review and the course average spans all of them.
+// `student_name` is snapshotted on insert (like the attendance log) so a
+// renamed or trashed student never rewrites or breaks an existing review.
+
+export interface CourseReview {
+  id: string;
+  courseId: string;
+  studentId?: string;
+  studentName?: string;
+  rating: number;
+  comment?: string;
+  createdAt: string;
+}
+
+interface CourseReviewRow {
+  id: string;
+  course_id: string;
+  student_id: string | null;
+  student_name: string | null;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+function reviewFromRow(row: CourseReviewRow): CourseReview {
+  return {
+    id: row.id,
+    courseId: row.course_id,
+    studentId: row.student_id ?? undefined,
+    studentName: row.student_name ?? undefined,
+    rating: row.rating,
+    comment: row.comment ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+/**
+ * Every review on a course, newest first. Returns an empty list when the live
+ * database has no course_reviews table so the caller can still render the rest
+ * of the course detail.
+ */
+export async function listCourseReviews(
+  courseId: string,
+): Promise<CourseReview[]> {
+  if (!courseId) return [];
+  try {
+    const result = await rows<CourseReviewRow>(
+      "course_reviews",
+      {
+        eq: { course_id: courseId },
+        order: { column: "created_at", ascending: false },
+      },
+      "*",
+    );
+    return result.map(reviewFromRow);
+  } catch (err) {
+    // A missing table must not take the whole course detail page down; the
+    // capability probe has already told the UI to hide the ratings section.
+    if (!/course_reviews|does not exist|PGRST205/i.test(errorMessage(err))) {
+      throw err;
+    }
+    return [];
+  }
+}
+
+/**
+ * Posts a student's star rating and optional comment. Throws with the database
+ * message so the caller can show it inline.
+ */
+export async function addCourseReview(input: {
+  courseId: string;
+  studentId: string;
+  studentName: string;
+  rating: number;
+  comment?: string;
+}): Promise<CourseReview> {
+  const { data, error } = await withTimeout(
+    supabase
+      .from("course_reviews")
+      .insert({
+        course_id: input.courseId,
+        student_id: input.studentId || null,
+        student_name: input.studentName || null,
+        rating: input.rating,
+        comment: input.comment?.trim() ? input.comment.trim() : null,
+      })
+      .select("*")
+      .single(),
+  );
+  if (error) throw new Error(error.message);
+  return reviewFromRow(data as CourseReviewRow);
+}
+
+// ------------------------------------------------------------- teacher names
+//
+// courses.teacher_id is a bare uuid with no foreign key to teachers(id), so
+// PostgREST cannot embed the name (a to-one select needs a declared
+// relationship). Resolve the names in a second, batched query instead.
+
+/** teacherId -> full name, for the ids that matched a teacher. */
+export async function teacherNamesByIds(
+  ids: string[],
+): Promise<Record<string, string>> {
+  const unique = Array.from(new Set(ids.filter(Boolean)));
+  if (unique.length === 0) return {};
+  const { data, error } = await withTimeout(
+    supabase
+      .from("teachers")
+      .select("id, full_name")
+      .in("id", unique),
+  );
+  if (error) throw new Error(error.message);
+  const names: Record<string, string> = {};
+  for (const row of (data ?? []) as { id: string; full_name: string }[]) {
+    names[row.id] = row.full_name;
+  }
+  return names;
 }
 
 // ------------------------------------------------------------------ exams

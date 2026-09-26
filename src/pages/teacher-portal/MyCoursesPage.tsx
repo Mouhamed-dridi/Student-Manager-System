@@ -17,9 +17,17 @@ import CourseDetail from "@/components/CourseDetail";
 import { DataError, DataLoading } from "@/components/DataState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  courseDetailCapabilities,
   deleteTeacherCourse,
   errorMessage,
   listTeacherCourses,
@@ -39,6 +47,31 @@ import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 const THUMBNAIL_MAX_WIDTH = 400;
+
+// Optional course-detail metadata. The values are stored as-is in
+// courses.level / courses.format and translated to a display label in the
+// student portal's StudentCourseDetail.
+const LEVEL_OPTIONS = [
+  { value: "beginner", label: "Beginner" },
+  { value: "medium", label: "Medium" },
+  { value: "expert", label: "Expert" },
+];
+
+const FORMAT_OPTIONS = [
+  { value: "video", label: "Video" },
+  { value: "document", label: "Document" },
+  { value: "mixed", label: "Mixed" },
+];
+
+// "a, b , c" -> ["a", "b", "c"]; an empty list is stored as undefined so the
+// column is cleared rather than written as an empty array.
+function parseSkills(input: string): string[] | undefined {
+  const skills = input
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return skills.length > 0 ? skills : undefined;
+}
 
 // Downscales a picked image to a ≤400px-wide JPEG blob that will be uploaded
 // to Supabase Storage (keeps the stored thumbnails small).
@@ -81,6 +114,12 @@ interface CourseFormValues {
   description: string;
   program: string;
   training: string;
+  subtitle?: string;
+  level?: string;
+  durationMinutes?: number;
+  format?: string;
+  skills?: string[];
+  syllabus?: string;
   thumbnail?: string;
   /** Newly picked image, downscaled to a JPEG blob, to upload to Storage. */
   thumbnailFile?: Blob;
@@ -118,6 +157,24 @@ function CourseForm({
   const [description, setDescription] = useState(
     initialData?.description ?? "",
   );
+  const [subtitle, setSubtitle] = useState(initialData?.subtitle ?? "");
+  const [level, setLevel] = useState(initialData?.level ?? "");
+  const [duration, setDuration] = useState(
+    initialData?.durationMinutes ? String(initialData.durationMinutes) : "",
+  );
+  const [deliveryFormat, setDeliveryFormat] = useState(
+    initialData?.format ?? "",
+  );
+  // Skills are typed as a comma-separated list and split on save, so the form
+  // needs no chip editor.
+  const [skills, setSkills] = useState((initialData?.skills ?? []).join(", "));
+  const [syllabus, setSyllabus] = useState(initialData?.syllabus ?? "");
+  // The metadata columns are probed: on a database that has not run the
+  // courses block they cannot be written, and the teacher is told so instead of
+  // silently losing the input.
+  const [metadataAvailable, setMetadataAvailable] = useState<boolean | null>(
+    null,
+  );
   const [pickedImage, setPickedImage] = useState<{
     name: string;
     file: Blob;
@@ -130,6 +187,24 @@ function CourseForm({
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    courseDetailCapabilities()
+      .then((caps) => {
+        if (cancelled) return;
+        setMetadataAvailable(
+          caps.subtitle && caps.level && caps.duration && caps.format &&
+            caps.skills && caps.syllabus,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMetadataAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const programValue = assignment?.program ?? initialData?.program ?? "";
   const trainingValue = assignment?.training ?? initialData?.training ?? "";
@@ -164,6 +239,109 @@ function CourseForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
+          />
+        </div>
+
+        {metadataAvailable === false ? (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Course details (subtitle, level, duration, format, skills and
+            syllabus) are not available on this database yet, so they will not
+            be saved. Ask an administrator to run the courses block in
+            supabase/schema.sql. Everything else below still works.
+          </p>
+        ) : null}
+
+        <div className="space-y-2">
+          <Label htmlFor="course-subtitle">Subtitle (optional)</Label>
+          <Input
+            id="course-subtitle"
+            placeholder="e.g. Learn to build interfaces with HTML &amp; CSS"
+            value={subtitle}
+            onChange={(e) => setSubtitle(e.target.value)}
+            disabled={metadataAvailable === false}
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label>Level</Label>
+            <Select
+              value={level}
+              onValueChange={(value) => setLevel(value ?? "")}
+              disabled={metadataAvailable === false}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Not set" />
+              </SelectTrigger>
+              <SelectContent>
+                {LEVEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="course-duration">Duration (minutes)</Label>
+            <Input
+              id="course-duration"
+              type="number"
+              min={0}
+              step={5}
+              placeholder="e.g. 90"
+              value={duration}
+              onChange={(e) => setDuration(e.target.value)}
+              disabled={metadataAvailable === false}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Format</Label>
+            <Select
+              value={deliveryFormat}
+              onValueChange={(value) => setDeliveryFormat(value ?? "")}
+              disabled={metadataAvailable === false}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Not set" />
+              </SelectTrigger>
+              <SelectContent>
+                {FORMAT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="course-skills">Skills (optional)</Label>
+          <Input
+            id="course-skills"
+            placeholder="e.g. Responsive layout, Semantic HTML, Flexbox"
+            value={skills}
+            onChange={(e) => setSkills(e.target.value)}
+            disabled={metadataAvailable === false}
+          />
+          <p className="text-xs text-muted-foreground">
+            Separate each skill with a comma. They appear as &ldquo;Skills
+            you&rsquo;ll gain&rdquo; in the student portal.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="course-syllabus">Syllabus (optional)</Label>
+          <Textarea
+            id="course-syllabus"
+            placeholder={
+              "One topic per line, e.g.\nWeek 1 · HTML structure\nWeek 2 · CSS layout"
+            }
+            value={syllabus}
+            onChange={(e) => setSyllabus(e.target.value)}
+            rows={5}
+            disabled={metadataAvailable === false}
           />
         </div>
         {assignment ? (
@@ -274,6 +452,16 @@ function CourseForm({
                 program: programValue,
                 training: trainingValue,
               };
+              if (metadataAvailable === true) {
+                const minutes = Number.parseInt(duration, 10);
+                values.subtitle = subtitle.trim() || undefined;
+                values.level = level || undefined;
+                values.durationMinutes =
+                  Number.isFinite(minutes) && minutes > 0 ? minutes : undefined;
+                values.format = deliveryFormat || undefined;
+                values.skills = parseSkills(skills);
+                values.syllabus = syllabus.trim() || undefined;
+              }
               if (pickedImage) values.thumbnailFile = pickedImage.file;
               values.materials = materials.length > 0 ? materials : undefined;
               try {

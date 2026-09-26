@@ -86,7 +86,23 @@ export interface CourseMaterial {
   url?: string;
 }
 
-export interface TeacherCourseRecord {
+/** Optional course-detail metadata, shown in the student's Coursera-style view. */
+export interface CourseDetails {
+  /** One-line hook under the course title. */
+  subtitle?: string;
+  /** Difficulty: beginner | medium | expert. */
+  level?: string;
+  /** Estimated length in minutes, e.g. 90 renders as "1h 30m". */
+  durationMinutes?: number;
+  /** Delivery format: video | document | mixed. */
+  format?: string;
+  /** "Skills you'll gain" competencies. */
+  skills?: string[];
+  /** Free-text syllabus, one topic per line. */
+  syllabus?: string;
+}
+
+export interface TeacherCourseRecord extends CourseDetails {
   id: string;
   teacherId: string;
   program: string;
@@ -102,7 +118,7 @@ export interface TeacherCourseRecord {
   materials?: CourseMaterial[];
 }
 
-export interface ScheduledCourseView extends ScheduledCourse {
+export interface ScheduledCourseView extends ScheduledCourse, CourseDetails {
   id?: string;
   teacherId?: string;
   program?: string;
@@ -164,38 +180,14 @@ export async function loadScheduledCourses(
           trainingId: assignment.trainingId,
         })
       : await listTeacherCourses();
-  const added = addedRows
-    .filter((c) => courseInClass(c, program, training, assignment))
-    .map(
-      ({
-        id,
-        teacherId,
-        program,
-        training,
-        programId,
-        trainingId,
-        name,
-        description,
-        day,
-        time,
-        thumbnail,
-        published,
-        materials,
-      }) => ({
-        id,
-        teacherId,
-        program,
-        training,
-        programId,
-        trainingId,
-        name,
-        description,
-        day,
-        time,
-        thumbnail,
-        published,
-        materials,
-      }),
-    );
+  // TeacherCourseRecord and ScheduledCourseView declare the same field set, so
+  // a live course row carries straight across. This used to be an explicit
+  // destructure-and-rebuild allow-list, which silently dropped any field added
+  // to the course record later — it ate subtitle/level/durationMinutes/format/
+  // skills/syllabus before they could reach the student view. The cast below
+  // still fails to compile if the two shapes ever diverge.
+  const added = addedRows.filter((c) =>
+    courseInClass(c, program, training, assignment),
+  ) as ScheduledCourseView[];
   return [...seeded, ...added];
 }
