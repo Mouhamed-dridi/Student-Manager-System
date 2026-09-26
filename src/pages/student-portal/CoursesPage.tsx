@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import StudentCourseDetail from "@/components/StudentCourseDetail";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, subscribeToTable } from "@/lib/api";
+import { courseKey } from "@/lib/courseDisplay";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type { ScheduledCourseView } from "@/lib/trainings";
 import type { Student } from "@/pages/students/StudentForm";
@@ -30,11 +33,15 @@ export default function CoursesPage() {
         },
       );
       setCourses(list);
-      // Keep an open course in sync with the teacher's live edits; fall back to
-      // the snapshot when the row no longer exists.
+      // Keep an open course in sync with the teacher's live edits. courseKey is
+      // used instead of a bare `c.id === open.id` because the seeded schedule
+      // entries have no id: every one of them is undefined, so that test
+      // matched the first seeded course and the open detail silently jumped to
+      // a different course on the next realtime update or tab refocus. Falls
+      // back to the open snapshot when the course is gone entirely.
       setSelected((open) => {
         if (!open) return null;
-        return list.find((c) => c.id === open.id) ?? open;
+        return list.find((c) => courseKey(c) === courseKey(open)) ?? open;
       });
     } catch (err) {
       setError(errorMessage(err));
@@ -93,13 +100,36 @@ export default function CoursesPage() {
             !error && <DataLoading label="Loading courses…" />
           ) : selected ? (
             <div className="mt-4">
-              <StudentCourseDetail
-                course={selected}
-                studentId={student.id}
-                studentName={student.fullName}
-                onBack={() => setSelected(null)}
-                backLabel="Back to courses"
-              />
+              {/* Coarse backstop: if the detail view itself throws, keep a way
+                  back to the grid instead of an unmounted (blank) tree. The
+                  key remounts the boundary when another course is opened, so a
+                  previous failure is not shown against the new course. */}
+              <ErrorBoundary
+                key={courseKey(selected)}
+                fallback={(error) => (
+                  <Card>
+                    <CardContent className="space-y-3 py-6">
+                      <p className="text-sm font-medium">
+                        This course could not be displayed.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {error.message || "An unexpected error occurred."}
+                      </p>
+                      <Button size="sm" onClick={() => setSelected(null)}>
+                        Back to courses
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+              >
+                <StudentCourseDetail
+                  course={selected}
+                  studentId={student.id}
+                  studentName={student.fullName}
+                  onBack={() => setSelected(null)}
+                  backLabel="Back to courses"
+                />
+              </ErrorBoundary>
             </div>
           ) : courses.length === 0 ? (
             <Card className="mt-4 max-w-xl">

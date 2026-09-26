@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarDays, Clock, Paperclip } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MaterialItem } from "@/components/courseMaterial";
 import { formatPublished, thumbnailForTraining } from "@/lib/courseDisplay";
+import { toMaterialList } from "@/lib/api";
 import type { ScheduledCourseView } from "@/lib/trainings";
 
 interface CourseDetailProps {
@@ -28,7 +29,9 @@ export default function CourseDetail({
     [course.training, course.program].filter(Boolean).join(" · ") || null;
   const thumbnail =
     course.thumbnail ?? thumbnailForTraining(course.training ?? "");
-  const materials = course.materials ?? [];
+  // courses.materials is jsonb that may arrive as a JSON string (see
+  // toMaterialList in lib/api.ts), so it is normalised rather than assumed.
+  const materials = toMaterialList(course.materials) ?? [];
 
   return (
     <div>

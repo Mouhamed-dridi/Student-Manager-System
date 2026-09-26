@@ -25,6 +25,13 @@ export interface Student {
   education?: string;
   age?: number;
   engagement?: string;
+  // Optional social profile links, edited by the student in the student portal's
+  // Settings page. All nullable; an empty field is stored as SQL NULL.
+  facebook?: string;
+  instagram?: string;
+  whatsapp?: string;
+  github?: string;
+  linkedin?: string;
   password?: string;
   blocked?: boolean;
 }

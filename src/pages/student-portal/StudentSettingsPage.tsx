@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DataLoading } from "@/components/DataState";
+import SocialBrandIcon from "@/components/SocialBrandIcon";
 import UserAvatar from "@/components/UserAvatar";
 import {
   applyDarkMode,
@@ -32,6 +33,45 @@ import type { Student } from "@/pages/students/StudentForm";
 import { loadCurrentStudent } from "./currentStudent";
 
 const ENGAGEMENT_OPTIONS = ["New Student", "Second Year"];
+
+// The social links a student can attach to their profile. Declared once so the
+// state, the inputs and the save payload can never drift apart. `brand` picks
+// the official mark; the placeholder shows the platform's own URL pattern.
+const SOCIAL_FIELDS = [
+  {
+    key: "facebook",
+    brand: "facebook",
+    label: "Facebook",
+    placeholder: "facebook.com/username",
+  },
+  {
+    key: "instagram",
+    brand: "instagram",
+    label: "Instagram",
+    placeholder: "instagram.com/username",
+  },
+  {
+    key: "whatsapp",
+    brand: "whatsapp",
+    label: "WhatsApp",
+    placeholder: "wa.me/15551234567",
+  },
+  {
+    key: "github",
+    brand: "github",
+    label: "GitHub",
+    placeholder: "github.com/username",
+  },
+  {
+    key: "linkedin",
+    brand: "linkedin",
+    label: "LinkedIn",
+    placeholder: "linkedin.com/in/username",
+  },
+] as const;
+
+type SocialKey = (typeof SOCIAL_FIELDS)[number]["key"];
+type SocialState = Record<SocialKey, string>;
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -65,6 +105,13 @@ function ProfileEditor({ student }: { student: Student }) {
   const [location, setLocation] = useState(student.location ?? "");
   const [age, setAge] = useState(student.age ? String(student.age) : "");
   const [engagement, setEngagement] = useState(student.engagement ?? "");
+  const [social, setSocial] = useState<SocialState>({
+    facebook: student.facebook ?? "",
+    instagram: student.instagram ?? "",
+    whatsapp: student.whatsapp ?? "",
+    github: student.github ?? "",
+    linkedin: student.linkedin ?? "",
+  });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -84,6 +131,11 @@ function ProfileEditor({ student }: { student: Student }) {
     setSaveError(null);
     setSaveMessage(null);
     setSaving(true);
+    // Trim each link and turn a blank one into undefined so the column is
+    // written as NULL (a cleared link is removed) rather than an empty string.
+    const socialPayload = Object.fromEntries(
+      SOCIAL_FIELDS.map(({ key }) => [key, social[key].trim() || undefined]),
+    ) as Pick<Student, SocialKey>;
     try {
       await updateStudentProfile(student.id, {
         fullName: student.fullName,
@@ -95,6 +147,7 @@ function ProfileEditor({ student }: { student: Student }) {
         education: student.education,
         age: Number.isFinite(parsedAge) ? parsedAge : undefined,
         engagement: engagement.trim() || undefined,
+        ...socialPayload,
       });
       setSaveMessage("Changes saved.");
     } catch (err) {
@@ -165,6 +218,48 @@ function ProfileEditor({ student }: { student: Student }) {
             </SelectContent>
           </Select>
         </EditableRow>
+
+        <Separator />
+        {/* Stacked label-above-input rather than EditableRow: a social URL needs
+            far more room than the 176px side-by-side control. */}
+        <div className="space-y-3 pt-2">
+          <div>
+            <p className="text-sm font-medium">Social media</p>
+            <p className="text-xs text-muted-foreground">
+              Optional links to your profiles. Leave a field empty to remove it.
+            </p>
+          </div>
+          {SOCIAL_FIELDS.map(({ key, brand, label, placeholder }) => (
+            <div key={key} className="space-y-1.5">
+              {/* Plain text label only - the brand mark lives inside the field
+                  as a leading adornment, so it is not repeated here. */}
+              <Label htmlFor={`student-${key}`} className="text-xs">
+                {label}
+              </Label>
+              {/* The icon sits inside the field as a leading adornment; the input
+                  only needs the extra left padding. */}
+              <div className="relative">
+                <SocialBrandIcon
+                  brand={brand}
+                  className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2"
+                />
+                <Input
+                  id={`student-${key}`}
+                  type="url"
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="pl-8"
+                  value={social[key]}
+                  placeholder={placeholder}
+                  onChange={(e) =>
+                    setSocial((prev) => ({ ...prev, [key]: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
 
         <Separator />
         <div className="flex items-center gap-3 pt-4">

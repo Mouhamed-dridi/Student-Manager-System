@@ -34,6 +34,7 @@ import {
   saveTeacherCourse,
   subscribeToTable,
   teacherCourseAssignment,
+  toMaterialList,
   uploadCourseMaterial,
   uploadCourseThumbnail,
 } from "@/lib/api";
@@ -161,7 +162,10 @@ function CourseForm({
   // save flow can upload it to Storage; materials restored from an existing
   // course carry only the metadata ({name,type}) that was persisted.
   const [materials, setMaterials] = useState<(CourseMaterial & { file?: File })[]>(
-    initialData?.materials ?? [],
+    // Normalised, not `?? []`: an older course row can hand back a JSON *string*
+    // for materials, and the form maps over this on every render. `file` is
+    // optional on CourseMaterial, so no cast is needed.
+    toMaterialList(initialData?.materials) ?? [],
   );
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

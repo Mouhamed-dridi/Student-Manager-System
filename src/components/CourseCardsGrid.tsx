@@ -6,7 +6,11 @@ import {
   CardFooter,
   CardTitle,
 } from "@/components/ui/card";
-import { formatPublished, thumbnailForTraining } from "@/lib/courseDisplay";
+import {
+  courseKey,
+  formatPublished,
+  thumbnailForTraining,
+} from "@/lib/courseDisplay";
 import type { ScheduledCourseView } from "@/lib/trainings";
 
 interface CourseCardProps {
@@ -19,7 +23,12 @@ interface CourseCardProps {
 function CourseCard({ course, training, actions, onOpen }: CourseCardProps) {
   const thumbnail =
     course.thumbnail ?? thumbnailForTraining(course.training ?? training ?? "");
-  const materialCount = course.materials?.length ?? 0;
+  // A JSON-string materials value would make `.length` report the string's
+  // character count instead of the number of attachments.
+  const materialCount = (Array.isArray(course.materials)
+    ? course.materials
+    : []
+  ).length;
   const className = course.training ?? training ?? "";
 
   return (
@@ -111,7 +120,7 @@ export default function CourseCardsGrid({
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {courses.map((c) => (
         <CourseCard
-          key={c.id ?? `${c.name}-${c.day}-${c.time}`}
+          key={courseKey(c)}
           course={c}
           training={training}
           actions={renderActions?.(c)}

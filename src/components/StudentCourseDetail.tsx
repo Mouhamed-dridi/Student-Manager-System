@@ -6,9 +6,10 @@
 // The teacher portal keeps its own simpler CourseDetail; only the shared
 // material rendering (components/courseMaterial.tsx) is reused.
 //
-// Every optional piece of metadata lives in a column the live database may not
-// have yet, so the capabilities probe decides what renders. Nothing here is
-// allowed to block the rest of the page.
+// Every optional piece of metadata may be missing on an older course row (and
+// the statically seeded schedule entries never carry it at all), so each block
+// degrades to an inline "not published yet" note. Nothing here may throw or
+// return null: a blank detail page would read as a broken click-through.
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
@@ -32,10 +33,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import CourseReviewsSection from "@/components/CourseReviewsSection";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import UserAvatar from "@/components/UserAvatar";
 import { MaterialItem } from "@/components/courseMaterial";
 import { formatPublished, thumbnailForTraining } from "@/lib/courseDisplay";
-import { teacherNamesByIds } from "@/lib/api";
+import { teacherNamesByIds, toMaterialList, toSkillList } from "@/lib/api";
 import type { ScheduledCourseView } from "@/lib/trainings";
 
 // ------------------------------------------------------------- display maps
@@ -70,7 +72,9 @@ function formatLabel(value?: string): string | null {
 
 /** The syllabus is one topic per line; bullets and numbering are stripped. */
 function syllabusTopics(syllabus?: string): string[] {
-  if (!syllabus) return [];
+  // Not `if (!syllabus)`: the column is free text, so a non-string (an object
+  // from jsonb, a number) would throw on .split().
+  if (typeof syllabus !== "string" || syllabus === "") return [];
   return syllabus
     .split("\n")
     .map((line) => line.replace(/^\s*[-*•\d.)\]]+\s*/, "").trim())
@@ -89,6 +93,26 @@ function MetaBadge({
       {icon}
       {children}
     </span>
+  );
+}
+
+/**
+ * Contains a render error inside one section. A malformed course row (a
+ * `materials` entry that is not an object, a review with a bad rating, and so
+ * on) then costs only that block - the hero, syllabus and the Back button all
+ * stay usable instead of the whole detail view collapsing to a blank page.
+ */
+function SafeSection({ children }: { children: ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          This part of the course could not be displayed.
+        </p>
+      }
+    >
+      {children}
+    </ErrorBoundary>
   );
 }
 
@@ -142,9 +166,13 @@ export default function StudentCourseDetail({
     [course.training, course.program].filter(Boolean).join(" · ") || null;
   const thumbnail =
     course.thumbnail ?? thumbnailForTraining(course.training ?? "");
-  const materials = course.materials ?? [];
+  // Never assume these are arrays: courses.materials is jsonb that older rows
+  // stored double-encoded (a JSON *string*), which is what produced
+  // "materials.map is not a function". toMaterialList/toSkillList apply the
+  // Array.isArray check and drop unusable entries.
+  const materials = toMaterialList(course.materials) ?? [];
   const topics = syllabusTopics(course.syllabus);
-  const skills = course.skills ?? [];
+  const skills = toSkillList(course.skills) ?? [];
 
   // courses.duration is already a display string ("1h 30m"); normalise the
   // odd whitespace a teacher may have typed.
@@ -231,33 +259,40 @@ export default function StudentCourseDetail({
               <Sparkles className="h-3.5 w-3.5" />
               Skills you&rsquo;ll gain
             </h3>
-            {skills.length === 0 ? (
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                No skills have been listed for this course yet.
-              </p>
-            ) : (
-              <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                {skills.map((skill) => (
-                  <li key={skill} className="flex items-start gap-2 text-sm">
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>{skill}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <SafeSection>
+              {skills.length === 0 ? (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  No skills have been listed for this course yet.
+                </p>
+              ) : (
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {skills.map((skill, i) => (
+                    <li
+                      key={`${skill}-${i}`}
+                      className="flex items-start gap-2 text-sm"
+                    >
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <span>{skill}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SafeSection>
           </section>
 
           <section>
             <h3 className="text-sm font-medium">Overview</h3>
-            {course.description ? (
-              <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
-                {course.description}
-              </p>
-            ) : (
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                No description has been added for this course yet.
-              </p>
-            )}
+            <SafeSection>
+              {course.description ? (
+                <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
+                  {course.description}
+                </p>
+              ) : (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  No description has been added for this course yet.
+                </p>
+              )}
+            </SafeSection>
           </section>
 
           <section>
@@ -265,24 +300,26 @@ export default function StudentCourseDetail({
               <Layers className="h-3.5 w-3.5" />
               Course syllabus
             </h3>
-            {topics.length === 0 ? (
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                The syllabus has not been published for this course yet.
-              </p>
-            ) : (
-              <ol className="mt-2 space-y-2">
-                {topics.map((topic, i) => (
-                  <li key={`${topic}-${i}`} className="flex gap-3 text-sm">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed text-muted-foreground">
-                      {topic}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
+            <SafeSection>
+              {topics.length === 0 ? (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  The syllabus has not been published for this course yet.
+                </p>
+              ) : (
+                <ol className="mt-2 space-y-2">
+                  {topics.map((topic, i) => (
+                    <li key={`${topic}-${i}`} className="flex gap-3 text-sm">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed text-muted-foreground">
+                        {topic}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </SafeSection>
           </section>
 
           <section>
@@ -293,34 +330,38 @@ export default function StudentCourseDetail({
                 ({materials.length})
               </span>
             </h3>
-            {materials.length === 0 ? (
-              <p className="mt-1.5 text-sm text-muted-foreground">
-                No materials have been attached to this course yet.
-              </p>
-            ) : (
-              <div className="mt-2 space-y-4">
-                {materials.map((material, i) => (
-                  <MaterialItem
-                    key={`${material.name}-${i}`}
-                    material={material}
-                  />
-                ))}
-              </div>
-            )}
+            <SafeSection>
+              {materials.length === 0 ? (
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  No materials have been attached to this course yet.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-4">
+                  {materials.map((material, i) => (
+                    <MaterialItem
+                      key={`${material?.name ?? "material"}-${i}`}
+                      material={material}
+                    />
+                  ))}
+                </div>
+              )}
+            </SafeSection>
           </section>
 
-          {course.id ? (
-            <CourseReviewsSection
-              courseId={course.id}
-              studentId={studentId}
-              studentName={studentName}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Reviews are not available for this scheduled course. Only courses
-              added by a teacher can be rated.
-            </p>
-          )}
+          <SafeSection>
+            {course.id ? (
+              <CourseReviewsSection
+                courseId={course.id}
+                studentId={studentId}
+                studentName={studentName}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Reviews are not available for this scheduled course. Only courses
+                added by a teacher can be rated.
+              </p>
+            )}
+          </SafeSection>
         </div>
 
       {/* ------------------------------------------------------------- sidebar */}

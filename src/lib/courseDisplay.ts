@@ -35,3 +35,21 @@ export function formatPublished(published: string): string {
     year: "numeric",
   });
 }
+
+/**
+ * Stable identity for a scheduled course. Teacher-created rows have a database
+ * `id`; the statically seeded schedule entries (src/lib/trainings.ts COURSES)
+ * have none, so they are identified by name + slot instead.
+ *
+ * Never compare seeded courses on `id` alone: every one of them is `undefined`,
+ * so an `=== undefined` test matches the first seeded course in the list and
+ * silently swaps whichever course is open.
+ */
+export function courseKey(course: {
+  id?: string;
+  name: string;
+  day?: string;
+  time?: string;
+}): string {
+  return course.id ?? `${course.name}-${course.day ?? ""}-${course.time ?? ""}`;
+}

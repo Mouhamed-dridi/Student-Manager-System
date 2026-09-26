@@ -40,7 +40,15 @@ alter table if exists public.students
   add column if not exists location text,
   add column if not exists education text,
   add column if not exists age integer,
-  add column if not exists engagement text;
+  add column if not exists engagement text,
+  -- Optional social profile links the student edits in the student portal's
+  -- Settings page (ProfileEditor). Free text so a handle, a full URL or a
+  -- wa.me number can all be stored as typed.
+  add column if not exists facebook text,
+  add column if not exists instagram text,
+  add column if not exists whatsapp text,
+  add column if not exists github text,
+  add column if not exists linkedin text;
 
 create table if not exists public.teachers (
   id uuid primary key default gen_random_uuid(),

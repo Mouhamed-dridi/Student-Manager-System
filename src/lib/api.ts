@@ -132,6 +132,11 @@ interface StudentRow {
   education: string | null;
   age: number | null;
   engagement: string | null;
+  facebook: string | null;
+  instagram: string | null;
+  whatsapp: string | null;
+  github: string | null;
+  linkedin: string | null;
   password: string | null;
   blocked: boolean | null;
   is_deleted?: boolean;
@@ -152,6 +157,11 @@ function studentFromRow(row: StudentRow): Student {
     education: row.education ?? undefined,
     age: row.age ?? undefined,
     engagement: row.engagement ?? undefined,
+    facebook: row.facebook ?? undefined,
+    instagram: row.instagram ?? undefined,
+    whatsapp: row.whatsapp ?? undefined,
+    github: row.github ?? undefined,
+    linkedin: row.linkedin ?? undefined,
     password: row.password ?? undefined,
     blocked: row.blocked === true ? true : undefined,
   };
@@ -173,6 +183,11 @@ async function studentToRow(student: Student) {
     education: student.education ?? null,
     age: student.age ?? null,
     engagement: student.engagement ?? null,
+    facebook: student.facebook ?? null,
+    instagram: student.instagram ?? null,
+    whatsapp: student.whatsapp ?? null,
+    github: student.github ?? null,
+    linkedin: student.linkedin ?? null,
     password: student.password ?? null,
     blocked: student.blocked === true,
   };
@@ -327,6 +342,11 @@ export async function updateStudentProfile(
     | "education"
     | "age"
     | "engagement"
+    | "facebook"
+    | "instagram"
+    | "whatsapp"
+    | "github"
+    | "linkedin"
   >,
 ): Promise<void> {
   const { programId, trainingId } = await resolveProgramTrainingIds(
@@ -346,6 +366,13 @@ export async function updateStudentProfile(
         education: profile.education ?? null,
         age: profile.age ?? null,
         engagement: profile.engagement ?? null,
+        // Social links the student edits in the student portal's Settings page.
+        // An empty input is stored as NULL so a cleared link is really removed.
+        facebook: profile.facebook ?? null,
+        instagram: profile.instagram ?? null,
+        whatsapp: profile.whatsapp ?? null,
+        github: profile.github ?? null,
+        linkedin: profile.linkedin ?? null,
       })
       .eq("id", id),
   );
@@ -1728,7 +1755,12 @@ interface CourseRow {
   time_slot: string;
   thumbnail_url: string | null;
   published_at: string | null;
-  materials: CourseMaterial[] | null;
+  // `courses.materials` is jsonb, and rows written by an older build stored the
+  // value DOUBLE-ENCODED - the column holds the *text* of a JSON array instead
+  // of a JSON array, so PostgREST hands back a string. Anything that then calls
+  // .map() on it throws "materials.map is not a function". Typed as unknown
+  // because the wire value really can be a string, an array or null.
+  materials: unknown;
   // Course-detail metadata. `level`, `format` and `duration` are short display
   // strings, not enum keys or a minute count.
   subtitle: string | null;
@@ -1737,6 +1769,53 @@ interface CourseRow {
   format: string | null;
   skills: string[] | null;
   syllabus: string | null;
+}
+
+/**
+ * Coerces a jsonb value into a list of course materials, healing the
+ * double-encoded rows described on CourseRow.materials. Exported because the
+ * course detail views also map over this value and must survive both the
+ * double-encoded string and junk entries inside the array. Anything that is not
+ * a usable material object is dropped rather than reaching a .map() consumer.
+ */
+export function toMaterialList(value: unknown): CourseMaterial[] | undefined {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    const text = candidate.trim();
+    if (!text) return undefined;
+    try {
+      candidate = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!Array.isArray(candidate)) return undefined;
+  const materials = candidate.filter(
+    (entry): entry is CourseMaterial =>
+      typeof entry === "object" &&
+      entry !== null &&
+      typeof (entry as CourseMaterial).name === "string" &&
+      typeof (entry as CourseMaterial).url === "string",
+  );
+  return materials.length > 0 ? materials : undefined;
+}
+
+/**
+ * Same coercion for `courses.skills` (text[]) - never assume PostgREST sent an
+ * array, and drop non-strings so a stray object cannot reach React as a child.
+ */
+export function toSkillList(value: unknown): string[] | undefined {
+  if (typeof value === "string") {
+    // Tolerate a single comma-separated string as well as a real array.
+    const parts = value
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts : undefined;
+  }
+  if (!Array.isArray(value)) return undefined;
+  const skills = value.filter((s): s is string => typeof s === "string" && s.trim() !== "");
+  return skills.length > 0 ? skills : undefined;
 }
 
 function courseFromRow(row: CourseRow): TeacherCourseRecord {
@@ -1753,12 +1832,12 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
     time: row.time_slot ?? undefined,
     thumbnail: row.thumbnail_url ?? undefined,
     published: row.published_at ?? undefined,
-    materials: row.materials ?? undefined,
+    materials: toMaterialList(row.materials),
     subtitle: row.subtitle ?? undefined,
     level: row.level ?? undefined,
     duration: row.duration ?? undefined,
     format: row.format ?? undefined,
-    skills: row.skills ?? undefined,
+    skills: toSkillList(row.skills),
     syllabus: row.syllabus ?? undefined,
   };
 }
