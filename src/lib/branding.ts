@@ -4,6 +4,8 @@ import { type AppSettings, getCachedSettings } from "./api";
 export interface Branding {
   systemName: string;
   universityName: string;
+  /** University logo URL from the `logo_url` setting, or "" when unset. */
+  logoUrl: string;
 }
 
 const DEFAULT_SYSTEM_NAME = "SSM";
@@ -12,6 +14,7 @@ function fromSettings(settings: AppSettings): Branding {
   return {
     systemName: settings.systemName?.trim() || DEFAULT_SYSTEM_NAME,
     universityName: settings.universityName?.trim() || "",
+    logoUrl: settings.logoUrl?.trim() || "",
   };
 }
 
@@ -40,9 +43,13 @@ export function setBrandingFromSettings(settings: AppSettings): void {
   publish(fromSettings(settings));
 }
 
-/** Reactive hook: re-renders the consumer whenever branding changes. */
+/**
+ * Reactive hook: re-renders the consumer whenever branding changes.
+ * `getServerSnapshot` is required by useSyncExternalStore whenever there is no
+ * browser store, i.e. any server render of a screen that uses branding.
+ */
 export function useBranding(): Branding {
-  return useSyncExternalStore(subscribe, getSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /** Combined label for the top bar; defaults to the full product name. */

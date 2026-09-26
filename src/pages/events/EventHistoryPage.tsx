@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { CalendarDays, CheckCircle2, ImagePlus, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -60,6 +60,15 @@ export function EventHistoryTable({
   onEdit,
   onDelete,
 }: EventHistoryTableProps) {
+  /** Full "Name (link), Name" text for the cell tooltip, so a long list is still readable. */
+  const partnersLabel = (partners: AppEvent["partners"]): string =>
+    (partners ?? [])
+      .map((partner) => {
+        const label = partner.name || partner.link;
+        return partner.link && partner.name ? `${label} (${partner.link})` : label;
+      })
+      .join(", ");
+
   const peopleDetail = (event: AppEvent): string => {
     const parts: string[] = [];
     if (event.organizers.length > 0) {
@@ -109,33 +118,38 @@ export function EventHistoryTable({
             <TableCell className="whitespace-nowrap">
               {formatTime(event.eventTime)}
             </TableCell>
-            <TableCell>
-              {event.partners.length > 0
-                ? event.partners.map((partner, index) => {
-                    const href = asLink(partner.link);
-                    const label = partner.name || partner.link;
-                    return (
-                      <div
-                        key={`${partner.name}-${partner.link}-${index}`}
-                        className="max-w-[16rem] truncate"
-                      >
-                        <span className="block truncate font-medium">
+            <TableCell
+              title={partnersLabel(event.partners)}
+              className="max-w-[18rem]"
+            >
+              {event.partners?.length ? (
+                event.partners.map((partner, index) => {
+                  const href = asLink(partner.link);
+                  // A partner with no name is a legacy row that stored a bare
+                  // link, so fall back to showing the URL as the label.
+                  const label = partner.name || partner.link;
+                  return (
+                    <Fragment key={`${partner.name}-${partner.link}-${index}`}>
+                      {index > 0 && ", "}
+                      {href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={partner.link}
+                          className="font-medium underline-offset-2 hover:underline"
+                        >
                           {label}
-                        </span>
-                        {href && (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                          >
-                            {partner.link}
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })
-                : "—"}
+                        </a>
+                      ) : (
+                        <span className="font-medium">{label}</span>
+                      )}
+                    </Fragment>
+                  );
+                })
+              ) : (
+                "—"
+              )}
             </TableCell>
             <TableCell className="text-xs" title={peopleDetail(event)}>
               {event.organizers.length + event.members.length === 0

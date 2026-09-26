@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { errorMessage, listStudents, listTeachers } from "@/lib/api";
+import { useBranding } from "@/lib/branding";
 import { setRole, setCurrentStudentId, setCurrentTeacherId } from "@/lib/session";
 
 const BLOCKED_MESSAGE = "Access has been blocked by the center.";
@@ -12,6 +13,9 @@ const INVALID_MESSAGE = "Incorrect name or password.";
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  // Settings are fetched once at bootstrap in main.tsx and published here, so
+  // the logo costs no extra request and is already cached-first.
+  const { logoUrl } = useBranding();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -74,6 +78,13 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
+          {logoUrl && (
+            <img
+              src={logoUrl}
+              alt="University logo"
+              className="mx-auto mb-4 h-16 w-auto max-w-[12rem] object-contain"
+            />
+          )}
           <CardTitle className="text-2xl font-semibold">SSM Login</CardTitle>
         </CardHeader>
         <CardContent>
