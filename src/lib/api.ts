@@ -2521,6 +2521,181 @@ export async function restorePublication(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// ------------------------------------------------------------------ events
+//
+// Rich events / publications created from the admin panel. This is NOT the
+// `publications` table (that one is a broadcast message to recipients).
+//
+// `events` is a newer table than the rest of the schema, so its presence is
+// probed once at runtime and every read reports a readable error when it is
+// missing, rather than the page failing with an opaque 404 - same capability
+// probing idea as hasColumn()/generalTrashCapabilities().
+
+/** The five kinds of event the form offers. Stored as free text. */
+export const EVENT_TYPES = [
+  "Hackathon",
+  "Event",
+  "Publication",
+  "New Training",
+  "Certification",
+] as const;
+
+export type EventType = (typeof EVENT_TYPES)[number];
+
+/** The Storage bucket that holds event cover images. */
+const EVENT_COVERS_BUCKET = "event-covers";
+
+export interface AppEvent {
+  id: string;
+  title: string;
+  type: string;
+  description: string;
+  /** ISO date (yyyy-mm-dd) or "" when not set. */
+  startsOn: string;
+  endsOn: string;
+  /** 24h "HH:mm" or "" when not set. */
+  eventTime: string;
+  partners: string[];
+  giftsAwards: string;
+  /** Teacher ids. Names are resolved by the page, never stored. */
+  organizers: string[];
+  /** Student ids. Names are resolved by the page, never stored. */
+  members: string[];
+  coverUrl: string;
+  createdAt: string;
+}
+
+interface EventRow {
+  id: string;
+  title: string | null;
+  type: string | null;
+  description: string | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  event_time: string | null;
+  partners: string[] | null;
+  gifts_awards: string | null;
+  organizers: string[] | null;
+  members: string[] | null;
+  cover_url: string | null;
+  created_at: string | null;
+}
+
+const EVENTS_MISSING =
+  'The "events" table was not found. Create it by running the events block in supabase/schema.sql (table, "event-covers" bucket and its RLS policies).';
+
+/** Keeps only string entries; PostgREST hands back null for an absent array. */
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function eventFromRow(row: EventRow): AppEvent {
+  return {
+    id: row.id,
+    title: row.title ?? "",
+    type: row.type ?? "Event",
+    description: row.description ?? "",
+    startsOn: row.starts_on ?? "",
+    endsOn: row.ends_on ?? "",
+    eventTime: row.event_time ?? "",
+    partners: toStringArray(row.partners),
+    giftsAwards: row.gifts_awards ?? "",
+    organizers: toStringArray(row.organizers),
+    members: toStringArray(row.members),
+    coverUrl: row.cover_url ?? "",
+    createdAt: row.created_at ?? "",
+  };
+}
+
+let eventsTablePromise: Promise<boolean> | null = null;
+
+/** Probed once: a missing table is the common case until the SQL is applied. */
+async function hasEventsTable(): Promise<boolean> {
+  if (!eventsTablePromise) {
+    eventsTablePromise = withTimeout(
+      supabase.from("events").select("id").limit(1),
+      PROBE_TIMEOUT_MS,
+    )
+      .then(({ error }) => !error)
+      .catch(() => false);
+  }
+  return eventsTablePromise;
+}
+
+/** Every active event, newest first. Throws a readable error if not applied. */
+export async function listEvents(): Promise<AppEvent[]> {
+  if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
+  const { data, error } = await withTimeout(
+    supabase
+      .from("events")
+      .select("*")
+      .or("is_deleted.is.false,is_deleted.is.null")
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as EventRow[]).map(eventFromRow);
+}
+
+/**
+ * Inserts a new event, or updates the existing one when `id` is given. Arrays
+ * are always sent (never omitted) so clearing the partners or participants of
+ * an existing event persists instead of leaving the old values behind.
+ */
+export async function saveEvent(
+  values: Omit<AppEvent, "id" | "createdAt">,
+  id?: string,
+): Promise<AppEvent> {
+  if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
+  const payload = {
+    title: values.title,
+    type: values.type,
+    description: values.description || null,
+    starts_on: values.startsOn || null,
+    ends_on: values.endsOn || null,
+    event_time: values.eventTime || null,
+    partners: values.partners,
+    gifts_awards: values.giftsAwards || null,
+    organizers: values.organizers,
+    members: values.members,
+    cover_url: values.coverUrl || null,
+  };
+
+  const query = id
+    ? supabase.from("events").update(payload).eq("id", id).select("*").single()
+    : supabase.from("events").insert(payload).select("*").single();
+  const { data, error } = await withTimeout(query);
+  if (error) throw new Error(error.message);
+  return eventFromRow(data as EventRow);
+}
+
+/** Soft delete, matching the rest of the app: the row stays recoverable in SQL. */
+export async function softDeleteEvent(id: string): Promise<void> {
+  if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
+  const { error } = await withTimeout(
+    supabase
+      .from("events")
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq("id", id),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Uploads an event cover image to the 'event-covers' bucket and returns its
+ * public URL. The file must be a JPEG - the form downscales to one first.
+ */
+export async function uploadEventCover(image: Blob): Promise<string> {
+  const filePath = `event-cover/${crypto.randomUUID()}.jpg`;
+  return uploadToCourseBucket(
+    EVENT_COVERS_BUCKET,
+    filePath,
+    image,
+    "image/jpeg",
+    "Cover image",
+  );
+}
+
 // --------------------------------------------------------------- planning
 
 interface PlanningRow {

@@ -284,6 +284,47 @@ create table if not exists public.course_reviews (
 create index if not exists course_reviews_course_idx
   on public.course_reviews (course_id, created_at desc);
 
+-- ------------------------------------------------------------------ events --
+-- Rich events and publications created from the admin panel (Hackathon,
+-- Event, Publication, New Training, Certification). This is a DIFFERENT thing
+-- from the `publications` table above, which is a broadcast message sent to
+-- recipients; these rows are dated activities with a cover image, partners,
+-- prizes and participants.
+--
+-- `organizers` / `members` hold teacher / student ids. They deliberately have NO
+-- foreign key and no denormalised name: teachers and students are soft-deleted,
+-- so a cascade or a stale snapshot would lose the assignment. The admin page
+-- resolves the names from listTeachers()/listStudents() at read time and simply
+-- skips ids that no longer resolve.
+--
+-- Soft delete matches the rest of the app: is_deleted/deleted_at, and every
+-- read filters `.or("is_deleted.is.false,is_deleted.is.null")`.
+--
+-- The `type` column is free text (not an enum) so a new kind of event can be
+-- added from the form without a migration; the app constrains it to the five
+-- documented values.
+
+create table if not exists public.events (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  type text not null default 'Event',
+  description text,
+  starts_on date,
+  ends_on date,
+  event_time text,
+  partners text[] not null default '{}',
+  gifts_awards text,
+  organizers uuid[] not null default '{}',
+  members uuid[] not null default '{}',
+  cover_url text,
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists events_created_idx
+  on public.events (created_at desc);
+
 -- ------------------------------------------ Storage: course media buckets ---
 -- Course media lives in Supabase Storage, not in the database, split by media
 -- type so each kind of file is served from its own bucket:
@@ -291,6 +332,7 @@ create index if not exists course_reviews_course_idx
 --   cours-covers -> course thumbnail / cover images (JPEG, downscaled client-side)
 --   cours-PDF    -> PDF course materials
 --   cours-videos -> video course materials
+--   event-covers -> event / publication cover images (admin Events page)
 --
 -- The buckets must exist before uploads succeed; paste this block into the SQL
 -- Editor (it is idempotent). The public URL returned by the app embeds the
@@ -310,7 +352,8 @@ values
   ('cours', 'cours', true),
   ('cours-covers', 'cours-covers', true),
   ('cours-PDF', 'cours-PDF', true),
-  ('cours-videos', 'cours-videos', true)
+  ('cours-videos', 'cours-videos', true),
+  ('event-covers', 'event-covers', true)
 on conflict (id) do update set public = excluded.public;
 
 -- Policies are generated per bucket so each one is scoped to a single bucket_id.
@@ -319,7 +362,7 @@ do $$
 declare
   b text;
 begin
-  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos'] loop
+  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers'] loop
     execute format('drop policy if exists %I on storage.objects', b || ' read anon');
     execute format(
       'create policy %I on storage.objects for select to anon using (bucket_id = %L)',
@@ -401,7 +444,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'students', 'teachers', 'courses', 'publications', 'course_reviews'
+    'students', 'teachers', 'courses', 'publications', 'course_reviews', 'events'
   ]
   loop
     begin
@@ -424,7 +467,7 @@ begin
   foreach t in array array[
     'students', 'teachers', 'payments', 'attendance', 'courses',
     'exams', 'grades', 'publications', 'planning', 'settings',
-    'course_reviews'
+    'course_reviews', 'events'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

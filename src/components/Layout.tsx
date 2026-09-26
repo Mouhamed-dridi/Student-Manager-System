@@ -1,20 +1,15 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  LayoutDashboard,
-  Users,
-  GraduationCap,
-  DollarSign,
-  CalendarX,
-  BookOpen,
-  UserCog,
-  Trash2,
-  Settings,
-  ChevronDown,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  isSectionActive,
+  isSectionExpanded,
+  menuItems,
+  toggleSectionOpen,
+  type MenuKey,
+} from "@/components/sectionMenu";
 import { cn } from "@/lib/utils";
 import DashboardPage from "@/pages/dashboard/DashboardPage";
 import StudentsPage from "@/pages/students/StudentsPage";
@@ -24,6 +19,9 @@ import PaymentHistoryPage from "@/pages/pay/PaymentHistoryPage";
 import PaymentTrashPage from "@/pages/pay/PaymentTrashPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
+import EventsPage from "@/pages/events/EventsPage";
+import EventHistoryPage from "@/pages/events/EventHistoryPage";
+import type { AppEvent } from "@/lib/api";
 import UserManagementPage from "@/pages/users/UserManagementPage";
 import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
@@ -32,83 +30,61 @@ import { clearSession } from "@/lib/session";
 import { useAuthDisplayName } from "@/lib/authDisplay";
 import { brandTitle, useBranding } from "@/lib/branding";
 
-type MenuKey =
-  | "dashboard"
-  | "students"
-  | "teachers"
-  | "pay"
-  | "pay-history"
-  | "pay-trash"
-  | "absence"
-  | "publications"
-  | "users"
-  | "trash"
-  | "settings";
-
-interface MenuItem {
-  key: MenuKey;
-  label: string;
-  icon: LucideIcon;
-  children?: { key: MenuKey; label: string }[];
-}
-
-const menuItems: MenuItem[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "students", label: "Students", icon: Users },
-  { key: "teachers", label: "Teachers", icon: GraduationCap },
-  {
-    key: "pay",
-    label: "Pay",
-    icon: DollarSign,
-    children: [
-      { key: "pay", label: "Payments" },
-      { key: "pay-history", label: "History" },
-      { key: "pay-trash", label: "Trash" },
-    ],
-  },
-  { key: "absence", label: "Absence", icon: CalendarX },
-  { key: "publications", label: "Publications", icon: BookOpen },
-  { key: "users", label: "User Management", icon: UserCog },
-  { key: "trash", label: "Trash", icon: Trash2 },
-  { key: "settings", label: "Settings", icon: Settings },
-];
-
-const pages: Record<MenuKey, React.ReactNode> = {
-  dashboard: <DashboardPage />,
-  students: <StudentsPage />,
-  teachers: <TeachersPage />,
-  pay: <PayPage />,
-  "pay-history": <PaymentHistoryPage />,
-  "pay-trash": <PaymentTrashPage />,
-  absence: <AbsencePage />,
-  publications: <PublicationsPage />,
-  users: <UserManagementPage />,
-  trash: <GeneralTrashPage />,
-  settings: <SettingsPage />,
-};
-
 export default function Layout() {
   const [active, setActive] = useState<MenuKey>("dashboard");
-  const [payExpanded, setPayExpanded] = useState(true);
+  // Which collapsible sidebar sections are open, keyed by parent menu key.
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    pay: true,
+  });
+  // The event the "New Event" form is editing, or null to create a new one.
+  // Lifted here because the sidebar swaps between the form and the history
+  // page without a router change: Edit sets this, then jumps to the form.
+  const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
   const navigate = useNavigate();
   const branding = useBranding();
   const displayName = useAuthDisplayName("Admin");
 
+  const handleSectionClick = (item: (typeof menuItems)[number]) => {
+    const sectionActive = isSectionActive(item, active);
+    setOpenSections((prev) => toggleSectionOpen(prev, item.key, sectionActive));
+    if (!sectionActive) {
+      setActive(item.key);
+      // Entering Events from elsewhere always starts a new event, not an edit.
+      if (item.key === "events") setEditingEvent(null);
+    }
+  };
+
+  const pages: Record<MenuKey, React.ReactNode> = {
+    dashboard: <DashboardPage />,
+    students: <StudentsPage />,
+    teachers: <TeachersPage />,
+    pay: <PayPage />,
+    "pay-history": <PaymentHistoryPage />,
+    "pay-trash": <PaymentTrashPage />,
+    absence: <AbsencePage />,
+    publications: <PublicationsPage />,
+    events: (
+      <EventsPage
+        initialEvent={editingEvent}
+        onSaved={() => setEditingEvent(null)}
+      />
+    ),
+    "event-history": (
+      <EventHistoryPage
+        onEdit={(event) => {
+          setEditingEvent(event);
+          setActive("events");
+        }}
+      />
+    ),
+    users: <UserManagementPage />,
+    trash: <GeneralTrashPage />,
+    settings: <SettingsPage />,
+  };
+
   const handleLogout = () => {
     clearSession();
     navigate("/login");
-  };
-
-  const inPaySection =
-    active === "pay" || active === "pay-history" || active === "pay-trash";
-
-  const handlePayParentClick = () => {
-    if (inPaySection) {
-      setPayExpanded((open) => !open);
-    } else {
-      setPayExpanded(true);
-      setActive("pay");
-    }
   };
 
   return (
@@ -129,14 +105,15 @@ export default function Layout() {
         <nav className="flex-1 space-y-1 p-2">
           {menuItems.map((item) => {
             if (item.children) {
-              const expanded = payExpanded && inPaySection;
+              const sectionActive = isSectionActive(item, active);
+              const expanded = isSectionExpanded(openSections, item, active);
               return (
                 <div key={item.key}>
                   <button
-                    onClick={handlePayParentClick}
+                    onClick={() => handleSectionClick(item)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      inPaySection
+                      sectionActive
                         ? "bg-accent text-accent-foreground"
                         : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                     )}
