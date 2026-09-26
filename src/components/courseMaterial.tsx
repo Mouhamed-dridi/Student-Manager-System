@@ -13,19 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { CourseMaterial } from "@/lib/trainings";
-
-const VIDEO_EXTENSION = /\.(mp4|m4v|webm|ogv|mov)$/i;
-const PDF_EXTENSION = /\.pdf$/i;
-
-// Browsers don't always report a MIME type for a picked file, so the file
-// name is checked as well as the stored type.
-function materialKind(material: CourseMaterial): "video" | "pdf" | "file" {
-  const type = (material.type || "").toLowerCase();
-  const name = material.name.toLowerCase();
-  if (type.startsWith("video/") || VIDEO_EXTENSION.test(name)) return "video";
-  if (type === "application/pdf" || PDF_EXTENSION.test(name)) return "pdf";
-  return "file";
-}
+import { materialKind } from "@/lib/courseBuckets";
 
 function materialTypeLabel(type: string): string {
   if (type.startsWith("video/")) return "Video";
@@ -34,10 +22,10 @@ function materialTypeLabel(type: string): string {
   return type || "File";
 }
 
-// Course files live in the public 'cours' bucket, so plain public URLs are
-// enough — no signed URLs. The HTML download attribute is ignored for
-// cross-origin links, so a real download goes through Supabase's
-// ?download=<filename> query parameter instead.
+// Course files live in the public cours-covers / cours-PDF / cours-videos
+// buckets, so plain public URLs are enough — no signed URLs. The HTML download
+// attribute is ignored for cross-origin links, so a real download goes through
+// Supabase's ?download=<filename> query parameter instead.
 function downloadUrlFor(url: string, fileName: string): string {
   try {
     const parsed = new URL(url);
@@ -72,7 +60,7 @@ function MaterialActions({ material }: { material: CourseMaterial & { url: strin
 }
 
 export function MaterialItem({ material }: { material: CourseMaterial }) {
-  const kind = materialKind(material);
+  const kind = materialKind(material.name, material.type);
   const url = material.url;
   const Icon = kind === "video" ? CirclePlay : FileText;
   const attached = typeof url === "string" && url.length > 0;

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getRole } from "@/lib/session";
+import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { Payment } from "@/pages/pay/PaymentForm";
@@ -1728,11 +1729,11 @@ interface CourseRow {
   thumbnail_url: string | null;
   published_at: string | null;
   materials: CourseMaterial[] | null;
-  // Optional course-detail metadata. Undefined on databases where the
-  // courses block in supabase/schema.sql has not been run yet.
+  // Course-detail metadata. `level`, `format` and `duration` are short display
+  // strings, not enum keys or a minute count.
   subtitle: string | null;
   level: string | null;
-  duration_minutes: number | null;
+  duration: string | null;
   format: string | null;
   skills: string[] | null;
   syllabus: string | null;
@@ -1755,7 +1756,7 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
     materials: row.materials ?? undefined,
     subtitle: row.subtitle ?? undefined,
     level: row.level ?? undefined,
-    durationMinutes: row.duration_minutes ?? undefined,
+    duration: row.duration ?? undefined,
     format: row.format ?? undefined,
     skills: row.skills ?? undefined,
     syllabus: row.syllabus ?? undefined,
@@ -1764,80 +1765,119 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
 
 const COURSE_SELECT = "*, programs(code), trainings(name)";
 
-const COURSE_THUMBNAILS_BUCKET = "cours";
+/**
+ * Turns a Storage upload failure into an actionable message naming the exact
+ * bucket. The three buckets are created with the Storage block in
+ * supabase/schema.sql, and this app has NO Supabase Auth accounts (operators and
+ * teachers authenticate against the teachers/students password columns, so every
+ * Storage request carries the anon key and the JWT role 'anon'). An RLS violation
+ * therefore always means the bucket exists but storage.objects has no policy for
+ * 'anon' — never that a session is missing.
+ */
+function courseStorageUploadError(
+  error: unknown,
+  bucket: string,
+  label: string,
+): Error {
+  const e = (error ?? {}) as {
+    message?: string;
+    code?: string;
+    statusCode?: string | number;
+  };
+  const message = `${e.message ?? ""}`;
+  const code = `${e.code ?? ""}`.toLowerCase();
+  const status = `${e.statusCode ?? ""}`;
+
+  // Missing bucket. Requires the word "bucket" in the message so an
+  // "Object not found" (a path collision) is not misreported as a missing
+  // bucket.
+  if (
+    code === "nosuchbucket" ||
+    status === "404" ||
+    /\bbucket\b[^.]*\b(not found|does not exist|doesn't exist)\b/i.test(message)
+  ) {
+    return new Error(
+      `${label} upload failed: the '${bucket}' storage bucket does not exist. Create it by running the Storage block in supabase/schema.sql.`,
+    );
+  }
+
+  // The bucket exists but rejects the write. This app has no Supabase Auth
+  // accounts, so the request runs as 'anon' and needs an anon INSERT policy.
+  if (/row[- ]level security|violates row/i.test(message) || code === "42501") {
+    return new Error(
+      `${label} upload failed: the '${bucket}' bucket has no Storage insert policy for the 'anon' role. This app uses no Supabase Auth, so uploads always run as 'anon' — run the Storage block in supabase/schema.sql to grant select + insert on storage.objects to anon.`,
+    );
+  }
+
+  return new Error(`${label} upload failed: ${message}`);
+}
 
 /**
- * Uploads a course thumbnail to Supabase Storage and returns its public URL.
- * The file must be a JPEG (the form downscales before this call). Throws with
- * a readable message when the bucket is missing or the upload fails so the
- * caller can surface the error instead of failing silently.
+ * Uploads a blob to one of the per-media-type course Storage buckets and
+ * returns its public URL. `getPublicUrl` bakes the bucket name into the URL
+ * (/storage/v1/object/public/<bucket>/<path>), which is what the student course
+ * detail renders.
+ */
+async function uploadToCourseBucket(
+  bucket: string,
+  filePath: string,
+  body: Blob,
+  contentType: string | undefined,
+  label: string,
+): Promise<string> {
+  const { error } = await withTimeout(
+    supabase.storage.from(bucket).upload(filePath, body, {
+      cacheControl: "3600",
+      contentType,
+      upsert: false,
+    }),
+  );
+  if (error) throw courseStorageUploadError(error, bucket, label);
+  return supabase.storage.from(bucket).getPublicUrl(filePath).data.publicUrl;
+}
+
+/**
+ * Uploads a course thumbnail (the card/cover image) to the 'cours-covers'
+ * bucket. The file must be a JPEG — the form downscales to one before this call.
  */
 export async function uploadCourseThumbnail(
   image: Blob,
   teacherId: string,
 ): Promise<string> {
   const filePath = `teacher-${teacherId}/${crypto.randomUUID()}.jpg`;
-  const { error } = await withTimeout(
-    supabase.storage.from(COURSE_THUMBNAILS_BUCKET).upload(filePath, image, {
-      cacheControl: "3600",
-      contentType: "image/jpeg",
-      upsert: false,
-    }),
+  return uploadToCourseBucket(
+    COURSE_COVERS_BUCKET,
+    filePath,
+    image,
+    "image/jpeg",
+    "Thumbnail",
   );
-  if (error) {
-    const statusCode = (error as { statusCode?: string | number } | undefined)
-      ?.statusCode;
-    const message = `${error.message ?? ""}`;
-    if (
-      statusCode === "404" ||
-      statusCode === 404 ||
-      /bucket .*not found|does not exist|not found/i.test(message)
-    ) {
-      throw new Error(
-        "Thumbnail upload failed: the 'cours' storage bucket does not exist yet. Ask the administrator to create it in Supabase (run the Storage block in supabase/schema.sql).",
-      );
-    }
-    throw new Error(`Thumbnail upload failed: ${message}`);
-  }
-  return supabase.storage.from(COURSE_THUMBNAILS_BUCKET).getPublicUrl(filePath)
-    .data.publicUrl;
 }
 
 /**
- * Uploads a course material file (video/PDF/doc) to the same 'cours' Storage
- * bucket as thumbnails and returns its public URL. The filename is sanitized
- * and namespaced under the teacher to keep paths collision-free.
+ * Uploads a course material file to the bucket matching its media type:
+ * videos to 'cours-videos', PDFs to 'cours-PDF', anything else to
+ * 'cours-covers'. The filename is sanitized and namespaced under the teacher to
+ * keep paths collision-free. The MIME type is passed for the object metadata;
+ * the bucket is chosen from the name when the browser did not report a type.
  */
 export async function uploadCourseMaterial(
   file: Blob,
   fileName: string,
   teacherId: string,
 ): Promise<string> {
-  const safe = fileName.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "");
+  const safe = fileName
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
   const filePath = `teacher-${teacherId}/materials/${crypto.randomUUID()}-${safe}`;
-  const { error } = await withTimeout(
-    supabase.storage.from(COURSE_THUMBNAILS_BUCKET).upload(filePath, file, {
-      cacheControl: "3600",
-      upsert: false,
-    }),
+  const fileType = file.type || undefined;
+  return uploadToCourseBucket(
+    bucketForMaterial(fileName, fileType),
+    filePath,
+    file,
+    fileType,
+    "Course material",
   );
-  if (error) {
-    const statusCode = (error as { statusCode?: string | number } | undefined)
-      ?.statusCode;
-    const message = `${error.message ?? ""}`;
-    if (
-      statusCode === "404" ||
-      statusCode === 404 ||
-      /bucket .*not found|does not exist|not found/i.test(message)
-    ) {
-      throw new Error(
-        "Course material upload failed: the 'cours' storage bucket does not exist yet. Ask the administrator to create it in Supabase (run the Storage block in supabase/schema.sql).",
-      );
-    }
-    throw new Error(`Course material upload failed: ${message}`);
-  }
-  return supabase.storage.from(COURSE_THUMBNAILS_BUCKET).getPublicUrl(filePath)
-    .data.publicUrl;
 }
 
 // ------------------------------------------------------ course materials DB
@@ -1860,57 +1900,10 @@ async function hasCourseMaterialsColumn(): Promise<boolean> {
 
 // ------------------------------------------------- course detail capabilities
 //
-// The student portal's Coursera-style course detail reads optional metadata
-// (subtitle, level, duration, format, skills, syllabus) and student reviews.
-// Databases that have not run the courses/course_reviews block in
-// supabase/schema.sql lack these columns, and PostgREST rejects a write naming
-// an unknown column — so every one is probed once at runtime and the UI hides
-// the parts that are unavailable. Same pattern as hasCourseMaterialsColumn and
-// generalTrashCapabilities.
-
-export interface CourseDetailCapabilities {
-  subtitle: boolean;
-  level: boolean;
-  duration: boolean;
-  format: boolean;
-  skills: boolean;
-  syllabus: boolean;
-  /** The course_reviews table exists, so ratings can be read and written. */
-  reviews: boolean;
-}
-
-const NO_COURSE_DETAIL_CAPABILITIES: CourseDetailCapabilities = {
-  subtitle: false,
-  level: false,
-  duration: false,
-  format: false,
-  skills: false,
-  syllabus: false,
-  reviews: false,
-};
-
-let courseDetailCapabilitiesPromise: Promise<CourseDetailCapabilities> | null =
-  null;
-
-export function courseDetailCapabilities(): Promise<CourseDetailCapabilities> {
-  if (!courseDetailCapabilitiesPromise) {
-    courseDetailCapabilitiesPromise = (async () => {
-      const [subtitle, level, duration, format, skills, syllabus, reviews] =
-        await Promise.all([
-          hasColumn("courses", "subtitle"),
-          hasColumn("courses", "level"),
-          hasColumn("courses", "duration_minutes"),
-          hasColumn("courses", "format"),
-          hasColumn("courses", "skills"),
-          hasColumn("courses", "syllabus"),
-          // Probes the table as a whole: the select errors when it is absent.
-          hasColumn("course_reviews", "id"),
-        ]);
-      return { subtitle, level, duration, format, skills, syllabus, reviews };
-    })().catch(() => NO_COURSE_DETAIL_CAPABILITIES);
-  }
-  return courseDetailCapabilitiesPromise;
-}
+// Retired: the courses metadata columns (subtitle, level, duration, format,
+// skills, syllabus) and the course_reviews table are now part of the schema and
+// written unconditionally. They were probed here while the deployment still
+// lacked them; the probe and its "not available" notices are gone.
 
 /**
  * Teacher-created courses. Server-side filter by ANY of the supplied options:
@@ -1964,18 +1957,15 @@ export async function saveTeacherCourse(
       payload.materials = record.materials;
     }
   }
-  // Course-detail metadata is optional AND probed per column: naming a column
-  // the live table lacks fails the whole upsert, so each key is only added once
-  // the probe confirms it exists.
-  const details = await courseDetailCapabilities();
-  if (details.subtitle) payload.subtitle = record.subtitle ?? null;
-  if (details.level) payload.level = record.level ?? null;
-  if (details.duration) payload.duration_minutes = record.durationMinutes ?? null;
-  if (details.format) payload.format = record.format ?? null;
-  if (details.syllabus) payload.syllabus = record.syllabus ?? null;
-  // An emptied skills list is a real value, so null clears it once the column
-  // exists rather than leaving a stale array behind.
-  if (details.skills) payload.skills = record.skills ?? null;
+  // Course-detail metadata maps straight onto its columns. All six are part of
+  // the schema, so they are always written; an emptied field is written as null
+  // so clearing the input actually clears the stored value.
+  payload.subtitle = record.subtitle ?? null;
+  payload.level = record.level ?? null;
+  payload.duration = record.duration ?? null;
+  payload.format = record.format ?? null;
+  payload.syllabus = record.syllabus ?? null;
+  payload.skills = record.skills ?? null;
   const { error } = await withTimeout(
     supabase.from("courses").upsert(payload, {
       onConflict: "id",
@@ -2143,32 +2133,22 @@ function reviewFromRow(row: CourseReviewRow): CourseReview {
 }
 
 /**
- * Every review on a course, newest first. Returns an empty list when the live
- * database has no course_reviews table so the caller can still render the rest
- * of the course detail.
+ * Every review on a course, newest first. Throws on a failed read so a broken
+ * connection is not mistaken for a course with no reviews yet.
  */
 export async function listCourseReviews(
   courseId: string,
 ): Promise<CourseReview[]> {
   if (!courseId) return [];
-  try {
-    const result = await rows<CourseReviewRow>(
-      "course_reviews",
-      {
-        eq: { course_id: courseId },
-        order: { column: "created_at", ascending: false },
-      },
-      "*",
-    );
-    return result.map(reviewFromRow);
-  } catch (err) {
-    // A missing table must not take the whole course detail page down; the
-    // capability probe has already told the UI to hide the ratings section.
-    if (!/course_reviews|does not exist|PGRST205/i.test(errorMessage(err))) {
-      throw err;
-    }
-    return [];
-  }
+  const result = await rows<CourseReviewRow>(
+    "course_reviews",
+    {
+      eq: { course_id: courseId },
+      order: { column: "created_at", ascending: false },
+    },
+    "*",
+  );
+  return result.map(reviewFromRow);
 }
 
 /**

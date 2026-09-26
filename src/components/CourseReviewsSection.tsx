@@ -26,12 +26,6 @@ interface CourseReviewsSectionProps {
   courseId: string;
   studentId: string;
   studentName: string;
-  /**
-   * Whether the live database has the course_reviews table. `null` means the
-   * capability probe is still running, in which case nothing is rendered yet
-   * so the "not available" notice never flashes before a working page loads.
-   */
-  enabled: boolean | null;
 }
 
 function averageOf(reviews: CourseReview[]): number {
@@ -95,7 +89,6 @@ export default function CourseReviewsSection({
   courseId,
   studentId,
   studentName,
-  enabled,
 }: CourseReviewsSectionProps) {
   const [reviews, setReviews] = useState<CourseReview[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -115,7 +108,6 @@ export default function CourseReviewsSection({
   }, [courseId]);
 
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     listCourseReviews(courseId)
       .then((list) => {
@@ -129,15 +121,14 @@ export default function CourseReviewsSection({
     return () => {
       cancelled = true;
     };
-  }, [enabled, courseId]);
+  }, [courseId]);
 
   useEffect(() => {
-    if (!enabled) return;
     return subscribeToTable("course_reviews", () => void refresh());
-  }, [enabled, refresh]);
+  }, [refresh]);
 
   useRefetchOnFocus(() => {
-    if (enabled) void refresh();
+    void refresh();
   });
 
   const submit = async () => {
@@ -163,17 +154,6 @@ export default function CourseReviewsSection({
       setSaving(false);
     }
   };
-
-  if (enabled === null) return null;
-
-  if (!enabled) {
-    return (
-      <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-        Ratings are not available yet. Ask an administrator to run the courses
-        and course_reviews blocks in supabase/schema.sql.
-      </p>
-    );
-  }
 
   return (
     <div className="space-y-4">

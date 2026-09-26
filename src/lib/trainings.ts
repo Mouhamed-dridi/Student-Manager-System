@@ -90,11 +90,11 @@ export interface CourseMaterial {
 export interface CourseDetails {
   /** One-line hook under the course title. */
   subtitle?: string;
-  /** Difficulty: beginner | medium | expert. */
+  /** Difficulty as a display string: Beginner | Intermediate | Expert. */
   level?: string;
-  /** Estimated length in minutes, e.g. 90 renders as "1h 30m". */
-  durationMinutes?: number;
-  /** Delivery format: video | document | mixed. */
+  /** Estimated length as a display string, e.g. "1h 30m". */
+  duration?: string;
+  /** Delivery format, e.g. "Video", "Document" or "Video & Document". */
   format?: string;
   /** "Skills you'll gain" competencies. */
   skills?: string[];
@@ -183,9 +183,10 @@ export async function loadScheduledCourses(
   // TeacherCourseRecord and ScheduledCourseView declare the same field set, so
   // a live course row carries straight across. This used to be an explicit
   // destructure-and-rebuild allow-list, which silently dropped any field added
-  // to the course record later — it ate subtitle/level/durationMinutes/format/
-  // skills/syllabus before they could reach the student view. The cast below
-  // still fails to compile if the two shapes ever diverge.
+  // to the course record later — it ate the whole CourseDetails block
+  // (subtitle/level/duration/format/skills/syllabus) before it could reach the
+  // student view. The cast below still fails to compile if the two shapes ever
+  // diverge.
   const added = addedRows.filter((c) =>
     courseInClass(c, program, training, assignment),
   ) as ScheduledCourseView[];

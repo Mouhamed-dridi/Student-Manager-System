@@ -35,14 +35,18 @@ import CourseReviewsSection from "@/components/CourseReviewsSection";
 import UserAvatar from "@/components/UserAvatar";
 import { MaterialItem } from "@/components/courseMaterial";
 import { formatPublished, thumbnailForTraining } from "@/lib/courseDisplay";
-import { courseDetailCapabilities, teacherNamesByIds } from "@/lib/api";
-import type { CourseDetailCapabilities } from "@/lib/api";
+import { teacherNamesByIds } from "@/lib/api";
 import type { ScheduledCourseView } from "@/lib/trainings";
 
 // ------------------------------------------------------------- display maps
+//
+// The courses metadata columns hold short display strings (see the courses
+// block in supabase/schema.sql), so these are mostly a normalisation fallback
+// for older lowercase values rather than the primary label source.
 
 const LEVEL_LABELS: Record<string, string> = {
   beginner: "Beginner",
+  intermediate: "Intermediate",
   medium: "Medium",
   expert: "Expert",
 };
@@ -51,6 +55,7 @@ const FORMAT_LABELS: Record<string, string> = {
   video: "Video",
   document: "Document",
   mixed: "Mixed",
+  "video & document": "Video & Document",
 };
 
 function levelLabel(value?: string): string | null {
@@ -61,16 +66,6 @@ function levelLabel(value?: string): string | null {
 function formatLabel(value?: string): string | null {
   if (!value) return null;
   return FORMAT_LABELS[value.toLowerCase()] ?? value;
-}
-
-/** 90 -> "1h 30m", 45 -> "45m", 120 -> "2h". */
-function formatDuration(minutes?: number): string | null {
-  if (!minutes || minutes <= 0) return null;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (hours === 0) return `${rest}m`;
-  if (rest === 0) return `${hours}h`;
-  return `${hours}h ${rest}m`;
 }
 
 /** The syllabus is one topic per line; bullets and numbering are stripped. */
@@ -113,25 +108,10 @@ export default function StudentCourseDetail({
   onBack,
   backLabel = "Back to courses",
 }: StudentCourseDetailProps) {
-  const [capabilities, setCapabilities] = useState<CourseDetailCapabilities | null>(
-    null,
-  );
   const [instructor, setInstructor] = useState<{
     id: string;
     name: string;
   } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    courseDetailCapabilities()
-      .then((caps) => {
-        if (!cancelled) setCapabilities(caps);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // courses.teacher_id has no foreign key to teachers(id), so the name has to
   // be resolved with its own query rather than a PostgREST embed. The id is
@@ -166,14 +146,11 @@ export default function StudentCourseDetail({
   const topics = syllabusTopics(course.syllabus);
   const skills = course.skills ?? [];
 
-  const duration = formatDuration(course.durationMinutes);
+  // courses.duration is already a display string ("1h 30m"); normalise the
+  // odd whitespace a teacher may have typed.
+  const duration = course.duration?.trim() || null;
   const level = levelLabel(course.level);
   const delivery = formatLabel(course.format);
-
-  // Until the probe answers, assume the columns are missing so nothing renders
-  // unverified; the hero itself never depends on it.
-  const has = (key: keyof CourseDetailCapabilities) =>
-    capabilities?.[key] === true;
 
   const badges = [
     instructorName
@@ -249,31 +226,26 @@ export default function StudentCourseDetail({
       {/* ---------------------------------------------------------------- body */}
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0 space-y-8">
-          {has("skills") ? (
-            <section>
-              <h3 className="flex items-center gap-1.5 text-sm font-medium">
-                <Sparkles className="h-3.5 w-3.5" />
-                Skills you&rsquo;ll gain
-              </h3>
-              {skills.length === 0 ? (
-                <p className="mt-1.5 text-sm text-muted-foreground">
-                  No skills have been listed for this course yet.
-                </p>
-              ) : (
-                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {skills.map((skill) => (
-                    <li
-                      key={skill}
-                      className="flex items-start gap-2 text-sm"
-                    >
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                      <span>{skill}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          ) : null}
+          <section>
+            <h3 className="flex items-center gap-1.5 text-sm font-medium">
+              <Sparkles className="h-3.5 w-3.5" />
+              Skills you&rsquo;ll gain
+            </h3>
+            {skills.length === 0 ? (
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                No skills have been listed for this course yet.
+              </p>
+            ) : (
+              <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                {skills.map((skill) => (
+                  <li key={skill} className="flex items-start gap-2 text-sm">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>{skill}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
 
           <section>
             <h3 className="text-sm font-medium">Overview</h3>
@@ -288,32 +260,30 @@ export default function StudentCourseDetail({
             )}
           </section>
 
-          {has("syllabus") ? (
-            <section>
-              <h3 className="flex items-center gap-1.5 text-sm font-medium">
-                <Layers className="h-3.5 w-3.5" />
-                Course syllabus
-              </h3>
-              {topics.length === 0 ? (
-                <p className="mt-1.5 text-sm text-muted-foreground">
-                  The syllabus has not been published for this course yet.
-                </p>
-              ) : (
-                <ol className="mt-2 space-y-2">
-                  {topics.map((topic, i) => (
-                    <li key={`${topic}-${i}`} className="flex gap-3 text-sm">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                        {i + 1}
-                      </span>
-                      <span className="leading-relaxed text-muted-foreground">
-                        {topic}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-          ) : null}
+          <section>
+            <h3 className="flex items-center gap-1.5 text-sm font-medium">
+              <Layers className="h-3.5 w-3.5" />
+              Course syllabus
+            </h3>
+            {topics.length === 0 ? (
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                The syllabus has not been published for this course yet.
+              </p>
+            ) : (
+              <ol className="mt-2 space-y-2">
+                {topics.map((topic, i) => (
+                  <li key={`${topic}-${i}`} className="flex gap-3 text-sm">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                      {i + 1}
+                    </span>
+                    <span className="leading-relaxed text-muted-foreground">
+                      {topic}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
           <section>
             <h3 className="flex items-center gap-1.5 text-sm font-medium">
@@ -344,7 +314,6 @@ export default function StudentCourseDetail({
               courseId={course.id}
               studentId={studentId}
               studentName={studentName}
-              enabled={capabilities?.reviews ?? null}
             />
           ) : (
             <p className="text-sm text-muted-foreground">

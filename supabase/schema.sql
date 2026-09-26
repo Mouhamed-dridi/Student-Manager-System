@@ -197,8 +197,9 @@ grant execute on function public.reconcile_attendance_profiles() to anon, authen
 
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code
--- (src/lib/trainings.ts), not here. Thumbnails are uploaded to the
--- 'cours' Storage bucket; thumbnail_url holds the public URL.
+-- (src/lib/trainings.ts), not here. Thumbnails and course materials are
+-- uploaded to the per-media-type Storage buckets declared further down;
+-- thumbnail_url and the material URLs hold the public URL.
 
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
@@ -226,27 +227,30 @@ alter table if exists public.courses
   add column if not exists materials jsonb;
 
 -- Coursera-style course detail metadata, all optional so existing course rows
--- stay valid. The app runtime-probes each column before writing it (same
--- pattern as `materials`), so courses still save on a database where this
--- block has not been run yet.
+-- stay valid. NOTE: these names and types match the columns already deployed in
+-- the Supabase project — `level`, `format` and `duration` hold short display
+-- strings (e.g. 'Beginner', 'Video & Document', '1h 30m'), not enum keys or a
+-- minute count. Do not "fix" them to integer minutes without migrating the
+-- existing rows.
 alter table if exists public.courses
   add column if not exists subtitle text;
 
--- Difficulty level: 'beginner' | 'medium' | 'expert'
+-- Difficulty level: 'Beginner' | 'Intermediate' | 'Expert'
 alter table if exists public.courses
   add column if not exists level text;
 
--- Estimated length in minutes, e.g. 90 renders as "1h 30m".
+-- Estimated length as a display string, e.g. '1h 30m'.
 alter table if exists public.courses
-  add column if not exists duration_minutes integer;
+  add column if not exists duration text;
 
--- Delivery format: 'video' | 'document' | 'mixed'
+-- Delivery format, e.g. 'Video', 'Document' or 'Video & Document'.
 alter table if exists public.courses
   add column if not exists format text;
 
--- Key competencies shown as "Skills you'll gain", stored as a string array.
+-- Key competencies shown as "Skills you'll gain". text[] (not jsonb) to match
+-- the already-deployed column; api.ts writes a plain string[].
 alter table if exists public.courses
-  add column if not exists skills jsonb;
+  add column if not exists skills text[];
 
 -- Free-text syllabus: one topic per line, rendered as an ordered list.
 alter table if exists public.courses
@@ -272,43 +276,63 @@ create table if not exists public.course_reviews (
 create index if not exists course_reviews_course_idx
   on public.course_reviews (course_id, created_at desc);
 
--- -------------------------------------------- Storage: course thumbnails ---
--- Course thumbnail images live in Supabase Storage, not in the database, in
--- the 'cours' bucket. The bucket must exist before uploads succeed; paste
--- this block into the SQL Editor (it is idempotent).
+-- ------------------------------------------ Storage: course media buckets ---
+-- Course media lives in Supabase Storage, not in the database, split by media
+-- type so each kind of file is served from its own bucket:
+--
+--   cours-covers -> course thumbnail / cover images (JPEG, downscaled client-side)
+--   cours-PDF    -> PDF course materials
+--   cours-videos -> video course materials
+--
+-- The buckets must exist before uploads succeed; paste this block into the SQL
+-- Editor (it is idempotent). The public URL returned by the app embeds the
+-- bucket name, so the student course detail renders straight from it.
+--
+-- 'cours' is the legacy single bucket that still holds the thumbnail_url of
+-- every course row saved before the split. Those URLs are absolute and keep
+-- working, so the bucket is kept (not dropped) and no row migration is needed.
 --
 -- Roles: the app has NO Supabase Auth accounts — teachers use the anon/
 -- publishable key (cookie sessions), so uploads come in as `anon`.
--- `authenticated` is added too so the bucket keeps working if real auth is
+-- `authenticated` is added too so the buckets keep working if real auth is
 -- ever enabled. Policy names must stay unique per role.
 
 insert into storage.buckets (id, name, public)
-values ('cours', 'cours', true)
+values
+  ('cours', 'cours', true),
+  ('cours-covers', 'cours-covers', true),
+  ('cours-PDF', 'cours-PDF', true),
+  ('cours-videos', 'cours-videos', true)
 on conflict (id) do update set public = excluded.public;
 
-drop policy if exists "cours read anon" on storage.objects;
-create policy "cours read anon"
-  on storage.objects for select
-  to anon
-  using (bucket_id = 'cours');
+-- Policies are generated per bucket so each one is scoped to a single bucket_id.
+-- Note 'cours-PDF' keeps its capital P: bucket ids are case-sensitive strings.
+do $$
+declare
+  b text;
+begin
+  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos'] loop
+    execute format('drop policy if exists %I on storage.objects', b || ' read anon');
+    execute format(
+      'create policy %I on storage.objects for select to anon using (bucket_id = %L)',
+      b || ' read anon', b);
 
-drop policy if exists "cours read authenticated" on storage.objects;
-create policy "cours read authenticated"
-  on storage.objects for select
-  to authenticated
-  using (bucket_id = 'cours');
+    execute format('drop policy if exists %I on storage.objects', b || ' read authenticated');
+    execute format(
+      'create policy %I on storage.objects for select to authenticated using (bucket_id = %L)',
+      b || ' read authenticated', b);
 
-drop policy if exists "cours insert anon" on storage.objects;
-create policy "cours insert anon"
-  on storage.objects for insert
-  to anon
-  with check (bucket_id = 'cours');
+    execute format('drop policy if exists %I on storage.objects', b || ' insert anon');
+    execute format(
+      'create policy %I on storage.objects for insert to anon with check (bucket_id = %L)',
+      b || ' insert anon', b);
 
-drop policy if exists "cours insert authenticated" on storage.objects;
-create policy "cours insert authenticated"
-  on storage.objects for insert
-  to authenticated
-  with check (bucket_id = 'cours');
+    execute format('drop policy if exists %I on storage.objects', b || ' insert authenticated');
+    execute format(
+      'create policy %I on storage.objects for insert to authenticated with check (bucket_id = %L)',
+      b || ' insert authenticated', b);
+  end loop;
+end $$;
 
 -- ------------------------------------------------------------------ exams --
 -- Owned by the teacher who created them; snapshots the course's program and
