@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, ImagePlus, Plus, X } from "lucide-react";
+import { ImagePlus, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PeopleMultiSelect from "@/components/PeopleMultiSelect";
 import {
@@ -54,8 +54,17 @@ interface EventsPageProps {
    * it once the save succeeds, so returning to this page starts a fresh event.
    */
   initialEvent?: AppEvent | null;
-  /** Called after a successful save, so the layout can drop the edit target. */
-  onSaved?: () => void;
+  /**
+   * Called after a successful save with the stored row and whether it was an
+   * update. The layout uses it to clear the edit target and move the admin to
+   * Event History, where the new row is listed.
+   */
+  onSaved?: (saved: AppEvent, wasUpdate: boolean) => void;
+  /**
+   * Abandons an edit and returns to a blank form. Deliberately separate from
+   * onSaved: cancelling must not jump to Event History, since nothing changed.
+   */
+  onCancelEdit?: () => void;
 }
 
 /**
@@ -99,7 +108,11 @@ async function fileToCoverJpeg(file: File): Promise<Blob> {
  * events is a separate page (EventHistoryPage) reached from the sidebar, so
  * this page does one thing.
  */
-export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
+export default function EventsPage({
+  initialEvent,
+  onSaved,
+  onCancelEdit,
+}: EventsPageProps) {
   const [draft, setDraft] = useState<EventDraft>(() =>
     initialEvent
       ? {
@@ -118,11 +131,12 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
       : EMPTY_DRAFT,
   );
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Staged partner link, committed to draft.partners by the + button / Enter.
-  const [partnerInput, setPartnerInput] = useState("");
+  // Staged partner, committed to draft.partners by "Add Partner" or Enter.
+  const [partnerName, setPartnerName] = useState("");
+  const [partnerLink, setPartnerLink] = useState("");
+  const [partnerError, setPartnerError] = useState<string | null>(null);
 
   // A picked cover is kept as a downscaled Blob and previewed locally; it is
   // uploaded to Storage only on save, so abandoning the form leaves no orphan
@@ -157,13 +171,6 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
   }, []);
 
   useEffect(() => {
-    if (!successMessage) return;
-    const timeout = window.setTimeout(() => setSuccessMessage(null), 4000);
-    return () => window.clearTimeout(timeout);
-  }, [successMessage]);
-
-  // Release the object URL so the picked cover is not leaked.
-  useEffect(() => {
     if (!coverPreview) return;
     return () => URL.revokeObjectURL(coverPreview);
   }, [coverPreview]);
@@ -183,24 +190,37 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
     [students],
   );
 
-  /** Appends the staged partner link. Blanks and duplicates are ignored. */
+  /**
+   * Appends the staged partner as a {name, link} pair. At least one field is
+   * required; an exact repeat of an existing pair is ignored so a double-click
+   * on "Add Partner" cannot add the same partner twice.
+   */
   const addPartner = () => {
-    const value = partnerInput.trim();
-    if (!value) return;
-    setDraft((prev) =>
-      prev.partners.some(
-        (partner) => partner.toLowerCase() === value.toLowerCase(),
-      )
+    const name = partnerName.trim();
+    const link = partnerLink.trim();
+    if (!name && !link) {
+      setPartnerError("Add a partner name or a partner link.");
+      return;
+    }
+    setPartnerError(null);
+    setDraft((prev) => {
+      const duplicate = prev.partners.some(
+        (partner) =>
+          partner.name.toLowerCase() === name.toLowerCase() &&
+          partner.link.toLowerCase() === link.toLowerCase(),
+      );
+      return duplicate
         ? prev
-        : { ...prev, partners: [...prev.partners, value] },
-    );
-    setPartnerInput("");
+        : { ...prev, partners: [...prev.partners, { name, link }] };
+    });
+    setPartnerName("");
+    setPartnerLink("");
   };
 
-  const removePartner = (value: string) => {
+  const removePartner = (index: number) => {
     setDraft((prev) => ({
       ...prev,
-      partners: prev.partners.filter((partner) => partner !== value),
+      partners: prev.partners.filter((_, i) => i !== index),
     }));
   };
 
@@ -242,17 +262,16 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
         initialEvent?.id,
       );
 
-      setSuccessMessage(
-        initialEvent
-          ? `"${saved.title}" was updated.`
-          : `"${saved.title}" was created.`,
-      );
+      // Reset first, then hand off: the layout switches to Event History, so
+      // this form unmounts and the confirmation is shown there instead.
       setDraft(EMPTY_DRAFT);
-      setPartnerInput("");
+      setPartnerName("");
+      setPartnerLink("");
+      setPartnerError(null);
       setCoverBlob(null);
       setCoverPreview(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      onSaved?.();
+      onSaved?.(saved, Boolean(initialEvent));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -268,15 +287,9 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
       <p className="mt-1 text-sm text-muted-foreground">
         Only the title is required. Everything else can be filled in later, and
         saved events are listed under{" "}
-        <span className="font-medium">Events → Event History</span>.
+        <span className="font-medium">Events → Event History</span>. Saving
+        takes you there automatically.
       </p>
-
-      {successMessage && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {successMessage}
-        </div>
-      )}
 
       <Card className="mt-4 w-full">
         <CardHeader>
@@ -421,13 +434,32 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
 
             {/* -------------------------------------------------- partners */}
             <div className="space-y-2">
-              <Label htmlFor="event-partner">Partners</Label>
-              <div className="flex gap-2">
+              <Label htmlFor="event-partner-name">Partners</Label>
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
-                  id="event-partner"
-                  placeholder="Paste the link of the partner's page here"
-                  value={partnerInput}
-                  onChange={(e) => setPartnerInput(e.target.value)}
+                  id="event-partner-name"
+                  className="sm:max-w-[14rem]"
+                  placeholder="Partner Name, e.g., GDG"
+                  value={partnerName}
+                  onChange={(e) => {
+                    setPartnerName(e.target.value);
+                    setPartnerError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addPartner();
+                    }
+                  }}
+                />
+                <Input
+                  id="event-partner-link"
+                  placeholder="Paste the partner's link here, e.g., https://..."
+                  value={partnerLink}
+                  onChange={(e) => {
+                    setPartnerLink(e.target.value);
+                    setPartnerError(null);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -438,43 +470,51 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  size="icon"
-                  aria-label="Add partner"
-                  title="Add partner"
                   onClick={addPartner}
-                  disabled={!partnerInput.trim()}
+                  disabled={!partnerName.trim() && !partnerLink.trim()}
+                  className="shrink-0"
                 >
                   <Plus className="h-4 w-4" />
+                  Add Partner
                 </Button>
               </div>
 
+              {partnerError && (
+                <p className="text-xs text-destructive">{partnerError}</p>
+              )}
+
               {draft.partners.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {draft.partners.map((partner) => {
-                    const href = asLink(partner);
+                <ul className="divide-y overflow-hidden rounded-md border">
+                  {draft.partners.map((partner, index) => {
+                    const href = asLink(partner.link);
+                    const label = partner.name || partner.link;
                     return (
                       <li
-                        key={partner}
-                        className="flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5 text-sm"
+                        key={`${partner.name}-${partner.link}-${index}`}
+                        className="flex items-center gap-3 bg-muted/20 px-3 py-2 text-sm"
                       >
+                        <span className="min-w-0 flex-1 truncate font-medium">
+                          {label}
+                        </span>
                         {href ? (
                           <a
                             href={href}
                             target="_blank"
                             rel="noreferrer"
-                            className="min-w-0 flex-1 truncate underline-offset-2 hover:underline"
+                            className="min-w-0 max-w-[18rem] flex-1 truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                           >
-                            {partner}
+                            {partner.link}
                           </a>
                         ) : (
-                          <span className="min-w-0 flex-1 truncate">
-                            {partner}
+                          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                            No link
                           </span>
                         )}
                         <button
                           type="button"
-                          aria-label={`Remove partner ${partner}`}
-                          onClick={() => removePartner(partner)}
+                          aria-label={`Remove partner ${label}`}
+                          title="Remove partner"
+                          onClick={() => removePartner(index)}
                           className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"
                         >
                           <X className="h-3.5 w-3.5" />
@@ -485,7 +525,8 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
                 </ul>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  No partners added yet. Paste a link and press + or Enter.
+                  No partners added yet. Enter a name and/or a link, then press
+                  Add Partner or Enter.
                 </p>
               )}
             </div>
@@ -536,7 +577,7 @@ export default function EventsPage({ initialEvent, onSaved }: EventsPageProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => onSaved?.()}
+                  onClick={() => onCancelEdit?.()}
                 >
                   Cancel
                 </Button>

@@ -312,7 +312,11 @@ create table if not exists public.events (
   starts_on date,
   ends_on date,
   event_time text,
-  partners text[] not null default '{}',
+  -- JSON array of {name, link} objects, so a partner shows a readable label
+  -- next to its own URL. jsonb rather than two text[] columns because the pairs
+  -- are edited together; the app reads plain strings (from an older text[]
+  -- build) as name-only partners.
+  partners jsonb not null default '[]'::jsonb,
   gifts_awards text,
   organizers uuid[] not null default '{}',
   members uuid[] not null default '{}',
@@ -324,6 +328,27 @@ create table if not exists public.events (
 
 create index if not exists events_created_idx
   on public.events (created_at desc);
+
+-- Earlier builds of this file declared `partners` as text[]. If that version was
+-- already applied, widen the column instead of leaving the old shape behind:
+-- casting text[] to jsonb yields a JSON array of strings, which the app reads as
+-- name-only partners, so no row is lost. A no-op once the column is jsonb.
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'events'
+      and column_name = 'partners'
+      and data_type = 'ARRAY'
+  ) then
+    alter table public.events
+      alter column partners type jsonb using to_jsonb(partners);
+    alter table public.events
+      alter column partners set default '[]'::jsonb;
+  end if;
+end $$;
 
 -- ------------------------------------------ Storage: course media buckets ---
 -- Course media lives in Supabase Storage, not in the database, split by media

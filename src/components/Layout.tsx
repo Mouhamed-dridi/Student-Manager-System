@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,9 +40,17 @@ export default function Layout() {
   // Lifted here because the sidebar swaps between the form and the history
   // page without a router change: Edit sets this, then jumps to the form.
   const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
+  // Confirmation shown on Event History after the form saves and redirects.
+  const [eventNotice, setEventNotice] = useState<string | null>(null);
   const navigate = useNavigate();
   const branding = useBranding();
   const displayName = useAuthDisplayName("Admin");
+
+  useEffect(() => {
+    if (!eventNotice) return;
+    const timeout = window.setTimeout(() => setEventNotice(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [eventNotice]);
 
   const handleSectionClick = (item: (typeof menuItems)[number]) => {
     const sectionActive = isSectionActive(item, active);
@@ -66,11 +74,21 @@ export default function Layout() {
     events: (
       <EventsPage
         initialEvent={editingEvent}
-        onSaved={() => setEditingEvent(null)}
+        onSaved={(saved, wasUpdate) => {
+          // Saving hands the admin straight to the history list, where the row
+          // now appears, instead of leaving them on a cleared form.
+          setEventNotice(
+            `"${saved.title}" was ${wasUpdate ? "updated" : "created"}.`,
+          );
+          setEditingEvent(null);
+          setActive("event-history");
+        }}
+        onCancelEdit={() => setEditingEvent(null)}
       />
     ),
     "event-history": (
       <EventHistoryPage
+        notice={eventNotice}
         onEdit={(event) => {
           setEditingEvent(event);
           setActive("events");

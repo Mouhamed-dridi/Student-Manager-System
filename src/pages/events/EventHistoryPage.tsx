@@ -36,6 +36,11 @@ import { asLink, formatDateRange, formatTime } from "./eventFormat";
 interface EventHistoryPageProps {
   /** Handed the event to edit; the layout switches to the form page. */
   onEdit: (event: AppEvent) => void;
+  /**
+   * Confirmation shown after the form saves, because saving redirects here. The
+   * layout owns the text and clears it on a timer.
+   */
+  notice?: string | null;
 }
 
 interface EventHistoryTableProps {
@@ -106,22 +111,28 @@ export function EventHistoryTable({
             </TableCell>
             <TableCell>
               {event.partners.length > 0
-                ? event.partners.map((partner) => {
-                    const href = asLink(partner);
-                    return href ? (
-                      <a
-                        key={partner}
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block max-w-[16rem] truncate underline-offset-2 hover:underline"
+                ? event.partners.map((partner, index) => {
+                    const href = asLink(partner.link);
+                    const label = partner.name || partner.link;
+                    return (
+                      <div
+                        key={`${partner.name}-${partner.link}-${index}`}
+                        className="max-w-[16rem] truncate"
                       >
-                        {partner}
-                      </a>
-                    ) : (
-                      <span key={partner} className="block max-w-[16rem] truncate">
-                        {partner}
-                      </span>
+                        <span className="block truncate font-medium">
+                          {label}
+                        </span>
+                        {href && (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                          >
+                            {partner.link}
+                          </a>
+                        )}
+                      </div>
                     );
                   })
                 : "—"}
@@ -192,11 +203,17 @@ export function EventHistoryTable({
  * its cover, schedule, partners and participants, plus edit and delete. The
  * creation form lives on its own page, so each of the two has a single job.
  */
-export default function EventHistoryPage({ onEdit }: EventHistoryPageProps) {
+export default function EventHistoryPage({
+  onEdit,
+  notice,
+}: EventHistoryPageProps) {
   const [events, setEvents] = useState<AppEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Delete confirmation, local to this page. The post-save confirmation arrives
+  // as `notice` because saving happens on the form page and redirects here.
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const banner = notice ?? successMessage;
 
   // Rosters are only needed to turn the stored organizer/member ids into names
   // for the tooltip. Ids that no longer resolve (a trashed person) are skipped.
@@ -275,10 +292,10 @@ export default function EventHistoryPage({ onEdit }: EventHistoryPageProps) {
         </div>
       )}
 
-      {successMessage && (
+      {banner && (
         <div className="mt-4 flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {successMessage}
+          {banner}
         </div>
       )}
 

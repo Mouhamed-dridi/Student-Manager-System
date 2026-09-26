@@ -2545,6 +2545,13 @@ export type EventType = (typeof EVENT_TYPES)[number];
 /** The Storage bucket that holds event cover images. */
 const EVENT_COVERS_BUCKET = "event-covers";
 
+/** A partner on an event: a readable label and the page it links to. */
+export interface EventPartner {
+  name: string;
+  /** http(s) URL, or "" when the partner has no page yet. */
+  link: string;
+}
+
 export interface AppEvent {
   id: string;
   title: string;
@@ -2555,7 +2562,7 @@ export interface AppEvent {
   endsOn: string;
   /** 24h "HH:mm" or "" when not set. */
   eventTime: string;
-  partners: string[];
+  partners: EventPartner[];
   giftsAwards: string;
   /** Teacher ids. Names are resolved by the page, never stored. */
   organizers: string[];
@@ -2573,7 +2580,7 @@ interface EventRow {
   starts_on: string | null;
   ends_on: string | null;
   event_time: string | null;
-  partners: string[] | null;
+  partners: unknown;
   gifts_awards: string | null;
   organizers: string[] | null;
   members: string[] | null;
@@ -2590,6 +2597,54 @@ function toStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+/**
+ * Normalises the stored `partners` jsonb into {name, link} pairs.
+ *
+ * Three shapes can reach here: the current array of objects, a legacy array of
+ * plain strings (from the original text[] column, cast to jsonb), and junk.
+ * A legacy string is filed under `link` when it looks like a URL and under
+ * `name` otherwise, so an old row reads sensibly instead of erroring. Entries
+ * with nothing in either field are dropped, and both fields are trimmed.
+ */
+export function toPartnerArray(value: unknown): EventPartner[] {
+  const raw: unknown[] = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? safeParseJsonArray(value)
+      : [];
+  const partners: EventPartner[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      const text = item.trim();
+      if (!text) continue;
+      partners.push(
+        /^https?:\/\//i.test(text) ? { name: "", link: text } : { name: text, link: "" },
+      );
+      continue;
+    }
+    if (item && typeof item === "object") {
+      const record = item as Record<string, unknown>;
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const link = typeof record.link === "string" ? record.link.trim() : "";
+      if (!name && !link) continue;
+      partners.push({ name, link });
+    }
+  }
+  return partners;
+}
+
+/** Parses a JSON array, tolerating the double-encoded values PostgREST can return. */
+function safeParseJsonArray(value: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+    if (typeof parsed === "string") return safeParseJsonArray(parsed);
+  } catch {
+    // Not JSON at all: fall through and treat it as a single value.
+  }
+  return [value];
+}
+
 function eventFromRow(row: EventRow): AppEvent {
   return {
     id: row.id,
@@ -2599,7 +2654,7 @@ function eventFromRow(row: EventRow): AppEvent {
     startsOn: row.starts_on ?? "",
     endsOn: row.ends_on ?? "",
     eventTime: row.event_time ?? "",
-    partners: toStringArray(row.partners),
+    partners: toPartnerArray(row.partners),
     giftsAwards: row.gifts_awards ?? "",
     organizers: toStringArray(row.organizers),
     members: toStringArray(row.members),
