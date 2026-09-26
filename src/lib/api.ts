@@ -2545,6 +2545,9 @@ export type EventType = (typeof EVENT_TYPES)[number];
 /** The Storage bucket that holds event cover images. */
 const EVENT_COVERS_BUCKET = "event-covers";
 
+/** The Storage bucket that holds the university logo. */
+const UNIVERSITY_LOGO_BUCKET = "university-logo";
+
 /** A partner on an event: a readable label and the page it links to. */
 export interface EventPartner {
   name: string;
@@ -2748,6 +2751,29 @@ export async function uploadEventCover(image: Blob): Promise<string> {
     image,
     "image/jpeg",
     "Cover image",
+  );
+}
+
+/**
+ * Uploads the university logo to the 'university-logo' bucket and returns its
+ * public URL, which the Settings page stores under the 'logo_url' key.
+ *
+ * Each upload gets a fresh UUID path and `upsert: false`, so replacing the logo
+ * never overwrites the object the previous settings rows point at. Orphaned
+ * objects are left in the bucket rather than deleted: there is no Supabase Auth
+ * here, so a delete policy is not granted, and a stale logo file is harmless.
+ *
+ * The blob must be a PNG - logos rely on transparency, which a JPEG re-encode
+ * would flatten onto an opaque background.
+ */
+export async function uploadUniversityLogo(logo: Blob): Promise<string> {
+  const filePath = `logo/${crypto.randomUUID()}.png`;
+  return uploadToCourseBucket(
+    UNIVERSITY_LOGO_BUCKET,
+    filePath,
+    logo,
+    "image/png",
+    "University logo",
   );
 }
 

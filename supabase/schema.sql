@@ -358,6 +358,9 @@ end $$;
 --   cours-PDF    -> PDF course materials
 --   cours-videos -> video course materials
 --   event-covers -> event / publication cover images (admin Events page)
+--   university-logo -> the university logo uploaded in Settings > General and
+--                       rendered on the login card; only the public URL is
+--                       stored in the settings table (key 'logo_url').
 --
 -- The buckets must exist before uploads succeed; paste this block into the SQL
 -- Editor (it is idempotent). The public URL returned by the app embeds the
@@ -378,7 +381,8 @@ values
   ('cours-covers', 'cours-covers', true),
   ('cours-PDF', 'cours-PDF', true),
   ('cours-videos', 'cours-videos', true),
-  ('event-covers', 'event-covers', true)
+  ('event-covers', 'event-covers', true),
+  ('university-logo', 'university-logo', true)
 on conflict (id) do update set public = excluded.public;
 
 -- Policies are generated per bucket so each one is scoped to a single bucket_id.
@@ -387,7 +391,7 @@ do $$
 declare
   b text;
 begin
-  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers'] loop
+  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers', 'university-logo'] loop
     execute format('drop policy if exists %I on storage.objects', b || ' read anon');
     execute format(
       'create policy %I on storage.objects for select to anon using (bucket_id = %L)',

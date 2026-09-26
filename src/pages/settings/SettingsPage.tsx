@@ -35,6 +35,7 @@ import {
   getSettings,
   reconcileAttendanceProfiles,
   saveSettings,
+  uploadUniversityLogo,
   type AppSettings,
   type AttendanceSyncSummary,
 } from "@/lib/api";
@@ -61,9 +62,16 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
-const LOGO_MAX_WIDTH = 200;
+// The stored asset is capped at this width; the login card shows it at h-16
+// (64px), so 512 keeps it crisp on high-DPI screens without bloating the bucket.
+const LOGO_MAX_WIDTH = 512;
 
-async function fileToLogoDataUrl(file: File): Promise<string> {
+/**
+ * Downscales a picked logo and returns it as a PNG blob ready for Storage.
+ * PNG (not JPEG) because university logos rely on a transparent background.
+ * Falls back to the original file if a 2d canvas context is unavailable.
+ */
+async function fileToLogoBlob(file: File): Promise<Blob> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -81,9 +89,15 @@ async function fileToLogoDataUrl(file: File): Promise<string> {
   canvas.width = Math.max(1, Math.round(img.width * scale));
   canvas.height = Math.max(1, Math.round(img.height * scale));
   const ctx = canvas.getContext("2d");
-  if (!ctx) return dataUrl;
+  if (!ctx) return file;
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/png");
+  return new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob(
+      (blob) =>
+        blob ? resolve(blob) : reject(new Error("Image could not be encoded")),
+      "image/png",
+    ),
+  );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -105,6 +119,7 @@ export default function SettingsPage() {
   const [systemName, setSystemName] = useState("");
   const [universityName, setUniversityName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const [darkMode, setDarkMode] = useState(false);
 
@@ -170,16 +185,26 @@ export default function SettingsPage() {
     }
   };
 
+  /**
+   * Uploads the picked logo to the 'university-logo' bucket straight away and
+   * keeps only the returned public URL in state. The row itself is written when
+   * the admin presses Save, like every other field on this form.
+   */
   const handleLogoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    setUploadingLogo(true);
+    setError(null);
     try {
-      const dataUrl = await fileToLogoDataUrl(file);
-      setError(null);
-      setLogoUrl(dataUrl);
+      const blob = await fileToLogoBlob(file);
+      const publicUrl = await uploadUniversityLogo(blob);
+      setLogoUrl(publicUrl);
+      setSuccessMessage("Logo uploaded. Press Save to store it.");
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setUploadingLogo(false);
     }
   };
 
@@ -284,10 +309,11 @@ export default function SettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
+                      disabled={uploadingLogo}
                       onClick={() => logoInputRef.current?.click()}
                     >
                       <ImagePlus className="h-4 w-4" />
-                      Upload logo
+                      {uploadingLogo ? "Uploading…" : "Upload logo"}
                     </Button>
                     {logoUrl && (
                       <Button
@@ -310,8 +336,9 @@ export default function SettingsPage() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  PNG or JPEG; downscaled to ≤{LOGO_MAX_WIDTH}px wide and stored
-                  in settings.
+                  PNG or JPEG; downscaled to ≤{LOGO_MAX_WIDTH}px wide and uploaded
+                  to the <code>university-logo</code> bucket. Only the public URL
+                  is stored in settings, then shown on the login card.
                 </p>
               </div>
             </CardContent>
