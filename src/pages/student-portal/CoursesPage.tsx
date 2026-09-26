@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
+import CourseDetail from "@/components/CourseDetail";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, subscribeToTable } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
@@ -13,6 +14,8 @@ export default function CoursesPage() {
   // undefined = session record still loading; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
+  // The course opened as a detail view, or null while the grid is showing.
+  const [selected, setSelected] = useState<ScheduledCourseView | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (record: Student) => {
@@ -27,6 +30,12 @@ export default function CoursesPage() {
         },
       );
       setCourses(list);
+      // Keep an open course in sync with the teacher's live edits; fall back to
+      // the snapshot when the row no longer exists.
+      setSelected((open) => {
+        if (!open) return null;
+        return list.find((c) => c.id === open.id) ?? open;
+      });
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -82,6 +91,14 @@ export default function CoursesPage() {
 
           {courses === null ? (
             !error && <DataLoading label="Loading courses…" />
+          ) : selected ? (
+            <div className="mt-4">
+              <CourseDetail
+                course={selected}
+                onBack={() => setSelected(null)}
+                backLabel="Back to courses"
+              />
+            </div>
           ) : courses.length === 0 ? (
             <Card className="mt-4 max-w-xl">
               <CardContent className="py-8 text-center">
@@ -96,7 +113,11 @@ export default function CoursesPage() {
             </Card>
           ) : (
             <div className="mt-4">
-              <CourseCardsGrid courses={courses} training={student.training} />
+              <CourseCardsGrid
+                courses={courses}
+                training={student.training}
+                onOpenCourse={setSelected}
+              />
             </div>
           )}
         </>

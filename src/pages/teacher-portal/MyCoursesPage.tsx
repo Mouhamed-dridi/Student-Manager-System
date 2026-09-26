@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
+import CourseDetail from "@/components/CourseDetail";
 import { DataError, DataLoading } from "@/components/DataState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,7 @@ import {
   saveTeacherCourse,
   subscribeToTable,
   teacherCourseAssignment,
+  uploadCourseMaterial,
   uploadCourseThumbnail,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
@@ -72,7 +74,7 @@ async function fileToThumbnailJpeg(file: File): Promise<Blob> {
   );
 }
 
-type ViewKey = "my-courses" | "add-course";
+type ViewKey = "my-courses" | "add-course" | "detail";
 
 interface CourseFormValues {
   name: string;
@@ -82,7 +84,9 @@ interface CourseFormValues {
   thumbnail?: string;
   /** Newly picked image, downscaled to a JPEG blob, to upload to Storage. */
   thumbnailFile?: Blob;
-  materials?: CourseMaterial[];
+  /** Picked course materials: metadata the teacher can type/name, upgraded to a
+   *  real upload with a publicly reachable url when a file was picked. */
+  materials?: (CourseMaterial & { file?: File })[];
 }
 
 interface CourseFormProps {
@@ -118,7 +122,10 @@ function CourseForm({
     name: string;
     file: Blob;
   } | null>(null);
-  const [materials, setMaterials] = useState<CourseMaterial[]>(
+  // Attached course materials. A picked file keeps its `File` handle so the
+  // save flow can upload it to Storage; materials restored from an existing
+  // course carry only the metadata ({name,type}) that was persisted.
+  const [materials, setMaterials] = useState<(CourseMaterial & { file?: File })[]>(
     initialData?.materials ?? [],
   );
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -222,7 +229,7 @@ function CourseForm({
               if (files.length === 0) return;
               setMaterials((prev) => [
                 ...prev,
-                ...files.map((f) => ({ name: f.name, type: f.type })),
+                ...files.map((f) => ({ name: f.name, type: f.type, file: f })),
               ]);
               e.currentTarget.value = "";
             }}
@@ -300,6 +307,8 @@ export default function MyCoursesPage() {
   } | null>(null);
   const [view, setView] = useState<ViewKey>("my-courses");
   const [editing, setEditing] = useState<TeacherCourseRecord | null>(null);
+  // Course shown in the full-page detail view (instead of the card grid).
+  const [detail, setDetail] = useState<ScheduledCourseView | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScheduledCourseView | null>(
     null,
   );
@@ -382,6 +391,7 @@ await refresh(record.id);
   const handleViewChange = (value: string) => {
     const next = (value as ViewKey) ?? "my-courses";
     if (next === "add-course") setEditing(null);
+    if (next === "my-courses") setDetail(null);
     setView(next);
   };
 
@@ -390,6 +400,7 @@ await refresh(record.id);
     const record = (courses ?? []).find((r) => r.id === course.id);
     if (!record) return;
     setEditing(record as TeacherCourseRecord);
+    setDetail(null);
     setView("add-course");
   };
 
@@ -411,8 +422,23 @@ await refresh(record.id);
     if (thumbnailFile) {
       record.thumbnail = await uploadCourseThumbnail(thumbnailFile, teacher.id);
     }
+    if (record.materials && record.materials.length > 0) {
+      // Upload any material that was attached as a real file (teacher just
+      // picked it) and backfill its public URL. Materials edited in place that
+      // came from an earlier save already carry a URL and are left untouched.
+      record.materials = await Promise.all(
+        (record.materials as (CourseMaterial & { file?: File })[]).map(
+          async (m) => {
+            if (!m.file) return m;
+            const url = await uploadCourseMaterial(m.file, m.name, teacher.id);
+            return { name: m.name, type: m.type, url };
+          },
+        ),
+      );
+    }
     await saveTeacherCourse(record);
     setEditing(null);
+    setDetail(null);
     setView("my-courses");
     await refresh(teacher?.id);
   };
@@ -438,7 +464,41 @@ await refresh(record.id);
         Teaching {teacher.specialty || "—"}
       </p>
 
-      <Tabs value={view} onValueChange={handleViewChange} className="mt-4">
+      {view === "detail" && detail ? (
+        <div className="mt-4">
+          <CourseDetail
+            course={detail}
+            onBack={() => {
+              setDetail(null);
+              setView("my-courses");
+            }}
+            backLabel="Back to my courses"
+            actions={
+              detail.id !== undefined && detail.teacherId === teacher.id ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => startEdit(detail)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setDeleteTarget(detail)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    Delete
+                  </Button>
+                </>
+              ) : null
+            }
+          />
+        </div>
+      ) : (
+        <Tabs value={view} onValueChange={handleViewChange} className="mt-4">
         <TabsList>
           <TabsTrigger value="my-courses">My Courses</TabsTrigger>
           <TabsTrigger value="add-course">
@@ -467,7 +527,10 @@ await refresh(record.id);
             <div className="mt-4">
               <CourseCardsGrid
                 courses={ownCourses}
-                showMaterials
+                onOpenCourse={(c) => {
+                  setDetail(c);
+                  setView("detail");
+                }}
                 renderActions={(c) =>
                   c.id !== undefined && c.teacherId === teacher.id ? (
                     <>
@@ -513,7 +576,8 @@ await refresh(record.id);
             }}
           />
         </TabsContent>
-      </Tabs>
+        </Tabs>
+      )}
 
       <AlertDialog
         open={deleteTarget !== null}

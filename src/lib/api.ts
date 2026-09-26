@@ -1790,6 +1790,61 @@ export async function uploadCourseThumbnail(
 }
 
 /**
+ * Uploads a course material file (video/PDF/doc) to the same 'cours' Storage
+ * bucket as thumbnails and returns its public URL. The filename is sanitized
+ * and namespaced under the teacher to keep paths collision-free.
+ */
+export async function uploadCourseMaterial(
+  file: Blob,
+  fileName: string,
+  teacherId: string,
+): Promise<string> {
+  const safe = fileName.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "");
+  const filePath = `teacher-${teacherId}/materials/${crypto.randomUUID()}-${safe}`;
+  const { error } = await withTimeout(
+    supabase.storage.from(COURSE_THUMBNAILS_BUCKET).upload(filePath, file, {
+      cacheControl: "3600",
+      upsert: false,
+    }),
+  );
+  if (error) {
+    const statusCode = (error as { statusCode?: string | number } | undefined)
+      ?.statusCode;
+    const message = `${error.message ?? ""}`;
+    if (
+      statusCode === "404" ||
+      statusCode === 404 ||
+      /bucket .*not found|does not exist|not found/i.test(message)
+    ) {
+      throw new Error(
+        "Course material upload failed: the 'cours' storage bucket does not exist yet. Ask the administrator to create it in Supabase (run the Storage block in supabase/schema.sql).",
+      );
+    }
+    throw new Error(`Course material upload failed: ${message}`);
+  }
+  return supabase.storage.from(COURSE_THUMBNAILS_BUCKET).getPublicUrl(filePath)
+    .data.publicUrl;
+}
+
+// ------------------------------------------------------ course materials DB
+//
+// Teacher-created courses can carry a `materials` jsonb list ({name, type,
+// url}). Older deployments don't have that column, so probe it at runtime
+// (same pattern as detectPaymentsCapabilities) and only write it when present
+// — otherwise saving a course would fail on a database without the column.
+
+let courseMaterialsColumnPromise: Promise<boolean> | null = null;
+
+async function hasCourseMaterialsColumn(): Promise<boolean> {
+  if (!courseMaterialsColumnPromise) {
+    courseMaterialsColumnPromise = hasColumn("courses", "materials").catch(
+      () => false,
+    );
+  }
+  return courseMaterialsColumnPromise;
+}
+
+/**
  * Teacher-created courses. Server-side filter by ANY of the supplied options:
  * - `teacherId` limits to that teacher's own rows (`.eq("teacher_id", ...)`)
  * - `programId`/`trainingId` limit to a specific class (`.eq("program_id", ...)`
@@ -1821,7 +1876,7 @@ export async function saveTeacherCourse(
   record: TeacherCourseRecord,
 ): Promise<void> {
   const { programId, trainingId } = await courseTargetIds(record);
-  const payload = {
+  const payload: Record<string, unknown> = {
     id: record.id,
     title: record.name,
     description: record.description ?? null,
@@ -1831,6 +1886,16 @@ export async function saveTeacherCourse(
     thumbnail_url: record.thumbnail ?? null,
     published_at: record.published ?? null,
   };
+  // Persist attached materials ({name,type,url}) only when the live courses
+  // table actually has the materials column (runtime probe, same pattern as
+  // detectPaymentsCapabilities). Without it this write would fail and block a
+  // teacher from creating/editing courses on a stock database.
+  if (record.materials && record.materials.length > 0) {
+    const column = (await hasCourseMaterialsColumn()) === true;
+    if (column) {
+      payload.materials = record.materials;
+    }
+  }
   const { error } = await withTimeout(
     supabase.from("courses").upsert(payload, {
       onConflict: "id",

@@ -82,6 +82,8 @@ export const COURSES: Record<Program, Partial<Record<string, ScheduledCourse[]>>
 export interface CourseMaterial {
   name: string;
   type: string;
+  /** Supabase Storage public URL of the uploaded file (present once attached). */
+  url?: string;
 }
 
 export interface TeacherCourseRecord {

@@ -218,6 +218,13 @@ create table if not exists public.courses (
 alter table if exists public.courses
   add column if not exists description text;
 
+-- Attached course materials ({name,type,url}) shown/downloadable in the student
+-- portal's course detail view (idempotent). The app runtime-probes for this
+-- column before writing, so teacher course saves still work on databases where
+-- this block hasn't been run yet.
+alter table if exists public.courses
+  add column if not exists materials jsonb;
+
 -- -------------------------------------------- Storage: course thumbnails ---
 -- Course thumbnail images live in Supabase Storage, not in the database, in
 -- the 'cours' bucket. The bucket must exist before uploads succeed; paste
