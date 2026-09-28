@@ -2940,6 +2940,12 @@ export interface AppSettings {
   logoUrl?: string;
   language?: string;
   darkMode?: boolean;
+  /**
+   * ISO timestamp of when the current license term started; the expiry shown in
+   * Settings > License is derived from it. Absent on a fresh install, which
+   * reads as "activated today" (see src/lib/license.ts).
+   */
+  licenseActivatedAt?: string;
 }
 
 type SettingsStore = Record<string, unknown>;
@@ -2988,6 +2994,10 @@ function settingsFromStore(store: SettingsStore): AppSettings {
     language:
       typeof store.language === "string" ? (store.language as string) : undefined,
     darkMode: typeof store.dark_mode === "boolean" ? store.dark_mode : undefined,
+    licenseActivatedAt:
+      typeof store.license_activated_at === "string"
+        ? (store.license_activated_at as string)
+        : undefined,
   };
 }
 
@@ -3025,6 +3035,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
     logo_url: settings.logoUrl ?? null,
     language: settings.language ?? null,
     dark_mode: settings.darkMode ?? null,
+    license_activated_at: settings.licenseActivatedAt ?? null,
   };
   writeLocalSettingsStore(store);
   const now = new Date().toISOString();
@@ -3034,6 +3045,11 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
     { key: "logo_url", value: store.logo_url, updated_at: now },
     { key: "language", value: store.language, updated_at: now },
     { key: "dark_mode", value: store.dark_mode, updated_at: now },
+    {
+      key: "license_activated_at",
+      value: store.license_activated_at,
+      updated_at: now,
+    },
   ];
   try {
     const { error } = await withTimeout(

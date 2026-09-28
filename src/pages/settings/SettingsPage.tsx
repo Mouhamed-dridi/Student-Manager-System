@@ -46,6 +46,9 @@ import {
   APP_VERSION,
 } from "@/lib/appInfo";
 import { setBrandingFromSettings } from "@/lib/branding";
+import { LICENSE_TERM_MONTHS } from "@/lib/license";
+import { LicenseTab } from "./LicenseTab";
+import LicenseRenewDialog from "./LicenseRenewDialog";
 
 const LANGUAGE_OPTIONS = [
   { value: "en", label: "English" },
@@ -58,6 +61,7 @@ const TABS = [
   { key: "preferences", label: "Preferences" },
   { key: "system", label: "System" },
   { key: "about", label: "About" },
+  { key: "license", label: "License" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -122,6 +126,11 @@ export default function SettingsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const [darkMode, setDarkMode] = useState(false);
+  const [licenseActivatedAt, setLicenseActivatedAt] = useState<
+    string | undefined
+  >(undefined);
+  const [renewing, setRenewing] = useState(false);
+  const [renewOpen, setRenewOpen] = useState(false);
 
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
@@ -142,6 +151,7 @@ export default function SettingsPage() {
         setLogoUrl(settings.logoUrl);
         setLanguage(settings.language);
         setDarkMode(settings.darkMode === true);
+        setLicenseActivatedAt(settings.licenseActivatedAt);
       })
       .catch((err) => {
         if (!cancelled) setError(errorMessage(err));
@@ -164,14 +174,25 @@ export default function SettingsPage() {
     return () => window.clearTimeout(timeout);
   }, [successMessage]);
 
+  /**
+   * Snapshots the whole form so the Save button and the License tab's renew
+   * action persist the same row set; `overrides` covers the one field a single
+   * action changes without waiting for the form state to catch up.
+   */
+  const collectSettings = (
+    overrides: Partial<AppSettings> = {},
+  ): AppSettings => ({
+    systemName: systemName.trim() || undefined,
+    universityName: universityName.trim() || undefined,
+    logoUrl,
+    language,
+    darkMode,
+    licenseActivatedAt,
+    ...overrides,
+  });
+
   const handleSave = async () => {
-    const settings: AppSettings = {
-      systemName: systemName.trim() || undefined,
-      universityName: universityName.trim() || undefined,
-      logoUrl,
-      language,
-      darkMode,
-    };
+    const settings = collectSettings();
     try {
       setSaving(true);
       setError(null);
@@ -182,6 +203,32 @@ export default function SettingsPage() {
       setError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Restarts the license term from today using the token pasted in the renew
+   * dialog. Saves the full settings row set (not just the date) because
+   * saveSettings upserts every known key. The dialog stays open on failure so
+   * the token is not lost, and is closed by the dialog itself on success via
+   * the `renewOpen` reset below.
+   */
+  const handleRenew = async (token: string) => {
+    if (!token.trim()) return;
+    const renewedAt = new Date().toISOString();
+    try {
+      setRenewing(true);
+      setError(null);
+      await saveSettings(collectSettings({ licenseActivatedAt: renewedAt }));
+      setLicenseActivatedAt(renewedAt);
+      setRenewOpen(false);
+      setSuccessMessage(
+        `License renewed for ${LICENSE_TERM_MONTHS} months.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRenewing(false);
     }
   };
 
@@ -341,6 +388,14 @@ export default function SettingsPage() {
                   is stored in settings, then shown on the login card.
                 </p>
               </div>
+
+              <Separator />
+
+              <div className="flex justify-end">
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? "Saving…" : "Save Settings"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -386,6 +441,14 @@ export default function SettingsPage() {
                   checked={darkMode}
                   onCheckedChange={(checked) => setDarkMode(checked)}
                 />
+              </div>
+
+              <Separator />
+
+              <div className="flex justify-end">
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? "Saving…" : "Save Settings"}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -560,13 +623,25 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="license" className="mt-6 space-y-4">
+          <LicenseTab
+            activatedAt={licenseActivatedAt}
+            saving={saving}
+            renewing={renewing}
+            onSave={handleSave}
+            onRenew={() => setRenewOpen(true)}
+          />
+        </TabsContent>
       </Tabs>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? "Saving…" : "Save Settings"}
-        </Button>
-      </div>
+      {renewOpen && (
+        <LicenseRenewDialog
+          submitting={renewing}
+          onSubmit={handleRenew}
+          onClose={() => setRenewOpen(false)}
+        />
+      )}
     </div>
   );
 }
