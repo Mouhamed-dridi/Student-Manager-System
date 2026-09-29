@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const { logoUrl } = useBranding();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -100,15 +102,32 @@ export default function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+            <Label htmlFor="password">Password</Label>
+            <div className="relative">
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="pr-8"
                 required
               />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute top-1/2 right-0.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
             </div>
             {error && (
               <p className="text-sm text-destructive">{error}</p>

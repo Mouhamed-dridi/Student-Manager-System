@@ -13,11 +13,38 @@ export const SUPPORT_EMAIL = "support@example.com";
 export const SUPPORT_PHONE = "+00 00 00 00 00";
 
 /**
- * The active license key issued for this deployment, shown in Settings >
- * License. Static until a real licensing server takes over, at which point it
- * should be read from the issued license rather than hardcoded.
+ * The pool of tokens accepted by the Settings > License renewal dialog.
+ *
+ * This array is the source of truth in code; `token.md` at the project root is
+ * the human-readable mirror of it. The app cannot read a root markdown file at
+ * runtime, so keep the two in sync when the pool changes.
+ *
+ * All five entries currently decode to `fake-token-...` placeholders, so they
+ * grant no real entitlement.
  */
-export const LICENSE_TOKEN = "SSM-2026-PROD-7K4M";
+export const LICENSE_TOKENS = [
+  "ZmFrZS10b2tlbi0yMGNhcnJldHNyLW5vdC1yZWFs",
+  "ZmFrZS10b2tlbi0yMGNhcnJldHNyLXRlc3QtMDAx",
+  "ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRlbW8tYWJj",
+  "ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRldi1vbmx5",
+  "ZmFrZS10b2tlbi0yMGNhcnJldHNyLW1vY2steHl6",
+] as const;
+
+/** Shown in the License card before any token has been activated. */
+export const DEFAULT_LICENSE_TOKEN = LICENSE_TOKENS[0];
+
+/** Copy shown in the renew dialog when a submitted token is not in the pool. */
+export const INVALID_TOKEN_MESSAGE =
+  "License not valid, please add another, recheck, or contact support.";
+
+/**
+ * Exact match against the pool after trimming. Base64 is case-sensitive, so the
+ * comparison deliberately does not fold case.
+ */
+export function isValidLicenseToken(token: string): boolean {
+  const trimmed = token.trim();
+  return LICENSE_TOKENS.some((known) => known === trimmed);
+}
 
 export type LicenseStatus = "active" | "expired";
 

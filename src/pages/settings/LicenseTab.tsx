@@ -22,8 +22,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { APP_NAME, APP_SHORT_NAME } from "@/lib/appInfo";
 import {
+  DEFAULT_LICENSE_TOKEN,
   LICENSE_TERM_MONTHS,
-  LICENSE_TOKEN,
   SUPPORT_EMAIL,
   SUPPORT_PHONE,
   formatLicenseDate,
@@ -67,6 +67,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 interface LicenseTabProps {
   activatedAt?: string;
+  /** The token currently activated; falls back to the default pool entry. */
+  token?: string;
   saving: boolean;
   renewing: boolean;
   onSave: () => void;
@@ -76,11 +78,13 @@ interface LicenseTabProps {
 
 export function LicenseTab({
   activatedAt,
+  token,
   saving,
   renewing,
   onSave,
   onRenew,
 }: LicenseTabProps) {
+  const activeToken = token ?? DEFAULT_LICENSE_TOKEN;
   const isActive = licenseStatus(activatedAt) === "active";
   const daysRemaining = licenseDaysRemaining(activatedAt);
   const [copied, setCopied] = useState(false);
@@ -89,7 +93,7 @@ export function LicenseTab({
   // a denied permission) is not fatal — the operator can select it manually.
   const handleCopyToken = async () => {
     try {
-      await navigator.clipboard.writeText(LICENSE_TOKEN);
+      await navigator.clipboard.writeText(activeToken);
       setCopied(true);
     } catch {
       setCopied(false);
@@ -161,7 +165,7 @@ export function LicenseTab({
               <Input
                 id="active-license-token"
                 readOnly
-                value={LICENSE_TOKEN}
+                value={activeToken}
                 className="font-mono"
                 onFocus={(e) => e.currentTarget.select()}
               />

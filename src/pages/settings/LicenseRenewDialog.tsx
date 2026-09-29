@@ -1,4 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
+import { XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,12 +17,15 @@ import { LICENSE_TERM_MONTHS } from "@/lib/license";
 interface LicenseRenewDialogProps {
   /** True while the page persists the new term; keeps the dialog open on error. */
   submitting: boolean;
+  /** Rejected-token message, rendered inline above the actions. */
+  error: string | null;
   onSubmit: (token: string) => void;
   onClose: () => void;
 }
 
 export default function LicenseRenewDialog({
   submitting,
+  error,
   onSubmit,
   onClose,
 }: LicenseRenewDialogProps) {
@@ -61,10 +65,20 @@ export default function LicenseRenewDialog({
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            The token is validated by the issuing server; renewing restarts the
-            term from today.
+            The token must match one issued by the {APP_SHORT_NAME} team. Renewing
+            restarts the term from today.
           </p>
         </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            {error}
+          </p>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>

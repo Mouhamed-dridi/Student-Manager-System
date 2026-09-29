@@ -46,7 +46,10 @@ import {
   APP_VERSION,
 } from "@/lib/appInfo";
 import { setBrandingFromSettings } from "@/lib/branding";
-import { LICENSE_TERM_MONTHS } from "@/lib/license";
+import {
+  INVALID_TOKEN_MESSAGE,
+  isValidLicenseToken,
+} from "@/lib/license";
 import { LicenseTab } from "./LicenseTab";
 import LicenseRenewDialog from "./LicenseRenewDialog";
 
@@ -131,6 +134,10 @@ export default function SettingsPage() {
   >(undefined);
   const [renewing, setRenewing] = useState(false);
   const [renewOpen, setRenewOpen] = useState(false);
+  const [renewError, setRenewError] = useState<string | null>(null);
+  const [licenseToken, setLicenseToken] = useState<string | undefined>(
+    undefined,
+  );
 
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
@@ -152,6 +159,7 @@ export default function SettingsPage() {
         setLanguage(settings.language);
         setDarkMode(settings.darkMode === true);
         setLicenseActivatedAt(settings.licenseActivatedAt);
+        setLicenseToken(settings.licenseToken);
       })
       .catch((err) => {
         if (!cancelled) setError(errorMessage(err));
@@ -188,6 +196,7 @@ export default function SettingsPage() {
     language,
     darkMode,
     licenseActivatedAt,
+    licenseToken,
     ...overrides,
   });
 
@@ -207,24 +216,31 @@ export default function SettingsPage() {
   };
 
   /**
-   * Restarts the license term from today using the token pasted in the renew
-   * dialog. Saves the full settings row set (not just the date) because
-   * saveSettings upserts every known key. The dialog stays open on failure so
-   * the token is not lost, and is closed by the dialog itself on success via
-   * the `renewOpen` reset below.
+   * Restarts the license term from today once the pasted token is in the valid
+   * pool. A rejected token never reaches the database: the dialog stays open and
+   * shows the reason. Saves the full settings row set (not just the license
+   * fields) because saveSettings upserts every known key.
    */
   const handleRenew = async (token: string) => {
-    if (!token.trim()) return;
-    const renewedAt = new Date().toISOString();
+    setRenewError(null);
+    if (!isValidLicenseToken(token)) {
+      setRenewError(INVALID_TOKEN_MESSAGE);
+      return;
+    }
+    const activatedAt = new Date().toISOString();
     try {
       setRenewing(true);
       setError(null);
-      await saveSettings(collectSettings({ licenseActivatedAt: renewedAt }));
-      setLicenseActivatedAt(renewedAt);
-      setRenewOpen(false);
-      setSuccessMessage(
-        `License renewed for ${LICENSE_TERM_MONTHS} months.`,
+      await saveSettings(
+        collectSettings({
+          licenseActivatedAt: activatedAt,
+          licenseToken: token.trim(),
+        }),
       );
+      setLicenseActivatedAt(activatedAt);
+      setLicenseToken(token.trim());
+      setRenewOpen(false);
+      setSuccessMessage("License renewed successfully!");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -627,10 +643,14 @@ export default function SettingsPage() {
         <TabsContent value="license" className="mt-6 space-y-4">
           <LicenseTab
             activatedAt={licenseActivatedAt}
+            token={licenseToken}
             saving={saving}
             renewing={renewing}
             onSave={handleSave}
-            onRenew={() => setRenewOpen(true)}
+            onRenew={() => {
+              setRenewError(null);
+              setRenewOpen(true);
+            }}
           />
         </TabsContent>
       </Tabs>
@@ -638,6 +658,7 @@ export default function SettingsPage() {
       {renewOpen && (
         <LicenseRenewDialog
           submitting={renewing}
+          error={renewError}
           onSubmit={handleRenew}
           onClose={() => setRenewOpen(false)}
         />

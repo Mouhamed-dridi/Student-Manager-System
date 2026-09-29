@@ -2172,6 +2172,43 @@ export async function classRosterForTeacher(
   return { courses: ownCourses, students: studentsInClass };
 }
 
+/**
+ * Students enrolled in one class, picked from the same programs/trainings
+ * tables that populate the operator's Student form.
+ *
+ * Reads through listStudents() rather than a narrowed PostgREST filter on
+ * purpose: that is the only read that already applies the soft-delete filter
+ * (and the in-memory trash fallback used when the live students table has no
+ * is_deleted column), so a trashed student can never surface here.
+ *
+ * Rows are matched on the FK pair when the class was chosen by id, and on the
+ * resolved program/training names otherwise — the same rule
+ * classRosterForTeacher uses, so a student whose program_id/training_id are
+ * NULL still matches by name. Returns [] when no program is given.
+ */
+export async function studentsForClass(options: {
+  programId?: string;
+  trainingId?: string;
+  program?: string;
+  training?: string;
+}): Promise<Student[]> {
+  const { programId, trainingId, program, training } = options;
+  if (!programId && !program) return [];
+  const students = await listStudents();
+  const matches = students.filter((s) => {
+    if (programId) {
+      if (s.programId !== programId) return false;
+      // No training chosen yet: the whole program is the selection.
+      return trainingId ? s.trainingId === trainingId : true;
+    }
+    if ((s.program ?? "") !== program) return false;
+    return training ? (s.training ?? "") === training : true;
+  });
+  return matches.sort((a, b) =>
+    (a.fullName ?? "").localeCompare(b.fullName ?? ""),
+  );
+}
+
 // ----------------------------------------------------------- course reviews
 //
 // Student star ratings and comments on a course. Append-only: a student may
@@ -2946,6 +2983,12 @@ export interface AppSettings {
    * reads as "activated today" (see src/lib/license.ts).
    */
   licenseActivatedAt?: string;
+  /**
+   * The token currently activated on this deployment, shown in Settings >
+   * License. Absent until a renewal succeeds, where the default pool entry is
+   * displayed instead.
+   */
+  licenseToken?: string;
 }
 
 type SettingsStore = Record<string, unknown>;
@@ -2998,6 +3041,10 @@ function settingsFromStore(store: SettingsStore): AppSettings {
       typeof store.license_activated_at === "string"
         ? (store.license_activated_at as string)
         : undefined,
+    licenseToken:
+      typeof store.license_token === "string"
+        ? (store.license_token as string)
+        : undefined,
   };
 }
 
@@ -3036,6 +3083,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
     language: settings.language ?? null,
     dark_mode: settings.darkMode ?? null,
     license_activated_at: settings.licenseActivatedAt ?? null,
+    license_token: settings.licenseToken ?? null,
   };
   writeLocalSettingsStore(store);
   const now = new Date().toISOString();
@@ -3050,6 +3098,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
       value: store.license_activated_at,
       updated_at: now,
     },
+    { key: "license_token", value: store.license_token, updated_at: now },
   ];
   try {
     const { error } = await withTimeout(

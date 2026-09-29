@@ -25,8 +25,18 @@ ZmFrZS10b2tlbi0yMGNhcnJldHNyLW1vY2steHl6
 
 ## Status
 
-The renewal dialog in `src/pages/settings/LicenseRenewDialog.tsx` currently only
-checks that a token is non-blank; it does **not** validate it against this list.
-To wire the list in, move the tokens into `src/lib/license.ts` as
-`LICENSE_TOKENS` and check membership in the renewal handler before stamping the
-new term.
+These tokens **are** enforced. `LICENSE_TOKENS` in `src/lib/license.ts` holds
+the pool and `isValidLicenseToken()` checks membership, called from
+`handleRenew` in `src/pages/settings/SettingsPage.tsx`. A submitted token that
+is not in the pool never reaches the database: the dialog stays open and shows
+"License not valid, please add another, recheck, or contact support."
+
+A valid token restarts the term from today, stores itself in the
+`license_token` settings row (so the License card shows the key that is
+actually active) and stamps `license_activated_at`, which drives the expiry date
+and remaining-days count.
+
+Because a browser bundle cannot read this file at runtime, **the array in
+`src/lib/license.ts` is the source of truth** — update it whenever this list
+changes. Matching is exact after trimming; base64 is case-sensitive, so the
+comparison does not fold case.
