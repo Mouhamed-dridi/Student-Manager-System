@@ -293,6 +293,7 @@ export default function MyClassPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Student Name</TableHead>
+                    <TableHead>Phone</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Enrolled Track</TableHead>
                     <TableHead>Status</TableHead>
@@ -302,6 +303,7 @@ export default function MyClassPage() {
                   {imported.map((s) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.fullName}</TableCell>
+                      <TableCell>{s.phone || "—"}</TableCell>
                       <TableCell>{s.email || "—"}</TableCell>
                       <TableCell>
                         {[s.program, s.training].filter(Boolean).join(" · ") || "—"}
