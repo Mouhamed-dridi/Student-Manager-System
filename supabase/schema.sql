@@ -350,6 +350,20 @@ begin
   end if;
 end $$;
 
+-- Teacher RSVPs ("Join" in the teacher portal). Deliberately NOT folded into
+-- `members`, which is student ids: a teacher is neither an organizer nor a
+-- student, and reusing `members` would make the operator's Event History
+-- tooltip resolve every attendee as "Unknown". No FK and no stored name, for
+-- the same reason as the other id columns above — people are soft-deleted, so a
+-- stale id is simply skipped at read time.
+--
+-- Added as a separate `alter table` because `create table if not exists` above is
+-- a no-op on an already-deployed table and would never add the column. Keep it
+-- OUT of the saveEvent() payload: the operator's edit form must not overwrite
+-- the RSVPs it was never asked about.
+alter table public.events
+  add column if not exists attendees uuid[] not null default '{}';
+
 -- ------------------------------------------ Storage: course media buckets ---
 -- Course media lives in Supabase Storage, not in the database, split by media
 -- type so each kind of file is served from its own bucket:
@@ -462,6 +476,59 @@ create table if not exists public.planning (
   created_at timestamptz not null default now()
 );
 
+-- --------------------------------------------------------------------- QCM --
+-- Teacher-authored multiple-choice quizzes. `questions` is jsonb holding an
+-- array of {id, text, options[], correctIndex}; the app normalises it through
+-- toQuizQuestions() because older jsonb columns in this schema have been seen
+-- double-encoded as a JSON string by PostgREST.
+--
+-- `teacher_id` scopes every read/write: a teacher only ever sees their own
+-- quizzes. `course_id` is the target class and deliberately nullable so a quiz
+-- can outlive the course it was built for; the title is resolved from
+-- listTeacherCourses() at read time and shows "Unassigned course" when the
+-- course is gone. No FK to teachers/courses, matching the rest of the schema:
+-- both are soft-deleted, and a cascade would take the quiz with them.
+--
+-- Soft delete matches the rest of the app: is_deleted/deleted_at, and every
+-- read filters `.or("is_deleted.is.false,is_deleted.is.null")`.
+
+create table if not exists public.quizzes (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null,
+  title text not null,
+  description text,
+  course_id uuid,
+  questions jsonb not null default '[]'::jsonb,
+  -- Drafts are editable; publishing flips this. The teacher portal has no
+  -- separate publish endpoint — saving with is_published set is the publish.
+  is_published boolean not null default false,
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists quizzes_teacher_idx
+  on public.quizzes (teacher_id, created_at desc);
+
+-- One submission per student per quiz: the unique index is what makes a
+-- re-submit an upsert instead of a duplicate row.
+create table if not exists public.quiz_responses (
+  id uuid primary key default gen_random_uuid(),
+  quiz_id uuid not null,
+  student_id uuid not null,
+  -- {questionId: selectedOptionIndex}
+  answers jsonb not null default '{}'::jsonb,
+  score integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists quiz_responses_quiz_student_idx
+  on public.quiz_responses (quiz_id, student_id);
+
+create index if not exists quiz_responses_quiz_idx
+  on public.quiz_responses (quiz_id);
+
 -- ---------------------------------------------------------------- Realtime -
 -- Pages that stay open (operator Student List, teacher Class/Courses)
 -- subscribe to postgres_changes, which only fires for tables in the
@@ -473,7 +540,8 @@ declare
   t text;
 begin
   foreach t in array array[
-    'students', 'teachers', 'courses', 'publications', 'course_reviews', 'events'
+    'students', 'teachers', 'courses', 'publications', 'course_reviews', 'events',
+    'quizzes', 'quiz_responses'
   ]
   loop
     begin
@@ -496,7 +564,7 @@ begin
   foreach t in array array[
     'students', 'teachers', 'payments', 'attendance', 'courses',
     'exams', 'grades', 'publications', 'planning', 'settings',
-    'course_reviews', 'events'
+    'course_reviews', 'events', 'quizzes', 'quiz_responses'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

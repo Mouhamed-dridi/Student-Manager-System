@@ -2745,6 +2745,12 @@ export interface AppEvent {
   organizers: string[];
   /** Student ids. Names are resolved by the page, never stored. */
   members: string[];
+  /**
+   * Ids of people who pressed "Join" in the teacher portal. Empty on a
+   * deployment whose `events` table predates the column; the writes below
+   * refuse in that case rather than sending a column PostgREST would reject.
+   */
+  attendees: string[];
   coverUrl: string;
   createdAt: string;
 }
@@ -2761,6 +2767,8 @@ interface EventRow {
   gifts_awards: string | null;
   organizers: string[] | null;
   members: string[] | null;
+  /** Absent on deployments created before the column was added. */
+  attendees?: string[] | null;
   cover_url: string | null;
   created_at: string | null;
 }
@@ -2835,6 +2843,7 @@ function eventFromRow(row: EventRow): AppEvent {
     giftsAwards: row.gifts_awards ?? "",
     organizers: toStringArray(row.organizers),
     members: toStringArray(row.members),
+    attendees: toStringArray(row.attendees),
     coverUrl: row.cover_url ?? "",
     createdAt: row.created_at ?? "",
   };
@@ -2873,9 +2882,13 @@ export async function listEvents(): Promise<AppEvent[]> {
  * Inserts a new event, or updates the existing one when `id` is given. Arrays
  * are always sent (never omitted) so clearing the partners or participants of
  * an existing event persists instead of leaving the old values behind.
+ *
+ * `attendees` is excluded from the accepted shape on purpose: RSVPs are owned
+ * by the teacher portal's Join button, so the operator form is structurally
+ * unable to overwrite them.
  */
 export async function saveEvent(
-  values: Omit<AppEvent, "id" | "createdAt">,
+  values: Omit<AppEvent, "id" | "createdAt" | "attendees">,
   id?: string,
 ): Promise<AppEvent> {
   if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
@@ -2913,11 +2926,69 @@ export async function softDeleteEvent(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+const EVENTS_ATTENDEES_MISSING =
+  'The "events" table has no "attendees" column, so joining an event is not available. Add it by running the events block in supabase/schema.sql.';
+
+let eventsAttendeesPromise: Promise<boolean> | null = null;
+
+/**
+ * Probed once, like hasEventsTable(): `attendees` is newer than the table, so
+ * a deployment that predates it is expected. Reading is safe either way
+ * (listEvents selects *, so a missing column just arrives as undefined and
+ * eventFromRow yields []), but an UPDATE naming the column is rejected by
+ * PostgREST, so the writes below must check first.
+ */
+async function hasEventAttendeesColumn(): Promise<boolean> {
+  if (!eventsAttendeesPromise) {
+    eventsAttendeesPromise = hasColumn("events", "attendees").catch(() => false);
+  }
+  return eventsAttendeesPromise;
+}
+
+/**
+ * Adds or removes one attendee id and returns the resulting list.
+ *
+ * Read-modify-write on the uuid[] column: this app has no RPC/transaction
+ * anywhere, so two people joining the same event in the same instant can race
+ * and one write is lost. Accepted for an RSVP list at this scale — the fix
+ * would be a `join_event` SQL function, which is out of scope here.
+ *
+ * Idempotent: joining twice does not duplicate the id, and leaving an event you
+ * never joined is a no-op rather than an error.
+ */
+export async function setEventAttendance(
+  eventId: string,
+  personId: string,
+  joined: boolean,
+): Promise<string[]> {
+  if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
+  if (!(await hasEventAttendeesColumn())) throw new Error(EVENTS_ATTENDEES_MISSING);
+  if (!personId) throw new Error("No person is signed in.");
+
+  const { data, error } = await withTimeout(
+    supabase.from("events").select("attendees").eq("id", eventId).single(),
+  );
+  if (error) throw new Error(error.message);
+
+  const current = toStringArray((data as { attendees?: string[] | null }).attendees);
+  const next = joined
+    ? current.includes(personId)
+      ? current
+      : [...current, personId]
+    : current.filter((id) => id !== personId);
+  if (next.length === current.length) return current;
+
+  const { error: writeError } = await withTimeout(
+    supabase.from("events").update({ attendees: next }).eq("id", eventId),
+  );
+  if (writeError) throw new Error(writeError.message);
+  return next;
+}
+
 /**
  * Uploads an event cover image to the 'event-covers' bucket and returns its
  * public URL. The file must be a JPEG - the form downscales to one first.
- */
-export async function uploadEventCover(image: Blob): Promise<string> {
+ */export async function uploadEventCover(image: Blob): Promise<string> {
   const filePath = `event-cover/${crypto.randomUUID()}.jpg`;
   return uploadToCourseBucket(
     EVENT_COVERS_BUCKET,
@@ -3259,6 +3330,347 @@ export async function getSystemName(): Promise<string> {
   } catch {
     return "SSM";
   }
+}
+
+// ------------------------------------------------------------------- quizzes
+// Teacher-authored multiple-choice quizzes (QCM). See the QCM block in
+// supabase/schema.sql for the table shapes and why `questions` is jsonb.
+
+/** One multiple-choice question. `id` is stable across edits so answers stay
+ *  mapped to the right question even after a reorder. */
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  /** Always four slots so the builder can label them A-D. */
+  options: string[];
+  /** Index into `options`. -1 means "not chosen yet". */
+  correctIndex: number;
+}
+
+export interface Quiz {
+  id: string;
+  teacherId: string;
+  title: string;
+  description: string;
+  /** Target course, or "" when the quiz is not tied to one. */
+  courseId: string;
+  questions: QuizQuestion[];
+  isPublished: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuizResponse {
+  id: string;
+  quizId: string;
+  studentId: string;
+  /** Question id -> selected option index. */
+  answers: Record<string, number>;
+  score: number;
+  createdAt: string;
+}
+
+interface QuizRow {
+  id: string;
+  teacher_id: string | null;
+  title: string | null;
+  description: string | null;
+  course_id: string | null;
+  questions: unknown;
+  is_published: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+interface QuizResponseRow {
+  id: string;
+  quiz_id: string | null;
+  student_id: string | null;
+  answers: unknown;
+  score: number | null;
+  created_at: string | null;
+}
+
+/**
+ * The columns the app reads and writes, asked for in one select so the probe
+ * is a single round trip. Anything missing here is a schema that has drifted
+ * from schema.sql, and the query returns 42703 naming the offender.
+ */
+const QUIZZ_COLUMNS =
+  "id,teacher_id,title,description,course_id,questions,is_published,is_deleted,deleted_at,created_at,updated_at";
+const QUIZ_RESPONSE_COLUMNS =
+  "id,quiz_id,student_id,answers,score,created_at";
+
+/**
+ * PostgREST reports an unknown column as
+ * `column <table>.<column> does not exist` (42703). Pull those names out so the
+ * message can name exactly what to add instead of a generic failure.
+ */
+function missingColumnsFrom(error: { message: string } | null): string[] {
+  const found: string[] = [];
+  for (const match of (error?.message ?? "").matchAll(
+    /column\s+\w+\.(\w+)\s+does not exist/gi,
+  )) {
+    if (!found.includes(match[1])) found.push(match[1]);
+  }
+  return found;
+}
+
+function quizzesMissingMessage(missing: string[]): string {
+  if (missing.length === 0) {
+    return 'The "quizzes" tables were not found. Run the QCM block in supabase/schema.sql (or supabase/qcm-migration.sql) in the Supabase SQL Editor.';
+  }
+  return `The QCM tables are missing column(s): ${missing.join(", ")}. Run supabase/qcm-migration.sql in the Supabase SQL Editor to add them.`;
+}
+
+let quizzesSchemaPromise: Promise<string[]> | null = null;
+
+/**
+ * Probed once, like hasEventsTable().
+ *
+ * Resolves to the list of missing columns, empty when the schema is complete.
+ * A table can exist and still be unusable — a partial CREATE TABLE passes the
+ * old "does quizzes exist" check and then fails every query with a raw 42703
+ * — so the probe checks the columns the app actually depends on.
+ */
+async function missingQuizColumns(): Promise<string[]> {
+  if (!quizzesSchemaPromise) {
+    quizzesSchemaPromise = withTimeout(
+      supabase.from("quizzes").select(QUIZZ_COLUMNS).limit(1),
+      PROBE_TIMEOUT_MS,
+    )
+      .then(async ({ error }) => {
+        // Table absent entirely, or a column is missing: name the columns.
+        if (error) return missingColumnsFrom(error);
+        // quizzes is fine; quiz_responses may still be behind.
+        const responses = await withTimeout(
+          supabase.from("quiz_responses").select(QUIZ_RESPONSE_COLUMNS).limit(1),
+          PROBE_TIMEOUT_MS,
+        );
+        return missingColumnsFrom(responses.error);
+      })
+      .catch(() => []);
+  }
+  return quizzesSchemaPromise;
+}
+
+/** Throws an actionable message when the deployed QCM schema is behind. */
+async function assertQuizzesReady(): Promise<void> {
+  const missing = await missingQuizColumns();
+  if (missing.length > 0) throw new Error(quizzesMissingMessage(missing));
+}
+
+/** Parses a JSON object, tolerating the double-encoded values PostgREST returns. */
+function safeParseJsonRecord(value: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    if (typeof parsed === "string") return safeParseJsonRecord(parsed);
+  } catch {
+    return {};
+  }
+  return {};
+}
+
+/**
+ * Normalises the stored `questions` jsonb into QuizQuestion[].
+ *
+ * PostgREST can hand a jsonb column back as a JSON *string* (this has already
+ * happened to courses.materials in this schema), so the string case is parsed
+ * rather than assumed away; calling .map() on it would throw
+ * "questions.map is not a function". Entries that are not objects, or that
+ * carry neither text nor options, are dropped, and every question is padded to
+ * four options with a numeric correctIndex so the UI can index safely.
+ */
+export function toQuizQuestions(value: unknown): QuizQuestion[] {
+  const raw: unknown[] = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? safeParseJsonArray(value)
+      : [];
+  const questions: QuizQuestion[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const text = typeof record.text === "string" ? record.text.trim() : "";
+    const options = Array.isArray(record.options)
+      ? record.options
+          .filter((o): o is string => typeof o === "string")
+          .map((o) => o.trim())
+      : [];
+    if (!text && !options.some(Boolean)) continue;
+    while (options.length < 4) options.push("");
+    const correctIndex = Number(record.correctIndex);
+    questions.push({
+      id:
+        typeof record.id === "string" && record.id
+          ? record.id
+          : crypto.randomUUID(),
+      text,
+      options: options.slice(0, 4),
+      correctIndex: Number.isInteger(correctIndex) ? correctIndex : -1,
+    });
+  }
+  return questions;
+}
+
+function quizFromRow(row: QuizRow): Quiz {
+  return {
+    id: row.id,
+    teacherId: row.teacher_id ?? "",
+    title: row.title ?? "",
+    description: row.description ?? "",
+    courseId: row.course_id ?? "",
+    questions: toQuizQuestions(row.questions),
+    isPublished: row.is_published === true,
+    createdAt: row.created_at ?? "",
+    updatedAt: row.updated_at ?? "",
+  };
+}
+
+function quizResponseFromRow(row: QuizResponseRow): QuizResponse {
+  const raw = Array.isArray(row.answers)
+    ? {}
+    : typeof row.answers === "string"
+      ? safeParseJsonRecord(row.answers)
+      : ((row.answers as Record<string, unknown> | null) ?? {});
+  const answers: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const index = Number(value);
+    if (Number.isInteger(index)) answers[key] = index;
+  }
+  return {
+    id: row.id,
+    quizId: row.quiz_id ?? "",
+    studentId: row.student_id ?? "",
+    answers,
+    score: row.score ?? 0,
+    createdAt: row.created_at ?? "",
+  };
+}
+
+/** Every non-deleted quiz owned by one teacher, newest first. */
+export async function listTeacherQuizzes(teacherId: string): Promise<Quiz[]> {
+  await assertQuizzesReady();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("quizzes")
+      .select("*")
+      .eq("teacher_id", teacherId)
+      .or("is_deleted.is.false,is_deleted.is.null")
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as QuizRow[]).map(quizFromRow);
+}
+
+/**
+ * Creates a quiz, or updates the existing one when `id` is given. The teacher
+ * id comes from the caller and updates are additionally filtered by it, so one
+ * teacher cannot overwrite another's quiz.
+ *
+ * THROWS on failure — callers catch it and show the message inline, matching
+ * saveTeacherCourse().
+ */
+export async function saveQuiz(
+  values: Omit<Quiz, "id" | "createdAt" | "updatedAt">,
+  id?: string,
+): Promise<Quiz> {
+  await assertQuizzesReady();
+  const payload = {
+    teacher_id: values.teacherId,
+    title: values.title,
+    description: values.description || null,
+    course_id: values.courseId || null,
+    questions: values.questions,
+    is_published: values.isPublished,
+    updated_at: new Date().toISOString(),
+  };
+  const query = id
+    ? supabase
+        .from("quizzes")
+        .update(payload)
+        .eq("id", id)
+        .eq("teacher_id", values.teacherId)
+        .select("*")
+        .single()
+    : supabase.from("quizzes").insert(payload).select("*").single();
+  const { data, error } = await withTimeout(query);
+  if (error) throw new Error(error.message);
+  return quizFromRow(data as QuizRow);
+}
+
+/** Toggles a quiz between draft and published without touching its content. */
+export async function setQuizPublished(
+  quizId: string,
+  teacherId: string,
+  isPublished: boolean,
+): Promise<void> {
+  await assertQuizzesReady();
+  const { error } = await withTimeout(
+    supabase
+      .from("quizzes")
+      .update({
+        is_published: isPublished,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", quizId)
+      .eq("teacher_id", teacherId),
+  );
+  if (error) throw new Error(error.message);
+}
+
+/** Soft delete, matching the rest of the app: the row stays recoverable in SQL. */
+export async function deleteQuiz(
+  quizId: string,
+  teacherId: string,
+): Promise<boolean> {
+  await assertQuizzesReady();
+  const { error } = await withTimeout(
+    supabase
+      .from("quizzes")
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq("id", quizId)
+      .eq("teacher_id", teacherId),
+  );
+  if (error) throw new Error(error.message);
+  return true;
+}
+
+/** One student's answer sheet for one quiz. */
+export async function listQuizResponses(quizId: string): Promise<QuizResponse[]> {
+  await assertQuizzesReady();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("quiz_responses")
+      .select("*")
+      .eq("quiz_id", quizId)
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as QuizResponseRow[]).map(quizResponseFromRow);
+}
+
+/**
+ * Response counts for several quizzes in one round trip, so the management
+ * table does not fan out into N queries. Returns a map keyed by quiz id;
+ * a quiz nobody answered is simply absent.
+ */
+export async function countQuizResponses(
+  quizIds: string[],
+): Promise<Record<string, number>> {
+  if (quizIds.length === 0) return {};
+  const { data, error } = await withTimeout(
+    supabase.from("quiz_responses").select("quiz_id").in("quiz_id", quizIds),
+  );
+  if (error) throw new Error(error.message);
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as { quiz_id: string | null }[]) {
+    if (row.quiz_id) counts[row.quiz_id] = (counts[row.quiz_id] ?? 0) + 1;
+  }
+  return counts;
 }
 
 // -------------------------------------------------------------- realtime

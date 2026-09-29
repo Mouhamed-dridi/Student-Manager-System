@@ -32,7 +32,7 @@ import { asLink } from "./eventFormat";
 
 const COVER_MAX_WIDTH = 800;
 
-type EventDraft = Omit<AppEvent, "id" | "createdAt">;
+type EventDraft = Omit<AppEvent, "id" | "createdAt" | "attendees">;
 
 const EMPTY_DRAFT: EventDraft = {
   title: "",

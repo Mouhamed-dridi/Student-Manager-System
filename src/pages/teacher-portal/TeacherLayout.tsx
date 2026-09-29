@@ -1,12 +1,22 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpenCheck, ClipboardList, Users, CalendarDays } from "lucide-react";
+import {
+  BookOpenCheck,
+  ClipboardList,
+  Users,
+  CalendarDays,
+  CalendarClock,
+  ListChecks,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import MyCoursesPage from "./MyCoursesPage";
 import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
+import TeacherEventsPage from "./TeacherEventsPage";
+import TeacherEventDetailPage from "./TeacherEventDetailPage";
+import QcmPage from "./QcmPage";
 import UserAvatar from "@/components/UserAvatar";
 import { useBranding } from "@/lib/branding";
 import { loadCurrentTeacher } from "./currentTeacher";
@@ -18,16 +28,15 @@ const menuItems = [
   { key: "exams-notes", label: "Exams & Notes", icon: ClipboardList },
   { key: "class", label: "Class", icon: Users },
   { key: "planning", label: "Planning", icon: CalendarDays },
+  // Read-only view of the operator's events; CalendarClock keeps it distinct
+  // from Planning's CalendarDays.
+  { key: "events", label: "Events", icon: CalendarClock },
+  // Multiple-choice quizzes. ListChecks is also the "review answers" icon on the
+  // QCM page, so the section reads as a list/answer-sheet tool.
+  { key: "qcm", label: "QCM", icon: ListChecks },
 ] as const;
 
 type MenuKey = (typeof menuItems)[number]["key"];
-
-const pages: Record<MenuKey, React.ReactNode> = {
-  courses: <MyCoursesPage />,
-  "exams-notes": <ExamsNotesPage />,
-  class: <MyClassPage />,
-  planning: <PlanningPage />,
-};
 
 function clearTeacherSession() {
   clearSession();
@@ -35,6 +44,10 @@ function clearTeacherSession() {
 
 export default function TeacherLayout() {
   const [active, setActive] = useState<MenuKey>("courses");
+  // An open event takes over the content area; the sidebar item stays
+  // highlighted. Sections are not routes in this portal, so the detail view is
+  // a swap rather than a navigation — hence its own state beside `active`.
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
   // undefined = still fetching the record; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const navigate = useNavigate();
@@ -63,6 +76,18 @@ export default function TeacherLayout() {
     navigate("/login");
   };
 
+  // Built here rather than at module level because the Events entry closes over
+  // setOpenEventId. React keys reconciliation on element type, not identity, so
+  // rebuilding the record on each render costs nothing.
+  const pages: Record<MenuKey, React.ReactNode> = {
+    courses: <MyCoursesPage />,
+    "exams-notes": <ExamsNotesPage />,
+    class: <MyClassPage />,
+    planning: <PlanningPage />,
+    events: <TeacherEventsPage onOpenEvent={setOpenEventId} />,
+    qcm: <QcmPage />,
+  };
+
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
@@ -85,7 +110,11 @@ export default function TeacherLayout() {
             return (
               <button
                 key={item.key}
-                onClick={() => setActive(item.key)}
+                onClick={() => {
+                  setActive(item.key);
+                  // Leaving the events section also closes any open event.
+                  setOpenEventId(null);
+                }}
                 className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-accent text-accent-foreground"
@@ -125,7 +154,16 @@ export default function TeacherLayout() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-6">{pages[active]}</main>
+        <main className="flex-1 overflow-auto p-6">
+          {openEventId ? (
+            <TeacherEventDetailPage
+              eventId={openEventId}
+              onBack={() => setOpenEventId(null)}
+            />
+          ) : (
+            pages[active]
+          )}
+        </main>
       </div>
     </div>
   );

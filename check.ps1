@@ -48,7 +48,7 @@ try {
 
 # --- 2. Table existence check ------------------------------------------------
 Write-Host "`n=== Table Check ===" -ForegroundColor Cyan
-$tables = @("students", "teachers", "payments", "attendance", "courses", "exams", "grades", "publications", "planning")
+$tables = @("students", "teachers", "payments", "attendance", "courses", "exams", "grades", "publications", "planning", "quizzes", "quiz_responses")
 $missing = @()
 
 foreach ($t in $tables) {
@@ -98,6 +98,67 @@ foreach ($t in $tables) {
     }
 }
 
+# --- 4b. QCM columns ---------------------------------------------------------
+# A table can exist and still be behind schema.sql: the live quizzes table was
+# created without course_id/is_deleted/deleted_at/updated_at, which every query
+# would then reject with 42703. Probing `select=*` on an empty table proves
+# nothing, so ask for the named columns and report each 400.
+Write-Host "`n=== QCM columns ===" -ForegroundColor Cyan
+$qcmCols = @{
+    "quizzes"        = @("id","teacher_id","title","description","course_id","questions","is_published","is_deleted","deleted_at","created_at","updated_at")
+    "quiz_responses" = @("id","quiz_id","student_id","answers","score","created_at")
+}
+$qcmMissing = @()
+foreach ($t in $qcmCols.Keys) {
+    if ($t -in $missing) { continue }
+    $missedHere = @()
+    foreach ($c in $qcmCols[$t]) {
+        try {
+            $null = Invoke-RestMethod -Uri "${restBase}${t}?select=$c&limit=1" -Headers $headers -TimeoutSec 8
+        } catch {
+            Write-Host "[MISS] $t.$c" -ForegroundColor Red
+            $missedHere += "$t.$c"
+            $qcmMissing += "$t.$c"
+            $allOk = $false
+        }
+    }
+    if ($missedHere.Count -eq 0) {
+        Write-Host "[OK]   $t has every expected column" -ForegroundColor Green
+    } else {
+        Write-Host "[FAIL] $t is missing $($missedHere.Count) column(s)" -ForegroundColor Red
+    }
+}
+
+# --- 4c. QCM write access ----------------------------------------------------
+# RLS policies for these two tables were never created on the live project, so
+# reads worked while every write died with 42501. A throwaway row proves it.
+Write-Host "`n=== QCM write (anon insert) ===" -ForegroundColor Cyan
+if (-not ($qcmMissing.Count -gt 0)) {
+    try {
+        $probeBody = @{
+            teacher_id = "00000000-0000-0000-0000-000000000001"
+            title      = "__check_probe__"
+            questions  = @()
+        } | ConvertTo-Json -Depth 5
+        $writeHeaders = $headers.Clone()
+        $writeHeaders["Prefer"] = "return=representation"
+        $writeHeaders["Content-Type"] = "application/json"
+        $ins = Invoke-RestMethod -Uri "${restBase}quizzes" -Method Post -Headers $writeHeaders -Body $probeBody -TimeoutSec 10
+        Write-Host "[OK]   anon insert into quizzes allowed" -ForegroundColor Green
+        $null = Invoke-RestMethod -Uri "${restBase}quizzes?id=eq.$($ins[0].id)" -Method Delete -Headers $headers -TimeoutSec 10
+        Write-Host "[OK]   probe row cleaned up" -ForegroundColor DarkGray
+    } catch {
+        $detail = ""
+        try {
+            $sr = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+            $detail = $sr.ReadToEnd()
+        } catch {}
+        Write-Host "[FAIL] anon insert into quizzes rejected: $detail" -ForegroundColor Red
+        Write-Host "       The _anon_all RLS policy is missing. Run supabase/qcm-migration.sql." -ForegroundColor Yellow
+        $allOk = $false
+    }
+}
+
 # --- 5. Secret key check (optional) ------------------------------------------
 Write-Host "`n=== Secret Key ===" -ForegroundColor Cyan
 $secretKey = $env["SUPABASE_SECRET_KEY"]
@@ -126,6 +187,11 @@ if ($missing.Count -gt 0) {
     Write-Host "[ISSUE] $($missing.Count) table(s) missing from database:" -ForegroundColor Red
     foreach ($m in $missing) { Write-Host "        - $m" -ForegroundColor Red }
     Write-Host "`n  Fix: Paste the full supabase/schema.sql into Supabase SQL Editor and run it." -ForegroundColor Yellow
+}
+if ($qcmMissing.Count -gt 0) {
+    Write-Host "[ISSUE] $($qcmMissing.Count) QCM column(s) missing:" -ForegroundColor Red
+    foreach ($c in $qcmMissing) { Write-Host "        - $c" -ForegroundColor Red }
+    Write-Host "        Fix: run supabase/qcm-migration.sql in the Supabase SQL Editor." -ForegroundColor Yellow
 }
 if ($allOk -and $missing.Count -eq 0) {
     Write-Host "[OK] All tables present and readable." -ForegroundColor Green
