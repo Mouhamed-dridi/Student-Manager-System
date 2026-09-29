@@ -2060,12 +2060,123 @@ export interface TeacherCourseAssignment {
   trainingId: string;
 }
 
+/** Lowercased, accent-stripped, punctuation collapsed to single spaces, so
+ *  "Cybersecurity & Networking" and "cybersecurity-networking" compare equal. */
+function normalizeSpecialtyKey(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Teacher `specialty` -> the single training it means, as "PROGRAM_CODE /
+ * Training name" (or just the name when the training exists in one program).
+ *
+ * This table is the load-bearing part. `specialty` is free text with no FK to
+ * `trainings`, and the two vocabularies do not overlap: specialties are written
+ * in English ("Interior Design"), trainings in French trade names ("Décoration
+ * et Design d'intérieur"). No amount of string matching bridges that, so the
+ * translation is declared here rather than guessed at read time.
+ *
+ * The program code is required wherever a training name is duplicated across
+ * programs — "Comptable d'entreprise" exists under both BTP and BTS, so an
+ * unqualified name is genuinely ambiguous and would be refused.
+ *
+ * Keys are normalizeSpecialtyKey() output, NOT the raw string: lowercased,
+ * accent-stripped, and every non-alphanumeric run (including `&`) collapsed to
+ * a single space. "Warehouse & Logistics" therefore keys as
+ * "warehouse logistics" — not "warehouse and logistics".
+ */
+const SPECIALTY_CLASS_ALIASES: Record<string, string> = {
+  "warehouse logistics": "CAP / Agent d'entrepôt",
+  "retail sales": "CAP / Vendeur caissier étalagiste",
+  "pharmacy support": "BTP / Préparateur en Pharmacie",
+  // Duplicate name across BTP and BTS — pinned to BTP, change if that group is hers.
+  accounting: "BTP / Comptable d'entreprise",
+  "international trade": "BTS / Commerce international",
+  "quality control": "BTS / Contrôle qualité",
+  // No ERP training exists; shares the IT support class.
+  "erp consulting": "BTP / Technicien de Soutien en Informatique de Gestion",
+  "cybersecurity networking": "BTS / Réseaux et sécurité informatique",
+  "it support": "BTP / Technicien de Soutien en Informatique de Gestion",
+  "interior design": "BTP / Décoration et Design d'intérieur",
+  "industrial maintenance": "BTS / Maintenance industrielle",
+};
+
+/**
+ * Resolves the class a teacher's `specialty` refers to, bypassing the profile's
+ * program/training columns.
+ *
+ * Order: declared alias -> exact training name -> unique token overlap. Every
+ * step must produce exactly ONE training. A specialty matching several
+ * trainings is refused (returns null) rather than guessed, so a teacher can
+ * never be shown another domain's roster by accident. Returns null when
+ * nothing matches, which is what leaves the class page's banner in place.
+ */
+async function resolveClassFromSpecialty(
+  specialty: string,
+): Promise<TeacherCourseAssignment | null> {
+  const key = normalizeSpecialtyKey(specialty);
+  if (!key) return null;
+
+  let programs: ProgramRow[];
+  let trainings: TrainingRow[];
+  try {
+    [programs, trainings] = await Promise.all([listPrograms(), listTrainings()]);
+  } catch {
+    return null;
+  }
+  if (trainings.length === 0) return null;
+
+  const codeOf = (programId: string) =>
+    programs.find((p) => p.id === programId)?.code ?? "";
+
+  // A "CODE / name" target pins the program; a bare name must be unique.
+  const pick = (target: string): TrainingRow | null => {
+    const slash = target.indexOf("/");
+    const code = slash === -1 ? "" : target.slice(0, slash).trim();
+    const name = normalizeSpecialtyKey(slash === -1 ? target : target.slice(slash + 1));
+    const matches = trainings.filter((t) => {
+      if (normalizeSpecialtyKey(t.name) !== name) return false;
+      return !code || codeOf(t.program_id) === code;
+    });
+    return matches.length === 1 ? matches[0] : null;
+  };
+
+  const chosen =
+    pick(SPECIALTY_CLASS_ALIASES[key] ?? "") ??
+    pick(specialty) ??
+    // Last resort: require a single training sharing every distinctive word, so
+    // a partial hit can never tie two domains together.
+    (() => {
+      const words = key.split(" ").filter((w) => w.length > 3);
+      if (words.length === 0) return null;
+      const hits = trainings.filter((t) => {
+        const name = normalizeSpecialtyKey(t.name);
+        return words.every((w) => name.includes(w));
+      });
+      return hits.length === 1 ? hits[0] : null;
+    })();
+
+  if (!chosen) return null;
+  return {
+    program: codeOf(chosen.program_id),
+    training: chosen.name,
+    programId: chosen.program_id,
+    trainingId: chosen.id,
+  };
+}
+
 /**
  * Resolves the program/training a teacher teaches in. The teacher's profile
- * (teachers.program/training columns) wins when set; otherwise it falls back
- * to the class of the teacher's own courses, so a teacher with existing
- * courses keeps new ones in the same program/training even before the
- * profile columns are populated.
+ * (teachers.program/training columns) wins when set; otherwise their
+ * `specialty` text resolves the class, so a teacher who has only a specialty
+ * is still importable. Finally it falls back to the class of the teacher's own
+ * courses, so a teacher with existing courses keeps new ones in the same
+ * program/training even before either is populated.
  */
 export async function teacherCourseAssignment(
   teacherId: string,
@@ -2089,6 +2200,10 @@ export async function teacherCourseAssignment(
         programId,
         trainingId,
       };
+    }
+    if (teacher?.specialty) {
+      const bySpecialty = await resolveClassFromSpecialty(teacher.specialty);
+      if (bySpecialty) return bySpecialty;
     }
   } catch {
     // Profile unreachable — try the teacher's own courses below.
@@ -2172,41 +2287,63 @@ export async function classRosterForTeacher(
   return { courses: ownCourses, students: studentsInClass };
 }
 
+const CLASS_NO_ASSIGNMENT =
+  "Your profile has no assigned program or training yet, so there is no class to import. Ask the center to assign you one.";
+
+const CLASS_OUT_OF_DOMAIN =
+  "You can only import the class assigned to your profile.";
+
 /**
- * Students enrolled in one class, picked from the same programs/trainings
- * tables that populate the operator's Student form.
+ * Students enrolled in the ONE class the logged-in teacher is assigned to.
+ *
+ * The requested program/training are validated against
+ * teacherCourseAssignment() before anything is read, so a stale or forged
+ * selection is refused rather than silently widening the teacher's view. The
+ * page only ever sends the locked values, which makes a mismatch a bug (or a
+ * hand-rolled call) — it still fails closed.
  *
  * Reads through listStudents() rather than a narrowed PostgREST filter on
  * purpose: that is the only read that already applies the soft-delete filter
  * (and the in-memory trash fallback used when the live students table has no
  * is_deleted column), so a trashed student can never surface here.
  *
- * Rows are matched on the FK pair when the class was chosen by id, and on the
- * resolved program/training names otherwise — the same rule
- * classRosterForTeacher uses, so a student whose program_id/training_id are
- * NULL still matches by name. Returns [] when no program is given.
+ * Matching follows the same rule as classRosterForTeacher: the FK pair when
+ * the student row carries one, the resolved program/training names otherwise,
+ * so a row whose program_id/training_id are NULL still matches.
+ *
+ * NOT a security boundary: every table is world-readable/writable to `anon`
+ * (see the RLS block in schema.sql) and the role lives in a cookie, so this
+ * guards the app's own UI, not the database.
  */
-export async function studentsForClass(options: {
-  programId?: string;
-  trainingId?: string;
-  program?: string;
-  training?: string;
-}): Promise<Student[]> {
-  const { programId, trainingId, program, training } = options;
-  if (!programId && !program) return [];
-  const students = await listStudents();
-  const matches = students.filter((s) => {
-    if (programId) {
-      if (s.programId !== programId) return false;
-      // No training chosen yet: the whole program is the selection.
-      return trainingId ? s.trainingId === trainingId : true;
-    }
-    if ((s.program ?? "") !== program) return false;
-    return training ? (s.training ?? "") === training : true;
-  });
-  return matches.sort((a, b) =>
-    (a.fullName ?? "").localeCompare(b.fullName ?? ""),
-  );
+export async function importClassForTeacher(
+  teacherId: string,
+  requested: { programId?: string; trainingId?: string } = {},
+): Promise<{ students: Student[]; program: string; training: string }> {
+  const assignment = await teacherCourseAssignment(teacherId);
+  if (!assignment.program || !assignment.training) {
+    throw new Error(CLASS_NO_ASSIGNMENT);
+  }
+  if (
+    (requested.programId && requested.programId !== assignment.programId) ||
+    (requested.trainingId && requested.trainingId !== assignment.trainingId)
+  ) {
+    throw new Error(CLASS_OUT_OF_DOMAIN);
+  }
+
+  const hasIds = Boolean(assignment.programId && assignment.trainingId);
+  const students = (await listStudents())
+    .filter((s) =>
+      hasIds && s.programId && s.trainingId
+        ? s.programId === assignment.programId && s.trainingId === assignment.trainingId
+        : (s.program ?? "") === assignment.program &&
+          (s.training ?? "") === assignment.training,
+    )
+    .sort((a, b) => (a.fullName ?? "").localeCompare(b.fullName ?? ""));
+  return {
+    students,
+    program: assignment.program,
+    training: assignment.training,
+  };
 }
 
 // ----------------------------------------------------------- course reviews

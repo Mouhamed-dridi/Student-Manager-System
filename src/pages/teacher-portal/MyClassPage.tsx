@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -21,30 +21,18 @@ import { DataError, DataLoading } from "@/components/DataState";
 import {
   classRosterForTeacher,
   errorMessage,
-  listPrograms,
-  listTrainings,
-  studentsForClass,
+  importClassForTeacher,
+  teacherCourseAssignment,
   subscribeToTable,
+  type TeacherCourseAssignment,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
-interface ProgramOption {
-  id: string;
-  code: string;
-}
-
-interface TrainingOption {
-  id: string;
-  name: string;
-  programId: string;
-}
-
-/** Mirrors the operator's Student form: program is stored as a code, the
- *  training as its display name, and `students.blocked` is the only status
- *  flag a student row has. */
+/** `students.blocked` is the only status flag a student row has, so Status is
+ *  derived from it exactly like the operator's User Management table. */
 function statusBadge(blocked?: boolean) {
   if (blocked) {
     return (
@@ -67,57 +55,36 @@ export default function MyClassPage() {
   const [courseCount, setCourseCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Class import: the same programs/trainings the operator picks from when
-  // creating a student, so the selection always matches real enrollments.
-  const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
-  const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
-  const [programId, setProgramId] = useState<string | null>(null);
-  const [trainingId, setTrainingId] = useState<string | null>(null);
+  // Class import is locked to the teacher's own program/training, resolved by
+  // the same teacherCourseAssignment() that pins their course writes: the
+  // profile columns first, else the class of their existing courses.
+  // undefined = still resolving; null = no assignment, so nothing is importable.
+  const [assignment, setAssignment] = useState<TeacherCourseAssignment | null | undefined>(undefined);
   const [imported, setImported] = useState<Student[] | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  useEffect(() => {
-    listPrograms()
-      .then((rows) => setProgramOptions(rows.map((r) => ({ id: r.id, code: r.code }))))
-      .catch(() => {});
-    listTrainings()
-      .then((rows) =>
-        setAllTrainings(
-          rows.map((r) => ({ id: r.id, name: r.name, programId: r.program_id })),
-        ),
-      )
-      .catch(() => {});
-  }, []);
-
-  // Trainings belong to a program, so the track list follows the type.
-  const trainingOptions = useMemo(
-    () => (programId ? allTrainings.filter((t) => t.programId === programId) : []),
-    [programId, allTrainings],
-  );
-
-  const selectedProgram = programOptions.find((p) => p.id === programId);
-  const selectedTraining = allTrainings.find((t) => t.id === trainingId);
-  const classLabel = [selectedProgram?.code, selectedTraining?.name]
-    .filter(Boolean)
-    .join(" · ");
-
-  // The class currently on screen, kept in a ref so the realtime and focus
-  // handlers can re-run the import without re-subscribing on every dropdown
-  // change. Only the Import button writes it, so a live update never silently
-  // swaps the class the teacher is looking at for a different one.
+  // What the realtime/focus handlers re-import. Only the Import button writes
+  // it, so a live update never changes which class is on screen.
   const classSelection = useRef<{
-    programId: string;
+    programId?: string;
     trainingId?: string;
-  } | null>(null);
+  }>({});
+
+  // Read by importClass, which stays referentially stable so the realtime
+  // effect below never re-subscribes mid-session.
+  const teacherIdRef = useRef("");
 
   const importClass = useCallback(async () => {
-    const selection = classSelection.current;
-    if (!selection) return;
+    if (!teacherIdRef.current) return;
     setImporting(true);
     setImportError(null);
     try {
-      setImported(await studentsForClass(selection));
+      const { students } = await importClassForTeacher(
+        teacherIdRef.current,
+        classSelection.current,
+      );
+      setImported(students);
     } catch (err) {
       setImportError(errorMessage(err));
     } finally {
@@ -135,11 +102,18 @@ export default function MyClassPage() {
           return;
         }
         setTeacher(record);
+        teacherIdRef.current = record.id;
         try {
-          const { courses, students } = await classRosterForTeacher(record.id);
+          const [{ courses, students }, resolved] = await Promise.all([
+            classRosterForTeacher(record.id),
+            teacherCourseAssignment(record.id),
+          ]);
           if (cancelled) return;
           setCourseCount(courses.length);
           setRoster(students);
+          setAssignment(
+            resolved.program && resolved.training ? resolved : null,
+          );
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -197,13 +171,27 @@ export default function MyClassPage() {
     );
   }
 
-  if (teacher === undefined || roster === null) {
+  if (teacher === undefined || roster === null || assignment === undefined) {
     return <DataLoading label="Loading your class…" />;
   }
 
   const sorted = [...roster].sort((a, b) =>
     (a.fullName ?? "").localeCompare(b.fullName ?? ""),
   );
+
+  const classLabel = assignment
+    ? `${assignment.program} · ${assignment.training}`
+    : "";
+
+  // The dropdown is labelled "Specialty" and keyed off the teacher's own
+  // `specialty` text, which is the thing they recognise (and the thing that
+  // resolves their class). The training it maps to is stated underneath rather
+  // than substituted for it, so the box never disagrees with the header.
+  const specialtyDisplay = teacher?.specialty || assignment?.training || "";
+
+  // Only for a teacher with no program/training AND no specialty that resolves
+  // to a training — at that point the specialty is all we can show.
+  const specialtyHint = assignment ? "" : (teacher?.specialty ?? "");
 
   return (
     <div>
@@ -212,60 +200,71 @@ export default function MyClassPage() {
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <div className="space-y-2">
           <Label>Training Type</Label>
-          <Select
-            value={programId}
-            onValueChange={(value) => {
-              setProgramId(value);
-              setTrainingId(null);
-            }}
-          >
+          <Select value={assignment?.programId ?? ""} disabled>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder="Select training type" />
+              <SelectValue placeholder="Not assigned" />
             </SelectTrigger>
             <SelectContent>
-              {programOptions.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.code}
+              {/* Single option by design: the class comes from the profile, so
+                  there is no other training type this teacher may import. */}
+              {assignment && (
+                <SelectItem value={assignment.programId || "none"}>
+                  {assignment.program}
                 </SelectItem>
-              ))}
+              )}
             </SelectContent>
           </Select>
         </div>
 
         <div className="space-y-2">
           <Label>Specialty</Label>
-          <Select
-            value={trainingId}
-            onValueChange={(value) => setTrainingId(value)}
-            disabled={!programId}
-          >
+          <Select value={specialtyDisplay} disabled>
             <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select specialty" />
+              <SelectValue placeholder="Not assigned" />
             </SelectTrigger>
             <SelectContent>
-              {trainingOptions.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  {t.name}
+              {specialtyDisplay && (
+                <SelectItem value={specialtyDisplay}>
+                  {specialtyDisplay}
                 </SelectItem>
-              ))}
+              )}
             </SelectContent>
           </Select>
+          {assignment && (
+            <p className="text-xs text-muted-foreground">
+              Class: {classLabel}
+            </p>
+          )}
         </div>
 
         <Button
           onClick={() => {
-            if (!programId) return;
             classSelection.current = {
-              programId,
-              trainingId: trainingId ?? undefined,
+              programId: assignment?.programId || undefined,
+              trainingId: assignment?.trainingId || undefined,
             };
             void importClass();
           }}
-          disabled={!programId || importing}
+          disabled={!assignment || importing}
         >
           {importing ? "Importing…" : "Import"}
         </Button>
       </div>
+
+      {assignment === null && (
+        <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          There is no class to import yet.
+          {specialtyHint ? (
+            <>
+              {" "}
+              No training matches your specialty &ldquo;{specialtyHint}&rdquo;.
+              Ask the center to set the program and training on your profile.
+            </>
+          ) : (
+            " Ask the center to set your specialty, program and training on your profile."
+          )}
+        </p>
+      )}
 
       {importError && (
         <div className="mt-4">
@@ -277,7 +276,7 @@ export default function MyClassPage() {
         <div className="mt-4">
           <p className="mb-2 text-sm text-muted-foreground">
             {imported.length} student{imported.length === 1 ? "" : "s"} in{" "}
-            {classLabel || "the selected class"}
+            {classLabel}
           </p>
           {imported.length === 0 ? (
             <Card className="max-w-xl">
@@ -335,8 +334,8 @@ export default function MyClassPage() {
               <CardContent className="py-8 text-center">
                 <p className="text-sm font-medium">No courses yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Pick a training type and specialty above to import a class, or
-                  add a course — students enrolled in it will appear here.
+                  Import your class above to see its students, or add a course —
+                  students enrolled in it will appear here.
                 </p>
               </CardContent>
             </Card>
