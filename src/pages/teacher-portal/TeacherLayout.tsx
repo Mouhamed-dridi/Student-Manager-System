@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  Megaphone,
   BookOpenCheck,
   ClipboardList,
   Users,
@@ -12,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import TeacherDashboardPage from "./TeacherDashboardPage";
+import TeacherAnnouncementsPage from "./TeacherAnnouncementsPage";
 import MyCoursesPage from "./MyCoursesPage";
 import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
@@ -24,9 +26,11 @@ import { useBranding } from "@/lib/branding";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
+import { useUnreadAnnouncements } from "@/hooks/useUnreadAnnouncements";
 
 const menuItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "courses", label: "Courses", icon: BookOpenCheck },
   { key: "exams-notes", label: "Exams & Notes", icon: ClipboardList },
   { key: "class", label: "Class", icon: Users },
@@ -55,6 +59,7 @@ export default function TeacherLayout() {
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const navigate = useNavigate();
   const branding = useBranding();
+  const unreadAnnouncements = useUnreadAnnouncements("teachers");
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +89,7 @@ export default function TeacherLayout() {
   // rebuilding the record on each render costs nothing.
   const pages: Record<MenuKey, React.ReactNode> = {
     dashboard: <TeacherDashboardPage />,
+    announcements: <TeacherAnnouncementsPage />,
     courses: <MyCoursesPage />,
     "exams-notes": <ExamsNotesPage />,
     class: <MyClassPage />,
@@ -127,6 +133,11 @@ export default function TeacherLayout() {
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
+                {item.key === "announcements" && unreadAnnouncements > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
+                    {unreadAnnouncements}
+                  </span>
+                )}
               </button>
             );
           })}

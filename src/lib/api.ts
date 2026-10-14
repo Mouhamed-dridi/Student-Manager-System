@@ -4,7 +4,7 @@ import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { Payment } from "@/pages/pay/PaymentForm";
-import type { Publication } from "@/pages/publications/PublicationsPage";
+import type { Publication } from "@/pages/publications/publicationTypes";
 import type { CourseMaterial, TeacherCourseRecord } from "@/lib/trainings";
 import type { ExamRecord, GradeRecord } from "@/pages/teacher-portal/exams";
 import type { PlanningRecord } from "@/pages/teacher-portal/planning";
@@ -2586,7 +2586,6 @@ interface PublicationRow {
   title: string;
   message: string;
   recipients: string[];
-  channels: string[];
   sent_at: string | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
@@ -2606,7 +2605,6 @@ function publicationFromRow(row: PublicationRow): Publication {
     title: row.title,
     message: row.message,
     recipients: (row.recipients as Publication["recipients"]) || [],
-    channels: (row.channels as Publication["channels"]) || [],
     createdAt: row.sent_at ?? "",
     type,
   };
@@ -2665,7 +2663,6 @@ export async function insertPublication(
     title: publication.title,
     message: publication.message,
     recipients: publication.recipients,
-    channels: publication.channels,
     sent_at: publication.createdAt,
   };
   if (await hasPublicationsTypeColumn()) {
@@ -2673,6 +2670,30 @@ export async function insertPublication(
   }
   const { data, error } = await withTimeout(
     supabase.from("publications").insert(payload).select().single(),
+  );
+  if (error) throw new Error(error.message);
+  return publicationFromRow(data as PublicationRow);
+}
+
+/**
+ * Updates an existing publication's editable fields. `type` is only written
+ * when the column exists (see hasPublicationsTypeColumn). Throws so the
+ * caller can surface the message in the edit dialog.
+ */
+export async function updatePublication(
+  id: string,
+  values: Pick<Publication, "title" | "message" | "recipients" | "type">,
+): Promise<Publication> {
+  const payload: Record<string, unknown> = {
+    title: values.title,
+    message: values.message,
+    recipients: values.recipients,
+  };
+  if (await hasPublicationsTypeColumn()) {
+    payload.type = values.type ?? "info";
+  }
+  const { data, error } = await withTimeout(
+    supabase.from("publications").update(payload).eq("id", id).select().single(),
   );
   if (error) throw new Error(error.message);
   return publicationFromRow(data as PublicationRow);

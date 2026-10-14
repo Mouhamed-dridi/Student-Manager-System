@@ -8,7 +8,7 @@ import {
 import { DataError, DataLoading } from "@/components/DataState";
 import NotificationCallouts from "@/components/NotificationCallouts";
 import { errorMessage, listPublications, subscribeToTable } from "@/lib/api";
-import type { Publication } from "@/pages/publications/PublicationsPage";
+import type { Publication } from "@/pages/publications/publicationTypes";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { loadCurrentTeacher } from "./currentTeacher";

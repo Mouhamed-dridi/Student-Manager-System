@@ -21,6 +21,7 @@ import { useBranding } from "@/lib/branding";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
+import { useUnreadAnnouncements } from "@/hooks/useUnreadAnnouncements";
 
 const menuItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -52,6 +53,7 @@ export default function StudentLayout() {
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
   const branding = useBranding();
+  const unreadAnnouncements = useUnreadAnnouncements("students");
 
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +109,11 @@ export default function StudentLayout() {
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
+                {item.key === "announcements" && unreadAnnouncements > 0 && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
+                    {unreadAnnouncements}
+                  </span>
+                )}
               </button>
             );
           })}

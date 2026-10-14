@@ -18,7 +18,7 @@ import {
 } from "@/lib/api";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type { ScheduledCourseView } from "@/lib/trainings";
-import type { Publication } from "@/pages/publications/PublicationsPage";
+import type { Publication } from "@/pages/publications/publicationTypes";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { loadCurrentStudent } from "./currentStudent";

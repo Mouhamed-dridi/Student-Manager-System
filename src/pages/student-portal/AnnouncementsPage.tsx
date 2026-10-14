@@ -1,22 +1,9 @@
 import { useEffect, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { DataError, DataLoading } from "@/components/DataState";
-import { errorMessage, listPublications } from "@/lib/api";
-import type { Publication } from "@/pages/publications/PublicationsPage";
-
-type Channel = Publication["channels"][number];
-
-const CHANNEL_LABELS: Record<Channel, string> = {
-  sms: "SMS",
-  email: "Email",
-  notification: "Notification",
-};
+import AnnouncementCallout from "@/components/AnnouncementCallout";
+import { errorMessage, listPublications, subscribeToTable } from "@/lib/api";
+import { markAnnouncementsRead } from "@/lib/announcementReads";
+import type { Publication } from "@/pages/publications/publicationTypes";
 
 export default function AnnouncementsPage() {
   const [announcements, setAnnouncements] = useState<Publication[] | null>(
@@ -25,52 +12,71 @@ export default function AnnouncementsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listPublications()
-      .then((all) =>
-        setAnnouncements(
-          all
-            .filter((p) => p.recipients.includes("students"))
-            .sort(
-              (a, b) =>
-                new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime(),
-            ),
-        ),
-      )
-      .catch((err) => setError(errorMessage(err)));
+    let cancelled = false;
+    const run = () => {
+      listPublications()
+        .then((all) => {
+          if (cancelled) return;
+          setError(null);
+          setAnnouncements(
+            all
+              .filter((p) => p.recipients.includes("students"))
+              .sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              ),
+          );
+        })
+        .catch((err) => {
+          if (!cancelled) setError(errorMessage(err));
+        });
+    };
+    run();
+    const unsubscribe = subscribeToTable("publications", run);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (announcements) {
+      markAnnouncementsRead(
+        "students",
+        announcements.map((p) => p.id),
+      );
+    }
+  }, [announcements]);
 
   return (
     <div>
       <h2 className="text-2xl font-semibold">Announcements</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Messages and news published to students.
+      </p>
 
-      <div className="mt-4">
-        {error && <DataError message={error} />}
-      </div>
+      {error && (
+        <div className="mt-4">
+          <DataError message={error} />
+        </div>
+      )}
 
       {announcements === null ? (
         !error && <DataLoading label="Loading announcements…" />
       ) : announcements.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="mt-4 text-sm text-muted-foreground">
           No announcements yet.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="mt-4 space-y-3">
           {announcements.map((p) => (
-            <Card key={p.id}>
-              <CardHeader>
-                <CardTitle>{p.title}</CardTitle>
-                <CardDescription>
-                  {new Date(p.createdAt).toLocaleString()} — via{" "}
-                  {p.channels
-                    .map((c) => CHANNEL_LABELS[c] ?? c)
-                    .join(", ")}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="whitespace-pre-wrap text-sm">{p.message}</p>
-              </CardContent>
-            </Card>
+            <AnnouncementCallout
+              key={p.id}
+              publication={p}
+              showType
+              showDate
+            />
           ))}
         </div>
       )}

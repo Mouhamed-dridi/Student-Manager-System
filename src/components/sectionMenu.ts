@@ -5,6 +5,7 @@ import {
   DollarSign,
   GraduationCap,
   LayoutDashboard,
+  Newspaper,
   Settings,
   Trash2,
   UserCog,
@@ -21,6 +22,7 @@ export type MenuKey =
   | "pay-trash"
   | "absence"
   | "publications"
+  | "news-center"
   | "events"
   | "event-history"
   | "users"
@@ -50,6 +52,7 @@ export const menuItems: MenuItem[] = [
   },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "publications", label: "Publications", icon: BookOpen },
+  { key: "news-center", label: "News Center", icon: Newspaper },
   {
     key: "events",
     label: "Events",
