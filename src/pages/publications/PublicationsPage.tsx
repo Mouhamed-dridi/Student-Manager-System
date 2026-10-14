@@ -41,6 +41,7 @@ import {
 
 type RecipientType = "teachers" | "students";
 type Channel = "sms" | "email" | "notification";
+export type NotificationType = "urgent" | "warning" | "info";
 
 export interface Publication {
   id: string;
@@ -49,6 +50,7 @@ export interface Publication {
   recipients: RecipientType[];
   channels: Channel[];
   createdAt: string;
+  type: NotificationType;
 }
 
 const RECIPIENT_LABELS: Record<RecipientType, string> = {
@@ -62,6 +64,12 @@ const CHANNEL_LABELS: Record<Channel, string> = {
   notification: "Notification",
 };
 
+const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  urgent: "Urgent",
+  warning: "Warning",
+  info: "Info / News",
+};
+
 export default function PublicationsPage() {
   const [publications, setPublications] = useState<Publication[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,6 +77,7 @@ export default function PublicationsPage() {
   const [message, setMessage] = useState("");
   const [recipients, setRecipients] = useState<RecipientType[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [notificationType, setNotificationType] = useState<NotificationType>("info");
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -117,6 +126,7 @@ export default function PublicationsPage() {
       recipients,
       channels,
       createdAt: new Date().toISOString(),
+      type: notificationType,
     };
 
     try {
@@ -126,6 +136,7 @@ export default function PublicationsPage() {
       setMessage("");
       setRecipients([]);
       setChannels([]);
+      setNotificationType("info");
 
       const recipientNames = publication.recipients
         .map((r) => RECIPIENT_LABELS[r])
@@ -190,6 +201,27 @@ export default function PublicationsPage() {
             </div>
 
             <div className="space-y-2">
+              <Label>Notification Type</Label>
+              <div className="flex flex-wrap gap-6">
+                {(Object.keys(NOTIFICATION_TYPE_LABELS) as NotificationType[]).map(
+                  (t) => (
+                    <label key={t} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="notification-type"
+                        value={t}
+                        checked={notificationType === t}
+                        onChange={() => setNotificationType(t)}
+                        className="h-4 w-4 accent-primary"
+                      />
+                      {NOTIFICATION_TYPE_LABELS[t]}
+                    </label>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label>Recipients</Label>
               <div className="flex gap-6">
                 {(Object.keys(RECIPIENT_LABELS) as RecipientType[]).map(
@@ -248,6 +280,7 @@ export default function PublicationsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Recipients</TableHead>
                 <TableHead>Channels</TableHead>
@@ -258,6 +291,9 @@ export default function PublicationsPage() {
               {publications.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.title}</TableCell>
+                  <TableCell>
+                    {NOTIFICATION_TYPE_LABELS[p.type] ?? "Info / News"}
+                  </TableCell>
                   <TableCell>
                     {new Date(p.createdAt).toLocaleString()}
                   </TableCell>

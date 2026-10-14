@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  LayoutDashboard,
   BookOpenCheck,
   ClipboardList,
   Users,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import TeacherDashboardPage from "./TeacherDashboardPage";
 import MyCoursesPage from "./MyCoursesPage";
 import ExamsNotesPage from "./ExamsNotesPage";
 import MyClassPage from "./MyClassPage";
@@ -24,6 +26,7 @@ import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
 
 const menuItems = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpenCheck },
   { key: "exams-notes", label: "Exams & Notes", icon: ClipboardList },
   { key: "class", label: "Class", icon: Users },
@@ -43,7 +46,7 @@ function clearTeacherSession() {
 }
 
 export default function TeacherLayout() {
-  const [active, setActive] = useState<MenuKey>("courses");
+  const [active, setActive] = useState<MenuKey>("dashboard");
   // An open event takes over the content area; the sidebar item stays
   // highlighted. Sections are not routes in this portal, so the detail view is
   // a swap rather than a navigation — hence its own state beside `active`.
@@ -80,6 +83,7 @@ export default function TeacherLayout() {
   // setOpenEventId. React keys reconciliation on element type, not identity, so
   // rebuilding the record on each render costs nothing.
   const pages: Record<MenuKey, React.ReactNode> = {
+    dashboard: <TeacherDashboardPage />,
     courses: <MyCoursesPage />,
     "exams-notes": <ExamsNotesPage />,
     class: <MyClassPage />,

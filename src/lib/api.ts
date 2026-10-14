@@ -2590,16 +2590,25 @@ interface PublicationRow {
   sent_at: string | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
+  type?: string | null;
 }
 
 function publicationFromRow(row: PublicationRow): Publication {
+  const t = row.type as unknown;
+  let type: Publication["type"] = "info";
+  if (t === "urgent" || t === "warning" || t === "info") {
+    type = t;
+  } else {
+    type = "info";
+  }
   return {
     id: row.id,
     title: row.title,
     message: row.message,
-    recipients: row.recipients as Publication["recipients"],
-    channels: row.channels as Publication["channels"],
+    recipients: (row.recipients as Publication["recipients"]) || [],
+    channels: (row.channels as Publication["channels"]) || [],
     createdAt: row.sent_at ?? "",
+    type,
   };
 }
 
@@ -2631,22 +2640,39 @@ export async function listPublications(): Promise<Publication[]> {
   return rowsArr;
 }
 
+/**
+ * Probed once: `type` is newer than the publications table, so a deployment
+ * created before it is expected. The read path tolerates its absence
+ * (publicationFromRow defaults to "info"), but an INSERT naming a missing
+ * column is rejected by PostgREST, so the write checks first.
+ */
+let publicationsTypeColumnPromise: Promise<boolean> | null = null;
+
+function hasPublicationsTypeColumn(): Promise<boolean> {
+  if (!publicationsTypeColumnPromise) {
+    publicationsTypeColumnPromise = hasColumn("publications", "type").catch(
+      () => false,
+    );
+  }
+  return publicationsTypeColumnPromise;
+}
+
 export async function insertPublication(
   publication: Publication,
 ): Promise<Publication> {
+  const payload: Record<string, unknown> = {
+    id: publication.id,
+    title: publication.title,
+    message: publication.message,
+    recipients: publication.recipients,
+    channels: publication.channels,
+    sent_at: publication.createdAt,
+  };
+  if (await hasPublicationsTypeColumn()) {
+    payload.type = publication.type ?? "info";
+  }
   const { data, error } = await withTimeout(
-    supabase
-      .from("publications")
-      .insert({
-        id: publication.id,
-        title: publication.title,
-        message: publication.message,
-        recipients: publication.recipients,
-        channels: publication.channels,
-        sent_at: publication.createdAt,
-      })
-      .select()
-      .single(),
+    supabase.from("publications").insert(payload).select().single(),
   );
   if (error) throw new Error(error.message);
   return publicationFromRow(data as PublicationRow);

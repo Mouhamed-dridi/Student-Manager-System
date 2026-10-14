@@ -455,14 +455,15 @@ create table if not exists public.grades (
 -- ----------------------------------------------------------- publications --
 
 create table if not exists public.publications (
-  id uuid primary key default gen_random_uuid(),
-  title text not null,
-  message text not null,
-  recipients text[] not null default '{}',
-  channels text[] not null default '{}',
-  sent_at timestamptz,
-  created_at timestamptz not null default now()
-);
+    id uuid primary key default gen_random_uuid(),
+    title text not null,
+    message text not null,
+    recipients text[] not null default '{}',
+    channels text[] not null default '{}',
+    sent_at timestamptz,
+    created_at timestamptz not null default now(),
+    type text not null default 'info' check (type in ('urgent','warning','info'))
+  );
 
 -- ---------------------------------------------------------------- planning -
 -- Lesson log: one entry per session; 'topic' holds what was covered.

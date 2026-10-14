@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { DataError, DataLoading } from "@/components/DataState";
+import NotificationCallouts from "@/components/NotificationCallouts";
 import {
   errorMessage,
   listPayments,
@@ -113,8 +114,7 @@ export default function StudentDashboardPage() {
             (a, b) =>
               new Date(b.createdAt).getTime() -
               new Date(a.createdAt).getTime(),
-          )
-          .slice(0, 3),
+          ),
       );
     } catch (err) {
       setError(errorMessage(err));
@@ -176,6 +176,8 @@ export default function StudentDashboardPage() {
         Welcome back, {firstName}! You are assigned to{" "}
         {student.training || "—"} ({student.program}).
       </p>
+
+      <NotificationCallouts publications={announcements ?? []} />
 
       {error && (
         <div className="mt-4">
@@ -261,7 +263,7 @@ export default function StudentDashboardPage() {
               </p>
             ) : (
               <ul className="divide-y">
-                {announcements.map((p) => (
+                {announcements.slice(0, 3).map((p) => (
                   <li key={p.id} className="py-2">
                     <p className="text-sm font-medium">{p.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
