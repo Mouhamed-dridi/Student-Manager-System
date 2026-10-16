@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { UserPlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,9 +15,7 @@ import type { AccountInfo } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import type { AccountKind } from "./userAccounts";
 import { defaultAccountPassword, hasAccount } from "./userAccounts";
-import type { AccountCandidate } from "./CreateAccountDialog";
 import AccountsTable, { type AccountsTableRow } from "./AccountsTable";
-import CreateAccountDialog from "./CreateAccountDialog";
 import ResetPasswordDialog from "./ResetPasswordDialog";
 
 function toRows(records: AccountInfo[]): AccountsTableRow[] {
@@ -32,21 +28,12 @@ function toRows(records: AccountInfo[]): AccountsTableRow[] {
   }));
 }
 
-function detailOf(record: AccountInfo): string {
-  const specialty = typeof record.specialty === "string" ? record.specialty : "";
-  if (specialty) return specialty;
-  const program = typeof record.program === "string" ? record.program : "";
-  const training = typeof record.training === "string" ? record.training : "";
-  return [program, training].filter(Boolean).join(" — ");
-}
-
 export default function UserManagementPage() {
   const [students, setStudents] = useState<AccountInfo[] | null>(null);
   const [teachers, setTeachers] = useState<AccountInfo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<AccountKind>("students");
   const [query, setQuery] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<{
     kind: AccountKind;
     id: string;
@@ -108,26 +95,16 @@ export default function UserManagementPage() {
     ? accounts.filter((r) => r.fullName.toLowerCase().includes(normalizedQuery))
     : accounts;
 
-  const candidates: AccountCandidate[] = records
-    .filter((r) => !hasAccount(r))
-    .map((r) => ({ id: r.id, fullName: r.fullName ?? "(unnamed)", detail: detailOf(r) }));
-
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-semibold">User Management</h2>
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Search by name…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-56"
-          />
-          <Button onClick={() => setCreateOpen(true)}>
-            <UserPlus className="h-4 w-4" />
-            Create Account
-          </Button>
-        </div>
+        <Input
+          placeholder="Search by name…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-56"
+        />
       </div>
 
       <Tabs
@@ -153,8 +130,7 @@ export default function UserManagementPage() {
                 No {kind === "students" ? "student" : "teacher"} accounts yet
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Use “Create Account” to give a {kind === "students" ? "student" : "teacher"}{" "}
-                login access.
+                Accounts created elsewhere appear here.
               </p>
             </CardContent>
           </Card>
@@ -196,20 +172,6 @@ export default function UserManagementPage() {
         )}
       </div>
 
-      {createOpen && (
-        <CreateAccountDialog
-          entityLabel={kind === "students" ? "student" : "teacher"}
-          candidates={candidates}
-          onSubmit={async (id, password) => {
-            await updateAccount(kind, id, { password });
-            await refresh();
-          }}
-          onClose={() => {
-            setCreateOpen(false);
-            refresh();
-          }}
-        />
-      )}
       {resetTarget && (
         <ResetPasswordDialog
           fullName={resetTarget.fullName}

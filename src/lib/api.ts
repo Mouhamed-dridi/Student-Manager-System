@@ -3720,6 +3720,92 @@ export async function countQuizResponses(
   return counts;
 }
 
+/**
+ * Quizzes a student can take: non-deleted, published, whose target course is
+ * one of the student's class courses — plus any quiz with no target class
+ * (`courseId === ""`), so a quiz the teacher left unassigned is not invisible.
+ *
+ * The class match is done client-side: PostgREST `.in` does not match the NULL
+ * `course_id` of an unassigned quiz, and `.or()` over an id list is fragile.
+ */
+export async function listPublishedQuizzes(
+  courseIds: string[],
+): Promise<Quiz[]> {
+  await assertQuizzesReady();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("quizzes")
+      .select("*")
+      .eq("is_published", true)
+      .or("is_deleted.is.false,is_deleted.is.null")
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  const wanted = new Set(courseIds.filter(Boolean));
+  return ((data ?? []) as QuizRow[])
+    .map(quizFromRow)
+    .filter((quiz) => !quiz.courseId || wanted.has(quiz.courseId));
+}
+
+/** Every response a student has submitted, newest first. */
+export async function listStudentQuizResponses(
+  studentId: string,
+): Promise<QuizResponse[]> {
+  if (!studentId) return [];
+  await assertQuizzesReady();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("quiz_responses")
+      .select("*")
+      .eq("student_id", studentId)
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as QuizResponseRow[]).map(quizResponseFromRow);
+}
+
+/**
+ * Saves a student's submission. The unique (quiz_id, student_id) index makes a
+ * re-submission an upsert, though the student UI locks after the first attempt.
+ */
+export async function submitQuizResponse(input: {
+  quizId: string;
+  studentId: string;
+  answers: Record<string, number>;
+  score: number;
+}): Promise<QuizResponse> {
+  await assertQuizzesReady();
+  const { data, error } = await withTimeout(
+    supabase
+      .from("quiz_responses")
+      .upsert(
+        {
+          quiz_id: input.quizId,
+          student_id: input.studentId,
+          answers: input.answers,
+          score: input.score,
+        },
+        { onConflict: "quiz_id,student_id" },
+      )
+      .select("*")
+      .single(),
+  );
+  if (error) throw new Error(error.message);
+  return quizResponseFromRow(data as QuizResponseRow);
+}
+
+/** Number of correct answers; a missing or invalid answer counts as wrong. */
+export function scoreQuizAnswers(
+  questions: QuizQuestion[],
+  answers: Record<string, number>,
+): number {
+  return questions.reduce(
+    (sum, question) =>
+      answers[question.id] === question.correctIndex ? sum + 1 : sum,
+    0,
+  );
+}
+
 // -------------------------------------------------------------- realtime
 
 /**

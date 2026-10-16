@@ -5,6 +5,7 @@ import {
   DollarSign,
   CalendarX,
   LayoutDashboard,
+  ListChecks,
   Megaphone,
   Settings,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import CoursesPage from "./CoursesPage";
 import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
+import StudentQcmPage from "./StudentQcmPage";
 import StudentSettingsPage from "./StudentSettingsPage";
 import UserAvatar from "@/components/UserAvatar";
 import { useBranding } from "@/lib/branding";
@@ -27,6 +29,7 @@ const menuItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpen },
   { key: "payments", label: "My Payment", icon: DollarSign },
+  { key: "qcm", label: "QCM", icon: ListChecks },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "settings", label: "Settings", icon: Settings },
@@ -38,6 +41,7 @@ const pages: Record<MenuKey, React.ReactNode> = {
   dashboard: <StudentDashboardPage />,
   courses: <CoursesPage />,
   payments: <MyPaymentsPage />,
+  qcm: <StudentQcmPage />,
   announcements: <AnnouncementsPage />,
   absence: <MyAttendancePage />,
   settings: <StudentSettingsPage />,
