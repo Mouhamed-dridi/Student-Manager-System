@@ -429,8 +429,8 @@ begin
 end $$;
 
 -- ------------------------------------------------------------------ exams --
--- Owned by the teacher who created them; snapshots the course's program and
--- training so the class roster for grading stays resolvable.
+-- Owned by the teacher who created them. `program`/`training` are legacy
+-- snapshots kept for old rows; exams are identified by type + duration now.
 
 create table if not exists public.exams (
   id uuid primary key default gen_random_uuid(),
@@ -439,6 +439,8 @@ create table if not exists public.exams (
   training text,
   title text not null,
   date date,
+  type text,
+  duration text,
   course text,
   file_name text,
   created_at timestamptz not null default now()

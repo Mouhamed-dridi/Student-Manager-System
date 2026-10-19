@@ -2467,7 +2467,8 @@ interface ExamRow {
   training: string;
   title: string;
   date: string;
-  course: string | null;
+  type: string | null;
+  duration: string | null;
   file_name: string | null;
 }
 
@@ -2479,7 +2480,8 @@ function examFromRow(row: ExamRow): ExamRecord {
     training: row.training,
     title: row.title,
     date: row.date,
-    course: row.course ?? undefined,
+    type: row.type ?? undefined,
+    duration: row.duration ?? undefined,
     attachment: row.file_name ?? undefined,
   };
 }
@@ -2500,7 +2502,8 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
           training: exam.training,
           title: exam.title,
           date: exam.date,
-          course: exam.course ?? null,
+          type: exam.type ?? null,
+          duration: exam.duration ?? null,
           file_name: exam.attachment ?? null,
         },
         { onConflict: "id" },

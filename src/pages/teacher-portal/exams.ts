@@ -5,7 +5,8 @@ export interface ExamRecord {
   training: string;
   title: string;
   date: string; // yyyy-mm-dd
-  course?: string;
+  type?: string;
+  duration?: string;
   attachment?: string;
 }
 

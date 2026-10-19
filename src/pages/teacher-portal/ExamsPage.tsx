@@ -35,36 +35,58 @@ import {
   deleteExamCascade,
   errorMessage,
   listExams,
-  listTeacherCourses,
   upsertExam,
 } from "@/lib/api";
-import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { ExamRecord } from "./exams";
 import { loadCurrentTeacher } from "./currentTeacher";
 
+const TYPE_OPTIONS = ["TD", "TP", "EXAM PRINCIPAL", "DS"];
+const DURATION_OPTIONS = ["30 min", "1h", "1.5h", "2h"];
+const OTHER_OPTION = "__other";
+
+function splitChoice(value: string | undefined, options: string[]) {
+  if (value && !options.includes(value)) {
+    return { choice: OTHER_OPTION, custom: value };
+  }
+  return { choice: value ?? "", custom: "" };
+}
+
 interface ExamFormData {
   id: string;
   title: string;
-  course?: string;
   date: string;
+  type?: string;
+  duration?: string;
   attachment?: string;
 }
 
 interface ExamFormProps {
   initialData?: ExamRecord;
-  courses: string[];
   onSubmit: (data: ExamFormData) => void;
   onCancel: () => void;
 }
 
-function ExamForm({ initialData, courses, onSubmit, onCancel }: ExamFormProps) {
+function ExamForm({ initialData, onSubmit, onCancel }: ExamFormProps) {
   const [title, setTitle] = useState(initialData?.title ?? "");
-  const [course, setCourse] = useState(initialData?.course ?? "");
   const [date, setDate] = useState(initialData?.date ?? "");
   const [attachment, setAttachment] = useState(initialData?.attachment ?? "");
+  const [typeState, setTypeState] = useState(() =>
+    splitChoice(initialData?.type, TYPE_OPTIONS),
+  );
+  const [durationState, setDurationState] = useState(() =>
+    splitChoice(initialData?.duration, DURATION_OPTIONS),
+  );
 
-  const valid = title.trim() !== "" && date !== "";
+  const typeValue =
+    typeState.choice === OTHER_OPTION ? typeState.custom.trim() : typeState.choice;
+  const durationValue =
+    durationState.choice === OTHER_OPTION
+      ? durationState.custom.trim()
+      : durationState.choice;
+
+  const valid =
+    title.trim() !== "" && date !== "" && typeValue !== "" && durationValue !== "";
 
   return (
     <div className="max-w-xl space-y-4">
@@ -79,21 +101,34 @@ function ExamForm({ initialData, courses, onSubmit, onCancel }: ExamFormProps) {
         />
       </div>
       <div className="space-y-2">
-        <Label>Course</Label>
-        <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
+        <Label>Type</Label>
+        <Select
+          value={typeState.choice}
+          onValueChange={(value) =>
+            setTypeState((prev) => ({ choice: value ?? "", custom: prev.custom }))
+          }
+        >
           <SelectTrigger className="w-full">
-            <SelectValue
-              placeholder={courses.length > 0 ? "Select course" : "No courses available"}
-            />
+            <SelectValue placeholder="Select type" />
           </SelectTrigger>
           <SelectContent>
-            {courses.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
+            {TYPE_OPTIONS.map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
               </SelectItem>
             ))}
+            <SelectItem value={OTHER_OPTION}>Other / Text</SelectItem>
           </SelectContent>
         </Select>
+        {typeState.choice === OTHER_OPTION ? (
+          <Input
+            placeholder="Enter type"
+            value={typeState.custom}
+            onChange={(e) =>
+              setTypeState((prev) => ({ choice: prev.choice, custom: e.target.value }))
+            }
+          />
+        ) : null}
       </div>
       <div className="space-y-2">
         <Label htmlFor="exam-date">Date</Label>
@@ -104,6 +139,39 @@ function ExamForm({ initialData, courses, onSubmit, onCancel }: ExamFormProps) {
           onChange={(e) => setDate(e.target.value)}
           required
         />
+      </div>
+      <div className="space-y-2">
+        <Label>Duration</Label>
+        <Select
+          value={durationState.choice}
+          onValueChange={(value) =>
+            setDurationState((prev) => ({ choice: value ?? "", custom: prev.custom }))
+          }
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select duration" />
+          </SelectTrigger>
+          <SelectContent>
+            {DURATION_OPTIONS.map((d) => (
+              <SelectItem key={d} value={d}>
+                {d}
+              </SelectItem>
+            ))}
+            <SelectItem value={OTHER_OPTION}>More / Other</SelectItem>
+          </SelectContent>
+        </Select>
+        {durationState.choice === OTHER_OPTION ? (
+          <Input
+            placeholder="e.g. 45 min"
+            value={durationState.custom}
+            onChange={(e) =>
+              setDurationState((prev) => ({
+                choice: prev.choice,
+                custom: e.target.value,
+              }))
+            }
+          />
+        ) : null}
       </div>
       <div className="space-y-2">
         <Label htmlFor="exam-file">Attachment</Label>
@@ -123,8 +191,9 @@ function ExamForm({ initialData, courses, onSubmit, onCancel }: ExamFormProps) {
             onSubmit({
               id: initialData?.id ?? crypto.randomUUID(),
               title: title.trim(),
-              course: course || undefined,
               date,
+              type: typeValue || undefined,
+              duration: durationValue || undefined,
               attachment: attachment || undefined,
             })
           }
@@ -145,8 +214,6 @@ export default function ExamsPage() {
   // undefined = session record still loading; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const [exams, setExams] = useState<ExamRecord[] | null>(null);
-  const [courses, setCourses] = useState<string[]>([]);
-  const [courseRecords, setCourseRecords] = useState<TeacherCourseRecord[]>([]);
   const [editing, setEditing] = useState<ExamRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ExamRecord | null>(null);
   const [gradeCount, setGradeCount] = useState(0);
@@ -162,14 +229,9 @@ export default function ExamsPage() {
         }
         setTeacher(record);
         try {
-          const [all, ownCourses] = await Promise.all([
-            listExams(),
-            listTeacherCourses({ teacherId: record.id }),
-          ]);
+          const all = await listExams();
           if (cancelled) return;
           setExams(all);
-          setCourseRecords(ownCourses);
-          setCourses([...new Set(ownCourses.map((c) => c.name))]);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -232,14 +294,11 @@ export default function ExamsPage() {
         // training snapshots.
         await upsertExam({ ...existing, ...data });
       } else {
-        const courseRecord = data.course
-          ? courseRecords.find((c) => c.name === data.course)
-          : undefined;
         await upsertExam({
           ...data,
           teacherId: teacher.id,
-          program: courseRecord?.program ?? "",
-          training: courseRecord?.training ?? "",
+          program: "",
+          training: "",
         });
       }
       setEditing(null);
@@ -268,8 +327,8 @@ export default function ExamsPage() {
         {editing ? "Edit Exam" : "Add Exam"}
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Create exams for the courses you teach. Pick a course, set a date, and
-        attach a file if needed.
+        Create exams for your classes. Choose a type, set the date and duration,
+        and attach a file if needed.
       </p>
 
       <div className="mt-4">
@@ -281,7 +340,6 @@ export default function ExamsPage() {
         <ExamForm
           key={editing?.id ?? "new"}
           initialData={editing ?? undefined}
-          courses={courses}
           onSubmit={handleSubmit}
           onCancel={() => setEditing(null)}
         />
@@ -304,7 +362,8 @@ export default function ExamsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Title</TableHead>
-                <TableHead>Course</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Duration</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>File</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -314,7 +373,8 @@ export default function ExamsPage() {
               {myExams.map((exam) => (
                 <TableRow key={exam.id}>
                   <TableCell className="font-medium">{exam.title}</TableCell>
-                  <TableCell>{exam.course || "—"}</TableCell>
+                  <TableCell>{exam.type || "—"}</TableCell>
+                  <TableCell>{exam.duration || "—"}</TableCell>
                   <TableCell>{exam.date}</TableCell>
                   <TableCell className="max-w-xs truncate text-muted-foreground">
                     {exam.attachment || "—"}
