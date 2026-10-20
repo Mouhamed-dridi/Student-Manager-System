@@ -16,7 +16,9 @@ import { Separator } from "@/components/ui/separator";
 import TeacherDashboardPage from "./TeacherDashboardPage";
 import TeacherAnnouncementsPage from "./TeacherAnnouncementsPage";
 import MyCoursesPage from "./MyCoursesPage";
-import ExamsNotesPage from "./ExamsNotesPage";
+import CreateExamView from "./CreateExamView";
+import ExamsTableView from "./ExamsTableView";
+import ExamScoreView from "./ExamScoreView";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import TeacherEventsPage from "./TeacherEventsPage";
@@ -33,7 +35,9 @@ type PageKey =
   | "dashboard"
   | "announcements"
   | "courses"
-  | "exams-notes"
+  | "exam-create"
+  | "exams-table"
+  | "exam-score"
   | "class"
   | "planning"
   | "events"
@@ -52,15 +56,18 @@ const menuItems: TeacherMenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "courses", label: "Courses", icon: BookOpenCheck },
-  // Course exams with attachments (Exams & Notes) and interactive quizzes (QCM)
-  // grouped under one collapsible parent. Sections are state, not routes, so the
-  // parent only opens the submenu — selecting a child sets the active page.
+  // Course exams (create form, saved table, grade matrix) and interactive
+  // quizzes (QCM) grouped under one collapsible parent. Sections are state, not
+  // routes, so the parent only opens the submenu — selecting a child sets the
+  // active page and the parent stays expanded while a child is active.
   {
     key: "exams",
     label: "Exams",
     icon: ClipboardList,
     children: [
-      { key: "exams-notes", label: "Exams & Notes" },
+      { key: "exam-create", label: "Create Exam" },
+      { key: "exams-table", label: "Exams Table" },
+      { key: "exam-score", label: "Exam Score" },
       { key: "qcm", label: "QCM" },
     ],
   },
@@ -138,7 +145,9 @@ export default function TeacherLayout() {
     dashboard: <TeacherDashboardPage />,
     announcements: <TeacherAnnouncementsPage />,
     courses: <MyCoursesPage />,
-    "exams-notes": <ExamsNotesPage />,
+    "exam-create": <CreateExamView />,
+    "exams-table": <ExamsTableView />,
+    "exam-score": <ExamScoreView />,
     class: <MyClassPage />,
     planning: <PlanningPage />,
     events: <TeacherEventsPage onOpenEvent={setOpenEventId} />,

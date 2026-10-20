@@ -22,58 +22,44 @@ import { DataError, DataLoading } from "@/components/DataState";
 import {
   classRosterForTeacher,
   errorMessage,
-  listExams,
   listGrades,
   saveGradesForExam,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
-import type { Teacher } from "@/pages/teachers/TeacherForm";
-import type { ExamRecord } from "./exams";
-import { loadCurrentTeacher } from "./currentTeacher";
+import { useTeacherExams } from "./useTeacherExams";
 
-export default function GradesPage() {
-  // undefined = session record still loading; null = record is gone.
-  const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
-  const [exams, setExams] = useState<ExamRecord[] | null>(null);
+/**
+ * "Exam Score" section: pick one of your exams and fill the grade matrix for
+ * the students enrolled in your class.
+ */
+export default function ExamScoreView() {
+  const { teacher, exams, myExams, error, setError } = useTeacherExams();
   const [roster, setRoster] = useState<Student[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // The roster depends on the teacher id, which the hook resolves asynchronously.
   useEffect(() => {
+    if (!teacher) return;
     let cancelled = false;
-    loadCurrentTeacher()
-      .then(async (record) => {
-        if (cancelled || !record) {
-          if (!cancelled) setTeacher(record ?? null);
-          return;
-        }
-        setTeacher(record);
-        try {
-          const [allExams, { students }] = await Promise.all([
-            listExams(),
-            classRosterForTeacher(record.id),
-          ]);
-          if (cancelled) return;
-          setExams(allExams);
-          setRoster(students);
-        } catch (err) {
-          if (!cancelled) setError(errorMessage(err));
-        }
+    classRosterForTeacher(teacher.id)
+      .then(({ students }) => {
+        if (cancelled) return;
+        setRoster(students);
+        setRosterLoaded(true);
       })
-      .catch(() => {
-        if (!cancelled) setTeacher(null);
+      .catch((err) => {
+        if (cancelled) return;
+        setError(errorMessage(err));
+        setRosterLoaded(true);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const myExams: ExamRecord[] = (exams ?? [])
-    .filter((e) => e.teacherId === teacher?.id)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  }, [teacher, setError]);
 
   const selectedExam = myExams.find((e) => e.id === selectedExamId);
 
@@ -103,7 +89,7 @@ export default function GradesPage() {
     );
   }
 
-  if (teacher === undefined || exams === null) {
+  if (teacher === undefined || exams === null || !rosterLoaded) {
     return <DataLoading label="Loading grades…" />;
   }
 
@@ -135,7 +121,13 @@ export default function GradesPage() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold">Grades</h2>
+        <div>
+          <h3 className="text-lg font-semibold">Exam Score</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick an exam, then enter each student's score. Blank fields clear the
+            grade.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <Select
             value={selectedExamId}
@@ -147,7 +139,8 @@ export default function GradesPage() {
             <SelectContent>
               {myExams.map((exam) => (
                 <SelectItem key={exam.id} value={exam.id}>
-                  {exam.title} — {exam.date}
+                  {exam.title}
+                  {exam.semester ? ` — ${exam.semester}` : ""} — {exam.date}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -167,7 +160,8 @@ export default function GradesPage() {
           <CardContent className="py-8 text-center">
             <p className="text-sm font-medium">No exams to grade yet</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Create an exam on the Exams page first, then record grades here.
+              Create an exam on the Create Exam page first, then record grades
+              here.
             </p>
           </CardContent>
         </Card>

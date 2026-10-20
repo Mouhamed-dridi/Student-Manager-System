@@ -21,3 +21,13 @@ export interface GradeRecord {
   studentId: string;
   score: number;
 }
+
+/** Fixed Type choices offered by the exam form (custom values still allowed). */
+export const EXAM_TYPE_OPTIONS = ["TD", "TP", "EXAM PRINCIPAL", "DS"];
+
+/** Fixed Duration choices offered by the exam form (custom values allowed). */
+export const EXAM_DURATION_OPTIONS = ["30 min", "1h", "1.5h", "2h"];
+
+/** The only Semester values the form writes (exams.semester is plain text). */
+export const EXAM_SEMESTER_OPTIONS = ["Semester 1", "Semester 2"];
+
