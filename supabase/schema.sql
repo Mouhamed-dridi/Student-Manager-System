@@ -375,6 +375,8 @@ alter table public.events
 --   university-logo -> the university logo uploaded in Settings > General and
 --                       rendered on the login card; only the public URL is
 --                       stored in the settings table (key 'logo_url').
+--   exam         -> PDF attachments for exams (teacher Exams & Notes page);
+--                       exams.attachment_url stores the public URL.
 --
 -- The buckets must exist before uploads succeed; paste this block into the SQL
 -- Editor (it is idempotent). The public URL returned by the app embeds the
@@ -396,7 +398,8 @@ values
   ('cours-PDF', 'cours-PDF', true),
   ('cours-videos', 'cours-videos', true),
   ('event-covers', 'event-covers', true),
-  ('university-logo', 'university-logo', true)
+  ('university-logo', 'university-logo', true),
+  ('exam', 'exam', true)
 on conflict (id) do update set public = excluded.public;
 
 -- Policies are generated per bucket so each one is scoped to a single bucket_id.
@@ -405,7 +408,7 @@ do $$
 declare
   b text;
 begin
-  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers', 'university-logo'] loop
+  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers', 'university-logo', 'exam'] loop
     execute format('drop policy if exists %I on storage.objects', b || ' read anon');
     execute format(
       'create policy %I on storage.objects for select to anon using (bucket_id = %L)',
@@ -443,8 +446,14 @@ create table if not exists public.exams (
   duration text,
   course text,
   file_name text,
+  attachment_url text,
   created_at timestamptz not null default now()
 );
+
+-- Exam attachments were added after the table shipped: keep existing live
+-- databases in sync (CREATE TABLE IF NOT EXISTS will not add the column).
+alter table public.exams
+  add column if not exists attachment_url text;
 
 create table if not exists public.grades (
   id uuid primary key default gen_random_uuid(),

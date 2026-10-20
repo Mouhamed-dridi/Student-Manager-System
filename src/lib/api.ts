@@ -2470,6 +2470,7 @@ interface ExamRow {
   type: string | null;
   duration: string | null;
   file_name: string | null;
+  attachment_url?: string | null;
 }
 
 function examFromRow(row: ExamRow): ExamRecord {
@@ -2483,7 +2484,74 @@ function examFromRow(row: ExamRow): ExamRecord {
     type: row.type ?? undefined,
     duration: row.duration ?? undefined,
     attachment: row.file_name ?? undefined,
+    attachmentUrl: row.attachment_url ?? undefined,
   };
+}
+
+// ------------------------------------------------------- exam attachments
+// Attachments live in the public `exam` Storage bucket; exams.attachment_url
+// holds the public URL. Both are newer than the table, so probe once and fail
+// with a migration hint instead of a raw PostgREST/Storage error.
+
+const EXAM_ATTACHMENT_BUCKET = "exam"; // bucket ids are lower-case and case-sensitive
+const EXAM_UPLOAD_TIMEOUT_MS = 15_000;
+const EXAM_UPLOAD_TIMEOUT_MESSAGE =
+  "Uploading the exam PDF took longer than 15 seconds. Check your connection and try again.";
+const EXAM_ATTACHMENT_MISSING =
+  "Exam attachments are not set up yet. Run supabase/exam-attachment-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let examAttachmentColumnPromise: Promise<boolean> | null = null;
+
+function hasExamAttachmentColumn(): Promise<boolean> {
+  if (!examAttachmentColumnPromise) {
+    examAttachmentColumnPromise = hasColumn("exams", "attachment_url");
+  }
+  return examAttachmentColumnPromise;
+}
+
+/** Uploads an exam PDF to the public `exam` bucket and returns its URL. */
+export async function uploadExamAttachment(
+  file: File,
+  teacherId: string,
+): Promise<string> {
+  if (!(await hasExamAttachmentColumn())) {
+    throw new Error(EXAM_ATTACHMENT_MISSING);
+  }
+
+  // "Résumé final (v2).pdf" -> "1700000000000-R_sum_final_v2.pdf".
+  const safe =
+    file.name
+      .replace(/\s+/g, "_")
+      .replace(/[^a-zA-Z0-9._-]/g, "")
+      .replace(/^[._-]+|[._-]+$/g, "") || "attachment.pdf";
+  const filePath = `teacher-${teacherId}/${Date.now()}-${safe}`;
+
+  try {
+    const { error } = await withTimeout(
+      supabase.storage.from(EXAM_ATTACHMENT_BUCKET).upload(filePath, file, {
+        cacheControl: "3600",
+        contentType: file.type || "application/pdf",
+        upsert: true,
+      }),
+      EXAM_UPLOAD_TIMEOUT_MS,
+    );
+    if (error) {
+      throw new Error(
+        `Exam attachment upload failed: ${error.message}. ` +
+          `Make sure the public "exam" bucket exists (run supabase/exam-attachment-migration.sql).`,
+      );
+    }
+  } catch (error) {
+    // withTimeout rejects with a generic message; make the upload case explicit.
+    if (error instanceof Error && /timed out/i.test(error.message)) {
+      throw new Error(EXAM_UPLOAD_TIMEOUT_MESSAGE);
+    }
+    throw error;
+  }
+
+  return supabase.storage
+    .from(EXAM_ATTACHMENT_BUCKET)
+    .getPublicUrl(filePath).data.publicUrl;
 }
 
 export async function listExams(): Promise<ExamRecord[]> {
@@ -2491,6 +2559,14 @@ export async function listExams(): Promise<ExamRecord[]> {
 }
 
 export async function upsertExam(exam: ExamRecord): Promise<void> {
+  let attachmentUrl: string | undefined;
+  if (exam.attachmentUrl !== undefined) {
+    if (!(await hasExamAttachmentColumn())) {
+      throw new Error(EXAM_ATTACHMENT_MISSING);
+    }
+    attachmentUrl = exam.attachmentUrl;
+  }
+
   const { error } = await withTimeout(
     supabase
       .from("exams")
@@ -2505,6 +2581,11 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
           type: exam.type ?? null,
           duration: exam.duration ?? null,
           file_name: exam.attachment ?? null,
+          // Omitted on databases that have not run the migration yet, so
+          // exam saves without an attachment keep working there.
+          ...(attachmentUrl !== undefined
+            ? { attachment_url: attachmentUrl }
+            : {}),
         },
         { onConflict: "id" },
       ),

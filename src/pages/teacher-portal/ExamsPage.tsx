@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Download, Eye, Loader2, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +35,7 @@ import {
   deleteExamCascade,
   errorMessage,
   listExams,
+  uploadExamAttachment,
   upsertExam,
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
@@ -44,6 +45,30 @@ import { loadCurrentTeacher } from "./currentTeacher";
 const TYPE_OPTIONS = ["TD", "TP", "EXAM PRINCIPAL", "DS"];
 const DURATION_OPTIONS = ["30 min", "1h", "1.5h", "2h"];
 const OTHER_OPTION = "__other";
+
+/** Supabase serves `?download=<name>` as an attachment instead of inline. */
+function attachmentDownloadUrl(url: string, name?: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("download", name?.trim() || "exam-attachment");
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function openAttachment(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function downloadAttachment(url: string, name?: string) {
+  const link = document.createElement("a");
+  link.href = attachmentDownloadUrl(url, name);
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
 
 function splitChoice(value: string | undefined, options: string[]) {
   if (value && !options.includes(value)) {
@@ -58,19 +83,30 @@ interface ExamFormData {
   date: string;
   type?: string;
   duration?: string;
+  /** File name shown in the table (exam.attachment). */
   attachment?: string;
+  /** Newly picked file, uploaded by the page before the exam is saved. */
+  attachmentFile?: File;
 }
 
 interface ExamFormProps {
   initialData?: ExamRecord;
-  onSubmit: (data: ExamFormData) => void;
+  onSubmit: (data: ExamFormData) => Promise<void> | void;
   onCancel: () => void;
+  uploading: boolean;
 }
 
-function ExamForm({ initialData, onSubmit, onCancel }: ExamFormProps) {
+function ExamForm({
+  initialData,
+  onSubmit,
+  onCancel,
+  uploading,
+}: ExamFormProps) {
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [date, setDate] = useState(initialData?.date ?? "");
   const [attachment, setAttachment] = useState(initialData?.attachment ?? "");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
   const [typeState, setTypeState] = useState(() =>
     splitChoice(initialData?.type, TYPE_OPTIONS),
   );
@@ -174,31 +210,55 @@ function ExamForm({ initialData, onSubmit, onCancel }: ExamFormProps) {
         ) : null}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="exam-file">Attachment</Label>
+        <Label htmlFor="exam-file">Attachment (PDF)</Label>
         <Input
           id="exam-file"
           type="file"
-          onChange={(e) => setAttachment(e.target.files?.[0]?.name ?? "")}
+          accept=".pdf,application/pdf"
+          disabled={saving}
+          onChange={(e) => {
+            const picked = e.target.files?.[0] ?? null;
+            setAttachmentFile(picked);
+            setAttachment(picked?.name ?? "");
+          }}
         />
         {attachment ? (
-          <p className="text-xs text-muted-foreground">Selected file: {attachment}</p>
+          <p className="text-xs text-muted-foreground">
+            Selected file: {attachment}
+          </p>
         ) : null}
       </div>
       <div className="flex gap-2">
         <Button
-          disabled={!valid}
-          onClick={() =>
-            onSubmit({
-              id: initialData?.id ?? crypto.randomUUID(),
-              title: title.trim(),
-              date,
-              type: typeValue || undefined,
-              duration: durationValue || undefined,
-              attachment: attachment || undefined,
-            })
-          }
+          disabled={!valid || saving}
+          onClick={async () => {
+            if (!valid || saving) return;
+            setSaving(true);
+            try {
+              await onSubmit({
+                id: initialData?.id ?? crypto.randomUUID(),
+                title: title.trim(),
+                date,
+                type: typeValue || undefined,
+                duration: durationValue || undefined,
+                attachment: attachment || undefined,
+                attachmentFile: attachmentFile ?? undefined,
+              });
+            } finally {
+              setSaving(false);
+            }
+          }}
         >
-          {initialData ? "Save Changes" : "Add Exam"}
+          {saving ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {uploading ? "Uploading…" : "Saving…"}
+            </span>
+          ) : initialData ? (
+            "Save Changes"
+          ) : (
+            "Add Exam"
+          )}
         </Button>
         {initialData ? (
           <Button variant="outline" onClick={onCancel}>
@@ -218,6 +278,11 @@ export default function ExamsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ExamRecord | null>(null);
   const [gradeCount, setGradeCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  // Bumped after a successful save so the "new exam" form (whose key would
+  // otherwise stay "new") remounts with an empty title/file instead of
+  // resubmitting the previous selection.
+  const [formVersion, setFormVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,23 +351,40 @@ export default function ExamsPage() {
   };
 
   const handleSubmit = async (data: ExamFormData) => {
+    const { attachmentFile, ...fields } = data;
     try {
       setError(null);
+      // Upload first: if Storage or the schema blocks it, the exam is not saved.
+      let attachmentUrl: string | undefined;
+      if (attachmentFile) {
+        setUploading(true);
+        try {
+          attachmentUrl = await uploadExamAttachment(attachmentFile, teacher.id);
+        } finally {
+          setUploading(false);
+        }
+      }
       const existing = exams.find((e) => e.id === data.id);
       if (existing) {
         // Edits keep the exam's original scope, including its program and
-        // training snapshots.
-        await upsertExam({ ...existing, ...data });
+        // training snapshots, and its previous URL when no new file was picked.
+        await upsertExam({
+          ...existing,
+          ...fields,
+          ...(attachmentUrl ? { attachmentUrl } : {}),
+        });
       } else {
         await upsertExam({
-          ...data,
+          ...fields,
           teacherId: teacher.id,
           program: "",
           training: "",
+          ...(attachmentUrl ? { attachmentUrl } : {}),
         });
       }
       setEditing(null);
       await refreshExams();
+      setFormVersion((version) => version + 1);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -338,10 +420,11 @@ export default function ExamsPage() {
           </div>
         )}
         <ExamForm
-          key={editing?.id ?? "new"}
+          key={editing?.id ?? `new-${formVersion}`}
           initialData={editing ?? undefined}
           onSubmit={handleSubmit}
           onCancel={() => setEditing(null)}
+          uploading={uploading}
         />
       </div>
 
@@ -376,8 +459,46 @@ export default function ExamsPage() {
                   <TableCell>{exam.type || "—"}</TableCell>
                   <TableCell>{exam.duration || "—"}</TableCell>
                   <TableCell>{exam.date}</TableCell>
-                  <TableCell className="max-w-xs truncate text-muted-foreground">
-                    {exam.attachment || "—"}
+                  <TableCell className="max-w-xs">
+                    {exam.attachment ? (
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="min-w-0 truncate text-muted-foreground"
+                          title={exam.attachment}
+                        >
+                          {exam.attachment}
+                        </span>
+                        {exam.attachmentUrl ? (
+                          <span className="flex shrink-0 items-center">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`View ${exam.attachment}`}
+                              title="View"
+                              onClick={() => openAttachment(exam.attachmentUrl!)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Download ${exam.attachment}`}
+                              title="Download"
+                              onClick={() =>
+                                downloadAttachment(
+                                  exam.attachmentUrl!,
+                                  exam.attachment,
+                                )
+                              }
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell>
                     <span className="flex items-center justify-end gap-2">
