@@ -2469,6 +2469,7 @@ interface ExamRow {
   date: string;
   type: string | null;
   duration: string | null;
+  semester?: string | null;
   file_name: string | null;
   attachment_url?: string | null;
 }
@@ -2483,6 +2484,7 @@ function examFromRow(row: ExamRow): ExamRecord {
     date: row.date,
     type: row.type ?? undefined,
     duration: row.duration ?? undefined,
+    semester: row.semester ?? undefined,
     attachment: row.file_name ?? undefined,
     attachmentUrl: row.attachment_url ?? undefined,
   };
@@ -2558,6 +2560,21 @@ export async function listExams(): Promise<ExamRecord[]> {
   return (await rows<ExamRow>("exams")).map(examFromRow);
 }
 
+// `semester` was added after the table shipped. Reading is safe (`rows` uses
+// select *), but PostgREST rejects an unknown column in a write, so probe once
+// and fail with a migration hint instead of a raw schema error.
+const EXAM_SEMESTER_MISSING =
+  "The exam semester field is not set up yet. Run supabase/exams-semester-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let examSemesterColumnPromise: Promise<boolean> | null = null;
+
+function hasExamSemesterColumn(): Promise<boolean> {
+  if (!examSemesterColumnPromise) {
+    examSemesterColumnPromise = hasColumn("exams", "semester");
+  }
+  return examSemesterColumnPromise;
+}
+
 export async function upsertExam(exam: ExamRecord): Promise<void> {
   let attachmentUrl: string | undefined;
   if (exam.attachmentUrl !== undefined) {
@@ -2565,6 +2582,12 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
       throw new Error(EXAM_ATTACHMENT_MISSING);
     }
     attachmentUrl = exam.attachmentUrl;
+  }
+
+  // Omitted on databases that have not run the migration yet, so saves that
+  // do not touch the semester keep working there.
+  if (exam.semester !== undefined && !(await hasExamSemesterColumn())) {
+    throw new Error(EXAM_SEMESTER_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -2580,6 +2603,7 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
           date: exam.date,
           type: exam.type ?? null,
           duration: exam.duration ?? null,
+          ...(exam.semester !== undefined ? { semester: exam.semester } : {}),
           file_name: exam.attachment ?? null,
           // Omitted on databases that have not run the migration yet, so
           // exam saves without an attachment keep working there.

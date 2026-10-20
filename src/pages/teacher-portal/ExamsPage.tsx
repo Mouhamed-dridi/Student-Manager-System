@@ -44,6 +44,7 @@ import { loadCurrentTeacher } from "./currentTeacher";
 
 const TYPE_OPTIONS = ["TD", "TP", "EXAM PRINCIPAL", "DS"];
 const DURATION_OPTIONS = ["30 min", "1h", "1.5h", "2h"];
+const SEMESTER_OPTIONS = ["Semester 1", "Semester 2"];
 const OTHER_OPTION = "__other";
 
 /** Supabase serves `?download=<name>` as an attachment instead of inline. */
@@ -83,6 +84,7 @@ interface ExamFormData {
   date: string;
   type?: string;
   duration?: string;
+  semester?: string;
   /** File name shown in the table (exam.attachment). */
   attachment?: string;
   /** Newly picked file, uploaded by the page before the exam is saved. */
@@ -113,6 +115,7 @@ function ExamForm({
   const [durationState, setDurationState] = useState(() =>
     splitChoice(initialData?.duration, DURATION_OPTIONS),
   );
+  const [semester, setSemester] = useState(initialData?.semester ?? "");
 
   const typeValue =
     typeState.choice === OTHER_OPTION ? typeState.custom.trim() : typeState.choice;
@@ -122,7 +125,11 @@ function ExamForm({
       : durationState.choice;
 
   const valid =
-    title.trim() !== "" && date !== "" && typeValue !== "" && durationValue !== "";
+    title.trim() !== "" &&
+    date !== "" &&
+    typeValue !== "" &&
+    durationValue !== "" &&
+    semester !== "";
 
   return (
     <div className="max-w-xl space-y-4">
@@ -165,6 +172,24 @@ function ExamForm({
             }
           />
         ) : null}
+      </div>
+      <div className="space-y-2">
+        <Label>Semester</Label>
+        <Select
+          value={semester}
+          onValueChange={(value) => setSemester(value ?? "")}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select semester" />
+          </SelectTrigger>
+          <SelectContent>
+            {SEMESTER_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <div className="space-y-2">
         <Label htmlFor="exam-date">Date</Label>
@@ -241,6 +266,7 @@ function ExamForm({
                 date,
                 type: typeValue || undefined,
                 duration: durationValue || undefined,
+                semester: semester || undefined,
                 attachment: attachment || undefined,
                 attachmentFile: attachmentFile ?? undefined,
               });
@@ -409,8 +435,8 @@ export default function ExamsPage() {
         {editing ? "Edit Exam" : "Add Exam"}
       </h3>
       <p className="mt-1 text-sm text-muted-foreground">
-        Create exams for your classes. Choose a type, set the date and duration,
-        and attach a file if needed.
+        Create exams for your classes. Choose a type, semester, set the date and
+        duration, and attach a file if needed.
       </p>
 
       <div className="mt-4">
@@ -446,6 +472,7 @@ export default function ExamsPage() {
               <TableRow>
                 <TableHead>Title</TableHead>
                 <TableHead>Type</TableHead>
+                <TableHead>Semester</TableHead>
                 <TableHead>Duration</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>File</TableHead>
@@ -457,6 +484,7 @@ export default function ExamsPage() {
                 <TableRow key={exam.id}>
                   <TableCell className="font-medium">{exam.title}</TableCell>
                   <TableCell>{exam.type || "—"}</TableCell>
+                  <TableCell>{exam.semester || "—"}</TableCell>
                   <TableCell>{exam.duration || "—"}</TableCell>
                   <TableCell>{exam.date}</TableCell>
                   <TableCell className="max-w-xs">

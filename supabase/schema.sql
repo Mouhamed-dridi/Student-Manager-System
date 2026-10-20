@@ -444,16 +444,19 @@ create table if not exists public.exams (
   date date,
   type text,
   duration text,
+  semester text,
   course text,
   file_name text,
   attachment_url text,
   created_at timestamptz not null default now()
 );
 
--- Exam attachments were added after the table shipped: keep existing live
--- databases in sync (CREATE TABLE IF NOT EXISTS will not add the column).
+-- Exam attachments and the semester were added after the table shipped: keep
+-- existing live databases in sync (CREATE TABLE IF NOT EXISTS will not add
+-- the columns). `semester` is plain text ('Semester 1' | 'Semester 2').
 alter table public.exams
-  add column if not exists attachment_url text;
+  add column if not exists attachment_url text,
+  add column if not exists semester text;
 
 create table if not exists public.grades (
   id uuid primary key default gen_random_uuid(),

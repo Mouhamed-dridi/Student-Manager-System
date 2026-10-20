@@ -7,6 +7,8 @@ export interface ExamRecord {
   date: string; // yyyy-mm-dd
   type?: string;
   duration?: string;
+  /** 'Semester 1' | 'Semester 2' (exams.semester). */
+  semester?: string;
   /** Display name of the attached PDF (exams.file_name). */
   attachment?: string;
   /** Public URL of the attached PDF (exams.attachment_url). */
