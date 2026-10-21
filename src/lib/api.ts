@@ -3185,6 +3185,8 @@ interface PlanningRow {
   date: string;
   course: string | null;
   topic: string | null;
+  class_name?: string | null;
+  session_time?: string | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -3193,6 +3195,8 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
     teacherId: row.teacher_id,
     date: row.date,
     course: row.course ?? undefined,
+    className: row.class_name ?? undefined,
+    sessionTime: row.session_time ?? undefined,
     content: row.topic ?? "",
   };
 }
@@ -3201,7 +3205,37 @@ export async function listPlanning(): Promise<PlanningRecord[]> {
   return (await rows<PlanningRow>("planning")).map(planningFromRow);
 }
 
+// `class_name` and `session_time` were added after the table shipped. Reading
+// is safe (`rows` uses select *), but PostgREST rejects an unknown column in a
+// write, so probe once and fail with a migration hint instead of a raw schema
+// error. Both columns are added together by the same migration.
+const PLANNING_CLASS_TIME_MISSING =
+  "The planning class and time fields are not set up yet. Run supabase/planning-class-time-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningClassTimeColumnsPromise: Promise<boolean> | null = null;
+
+function hasPlanningClassTimeColumns(): Promise<boolean> {
+  if (!planningClassTimeColumnsPromise) {
+    planningClassTimeColumnsPromise = (async () => {
+      const [className, sessionTime] = await Promise.all([
+        hasColumn("planning", "class_name"),
+        hasColumn("planning", "session_time"),
+      ]);
+      return className && sessionTime;
+    })();
+  }
+  return planningClassTimeColumnsPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
+  const supportsClassTime = await hasPlanningClassTimeColumns();
+  if (
+    !supportsClassTime &&
+    (record.className !== undefined || record.sessionTime !== undefined)
+  ) {
+    throw new Error(PLANNING_CLASS_TIME_MISSING);
+  }
+
   const { error } = await withTimeout(
     supabase.from("planning").insert({
       id: record.id,
@@ -3209,6 +3243,14 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
       date: record.date,
       course: record.course ?? null,
       topic: record.content,
+      // Omitted on databases that have not run the migration yet, so entries
+      // without class/time keep saving there.
+      ...(supportsClassTime
+        ? {
+            class_name: record.className ?? null,
+            session_time: record.sessionTime ?? null,
+          }
+        : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -3216,12 +3258,33 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
 
 export async function updatePlanning(
   id: string,
-  values: Pick<PlanningRecord, "course" | "content">,
+  values: Pick<
+    PlanningRecord,
+    "course" | "className" | "sessionTime" | "content"
+  >,
 ): Promise<void> {
+  const supportsClassTime = await hasPlanningClassTimeColumns();
+  if (
+    !supportsClassTime &&
+    (values.className !== undefined || values.sessionTime !== undefined)
+  ) {
+    throw new Error(PLANNING_CLASS_TIME_MISSING);
+  }
+
   const { error } = await withTimeout(
     supabase
       .from("planning")
-      .update({ course: values.course ?? null, topic: values.content })
+      .update({
+        course: values.course ?? null,
+        topic: values.content,
+        // Null when a field was cleared, so editing can remove a class/time.
+        ...(supportsClassTime
+          ? {
+              class_name: values.className ?? null,
+              session_time: values.sessionTime ?? null,
+            }
+          : {}),
+      })
       .eq("id", id),
   );
   if (error) throw new Error(error.message);

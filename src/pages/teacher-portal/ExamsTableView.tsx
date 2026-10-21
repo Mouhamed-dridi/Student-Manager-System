@@ -314,47 +314,47 @@ export default function ExamsTableView() {
                     <TableCell>{exam.date}</TableCell>
                     <TableCell className="max-w-xs">
                       {exam.attachment ? (
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className="min-w-0 truncate text-muted-foreground"
-                            title={exam.attachment}
-                          >
-                            {exam.attachment}
-                          </span>
-                          {exam.attachmentUrl ? (
-                            <span className="flex shrink-0 items-center">
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`View ${exam.attachment}`}
-                                title="View"
-                                onClick={() => openAttachment(exam.attachmentUrl!)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Download ${exam.attachment}`}
-                                title="Download"
-                                onClick={() =>
-                                  downloadAttachment(
-                                    exam.attachmentUrl!,
-                                    exam.attachment,
-                                  )
-                                }
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                            </span>
-                          ) : null}
-                        </div>
+                        <span
+                          className="block truncate text-muted-foreground"
+                          title={exam.attachment}
+                        >
+                          {exam.attachment}
+                        </span>
                       ) : (
                         "—"
                       )}
                     </TableCell>
                     <TableCell>
                       <span className="flex items-center justify-end gap-2">
+                        {exam.attachmentUrl ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Preview ${exam.attachment ?? "attachment"}`}
+                              title="Preview"
+                              onClick={() =>
+                                openAttachment(exam.attachmentUrl!)
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Download ${exam.attachment ?? "attachment"}`}
+                              title="Download"
+                              onClick={() =>
+                                downloadAttachment(
+                                  exam.attachmentUrl!,
+                                  exam.attachment,
+                                )
+                              }
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : null}
                         <Button
                           variant="outline"
                           size="sm"
@@ -366,6 +366,7 @@ export default function ExamsTableView() {
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Delete ${exam.title}`}
+                          title="Delete"
                           onClick={() => setDeleteTarget(exam)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />

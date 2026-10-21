@@ -481,6 +481,8 @@ create table if not exists public.publications (
 
 -- ---------------------------------------------------------------- planning -
 -- Lesson log: one entry per session; 'topic' holds what was covered.
+-- class_name is the group/section the session was taught to, session_time the
+-- display window ("08:30 - 10:00"). Both are optional plain text.
 
 create table if not exists public.planning (
   id uuid primary key default gen_random_uuid(),
@@ -488,6 +490,8 @@ create table if not exists public.planning (
   date date not null,
   course text,
   topic text,
+  class_name text,
+  session_time text,
   created_at timestamptz not null default now()
 );
 

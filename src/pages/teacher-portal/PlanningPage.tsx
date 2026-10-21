@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  Clock,
   FileSpreadsheet,
   FileText,
   Pencil,
   Plus,
   Trash2,
+  Users,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -29,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -45,6 +48,7 @@ import {
   insertPlanning,
   listPlanning,
   listTeacherCourses,
+  teacherCourseAssignment,
   updatePlanning,
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
@@ -53,9 +57,56 @@ import { loadCurrentTeacher } from "./currentTeacher";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-async function courseNameOptions(teacherId: string): Promise<string[]> {
-  const all = await listTeacherCourses({ teacherId });
-  return [...new Set(all.map((c) => c.name))];
+interface PlanningOptions {
+  courses: string[];
+  classes: string[];
+}
+
+function classLabel(program: string, training: string): string {
+  return [program, training].filter(Boolean).join(" · ");
+}
+
+/**
+ * Course and class choices for the entry form. Classes come from the teacher's
+ * own courses, with the profile assignment added so a teacher who has no
+ * courses yet can still log a session for their class.
+ */
+async function planningOptions(teacherId: string): Promise<PlanningOptions> {
+  const [all, assignment] = await Promise.all([
+    listTeacherCourses({ teacherId }),
+    teacherCourseAssignment(teacherId),
+  ]);
+  const classes = new Set<string>();
+  for (const course of all) {
+    const label = classLabel(course.program, course.training);
+    if (label) classes.add(label);
+  }
+  const assigned = classLabel(assignment.program, assignment.training);
+  if (assigned) classes.add(assigned);
+  return {
+    courses: [...new Set(all.map((c) => c.name))],
+    classes: [...classes].sort((a, b) => a.localeCompare(b)),
+  };
+}
+
+function normalizeClock(value: string): string {
+  const match = value.match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+}
+
+/** Splits a stored "08:30 - 10:00" back into two time inputs. */
+function parseSessionTime(value?: string): { start: string; end: string } {
+  const range = value?.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+  if (range) {
+    return { start: normalizeClock(range[1]), end: normalizeClock(range[2]) };
+  }
+  const single = value?.match(/(\d{1,2}:\d{2})/);
+  return { start: single ? normalizeClock(single[1]) : "", end: "" };
+}
+
+function formatSessionTime(start: string, end: string): string | undefined {
+  if (start && end) return `${start} - ${end}`;
+  return start || end || undefined;
 }
 
 function pad2(n: number): string {
@@ -72,14 +123,19 @@ function startOfWeek(date: Date): Date {
   return d;
 }
 
+const NO_CLASS = "__none";
+
 interface EntryFormValues {
   course?: string;
+  className?: string;
+  sessionTime?: string;
   content: string;
 }
 
 interface EntryFormProps {
   initial?: PlanningRecord;
   courses: string[];
+  classes: string[];
   submitLabel: string;
   showCancel: boolean;
   onSubmit: (values: EntryFormValues) => void;
@@ -89,18 +145,53 @@ interface EntryFormProps {
 function EntryForm({
   initial,
   courses,
+  classes,
   submitLabel,
   showCancel,
   onSubmit,
   onCancel,
 }: EntryFormProps) {
   const [course, setCourse] = useState(initial?.course ?? "");
+  // A teacher with a single assigned class gets it prefilled; otherwise the
+  // field stays blank until they pick one.
+  const [className, setClassName] = useState(
+    initial?.className ?? (classes.length === 1 ? classes[0] : ""),
+  );
+  const initialTime = parseSessionTime(initial?.sessionTime);
+  const [startTime, setStartTime] = useState(initialTime.start);
+  const [endTime, setEndTime] = useState(initialTime.end);
   const [content, setContent] = useState(initial?.content ?? "");
 
-  const valid = content.trim() !== "";
+  const timeInvalid = Boolean(startTime && endTime && endTime < startTime);
+  const valid = content.trim() !== "" && !timeInvalid;
 
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Class</Label>
+        <Select
+          value={className || NO_CLASS}
+          onValueChange={(value) =>
+            setClassName(value === NO_CLASS ? "" : (value ?? ""))
+          }
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue
+              placeholder={
+                classes.length > 0 ? "Select class" : "No class assigned"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_CLASS}>No class</SelectItem>
+            {classes.map((c) => (
+              <SelectItem key={c} value={c}>
+                {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <div className="space-y-2">
         <Label>Course</Label>
         <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
@@ -119,6 +210,37 @@ function EntryForm({
             ))}
           </SelectContent>
         </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="log-start-time">Time</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="log-start-time"
+            type="time"
+            className="w-32"
+            aria-label="Session start time"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+          <span className="text-sm text-muted-foreground">to</span>
+          <Input
+            id="log-end-time"
+            type="time"
+            className="w-32"
+            aria-label="Session end time"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </div>
+        {timeInvalid ? (
+          <p className="text-xs text-destructive">
+            End time must be after the start time.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Optional. Fill both sides for a time range such as 08:30 - 10:00.
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="log-content">Topic / Content Covered</Label>
@@ -140,7 +262,12 @@ function EntryForm({
           size="sm"
           disabled={!valid}
           onClick={() =>
-            onSubmit({ course: course || undefined, content: content.trim() })
+            onSubmit({
+              course: course || undefined,
+              className: className || undefined,
+              sessionTime: formatSessionTime(startTime, endTime),
+              content: content.trim(),
+            })
           }
         >
           {submitLabel}
@@ -154,6 +281,7 @@ interface DayDialogProps {
   date: string;
   entries: PlanningRecord[];
   courses: string[];
+  classes: string[];
   onSave: (values: EntryFormValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
@@ -163,6 +291,7 @@ function DayDialog({
   date,
   entries,
   courses,
+  classes,
   onSave,
   onDeleteRequest,
   onClose,
@@ -194,6 +323,7 @@ function DayDialog({
             key={editingId ?? "new"}
             initial={editing ?? undefined}
             courses={courses}
+            classes={classes}
             submitLabel={editingId ? "Save Changes" : "Add Entry"}
             showCancel={!!editingId}
             onSubmit={(values) => onSave(values, editingId)}
@@ -207,10 +337,28 @@ function DayDialog({
             <ul className="space-y-2">
               {entries.map((e) => (
                 <li key={e.id} className="rounded-md border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">
-                      {e.course || "—"}
-                    </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {e.course || "—"}
+                      </p>
+                      {(e.sessionTime || e.className) && (
+                        <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                          {e.sessionTime && (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {e.sessionTime}
+                            </span>
+                          )}
+                          {e.className && (
+                            <span className="inline-flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              {e.className}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
                     <span className="flex shrink-0 gap-1">
                       <Button
                         variant="outline"
@@ -263,6 +411,7 @@ export default function PlanningPage() {
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const [entries, setEntries] = useState<PlanningRecord[] | null>(null);
   const [courses, setCourses] = useState<string[]>([]);
+  const [classes, setClasses] = useState<string[]>([]);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
   const [openDate, setOpenDate] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
@@ -278,13 +427,14 @@ export default function PlanningPage() {
         }
         setTeacher(record);
         try {
-          const [all, courseNames] = await Promise.all([
+          const [all, options] = await Promise.all([
             listPlanning(),
-            courseNameOptions(record.id),
+            planningOptions(record.id),
           ]);
           if (cancelled) return;
           setEntries(all);
-          setCourses(courseNames);
+          setCourses(options.courses);
+          setClasses(options.classes);
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -321,12 +471,13 @@ export default function PlanningPage() {
   const refresh = async () => {
     try {
       setError(null);
-      const [all, courseNames] = await Promise.all([
+      const [all, options] = await Promise.all([
         listPlanning(),
-        courseNameOptions(teacher.id),
+        planningOptions(teacher.id),
       ]);
       setEntries(all);
-      setCourses(courseNames);
+      setCourses(options.courses);
+      setClasses(options.classes);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -344,7 +495,12 @@ export default function PlanningPage() {
 
   const weekEntries = myEntries
     .filter((p) => weekKeySet.has(p.date))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort(
+      (a, b) =>
+        a.date.localeCompare(b.date) ||
+        // Entries without a time sit after timed sessions in the same day.
+        (a.sessionTime ?? "99:99").localeCompare(b.sessionTime ?? "99:99"),
+    );
 
   const byDate = new Map<string, PlanningRecord[]>();
   for (const p of weekEntries) {
@@ -381,12 +537,19 @@ export default function PlanningPage() {
       ? `${shortFmt.format(weekStart)} – ${fullFmt.format(weekEnd)}`
       : `${fullFmt.format(weekStart)} – ${fullFmt.format(weekEnd)}`;
 
-  const exportRows = weekEntries.map((p) => [p.date, p.course ?? "", p.content]);
+  const exportHeaders = ["Date", "Time", "Class", "Course", "Topic covered"];
+  const exportRows = weekEntries.map((p) => [
+    p.date,
+    p.sessionTime ?? "",
+    p.className ?? "",
+    p.course ?? "",
+    p.content,
+  ]);
   const fileStem = `planning-${weekKeys[0]}`;
 
   const exportExcel = () => {
     const worksheet = XLSX.utils.aoa_to_sheet([
-      ["Date", "Course", "Topic covered"],
+      exportHeaders,
       ...exportRows,
     ]);
     const workbook = XLSX.utils.book_new();
@@ -400,10 +563,15 @@ export default function PlanningPage() {
     doc.text(`Planning — ${rangeLabel}`, 14, 16);
     autoTable(doc, {
       startY: 22,
-      head: [["Date", "Course", "Topic covered"]],
+      head: [exportHeaders],
       body: exportRows,
       styles: { fontSize: 9, cellPadding: 2 },
-      columnStyles: { 0: { cellWidth: 24 }, 1: { cellWidth: 50 } },
+      columnStyles: {
+        0: { cellWidth: 22 },
+        1: { cellWidth: 24 },
+        2: { cellWidth: 45 },
+        3: { cellWidth: 40 },
+      },
     });
     doc.save(`${fileStem}.pdf`);
   };
@@ -484,10 +652,22 @@ export default function PlanningPage() {
               </span>
               {dayEntries.map((e) => (
                 <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
+                  {e.sessionTime && (
+                    <span className="flex items-center gap-1 text-[10px] font-medium text-accent-foreground">
+                      <Clock className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{e.sessionTime}</span>
+                    </span>
+                  )}
+                  {e.className && (
+                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Users className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{e.className}</span>
+                    </span>
+                  )}
                   <span className="block truncate text-xs font-medium text-accent-foreground">
                     {e.course || "Logged session"}
                   </span>
-                  <span className="mt-0.5 line-clamp-3 block text-xs text-muted-foreground">
+                  <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
                     {e.content}
                   </span>
                 </span>
@@ -502,6 +682,7 @@ export default function PlanningPage() {
           date={openDate}
           entries={byDate.get(openDate) ?? []}
           courses={courses}
+          classes={classes}
           onSave={async (values, editingId) => {
             try {
               setError(null);
