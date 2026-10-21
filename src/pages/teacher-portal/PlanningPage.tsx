@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Clock,
   FileSpreadsheet,
   FileText,
+  LayoutGrid,
+  List,
   Pencil,
   Plus,
+  Search,
   Trash2,
   Users,
 } from "lucide-react";
@@ -52,10 +55,78 @@ import {
   updatePlanning,
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
+import { cn } from "@/lib/utils";
 import type { PlanningRecord } from "./planning";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+type PlanningView = "grid" | "list";
+type PlanningScope = "week" | "all";
+
+interface SegmentedOption<T extends string> {
+  value: T;
+  label: string;
+  icon?: ComponentType<{ className?: string }>;
+}
+
+interface SegmentedProps<T extends string> {
+  value: T;
+  onChange: (value: T) => void;
+  options: SegmentedOption<T>[];
+  label: string;
+  className?: string;
+}
+
+/** Small segmented control used for the view and scope switches. */
+function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  className,
+}: SegmentedProps<T>) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-lg bg-muted p-[3px]",
+        className,
+      )}
+    >
+      {options.map((option) => {
+        const active = option.value === value;
+        const Icon = option.icon;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground",
+              active && "bg-background text-foreground shadow-sm",
+            )}
+          >
+            {Icon ? <Icon className="h-4 w-4" /> : null}
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** "Tuesday, Oct 20" — the year is only added for the all-sessions list. */
+function dayHeading(dateKey: string, withYear: boolean): string {
+  return new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    ...(withYear ? { year: "numeric" } : {}),
+  });
+}
 
 interface PlanningOptions {
   courses: string[];
@@ -282,6 +353,8 @@ interface DayDialogProps {
   entries: PlanningRecord[];
   courses: string[];
   classes: string[];
+  /** Opens the dialog straight into the edit form for this entry. */
+  initialEditingId?: string;
   onSave: (values: EntryFormValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
@@ -292,12 +365,17 @@ function DayDialog({
   entries,
   courses,
   classes,
+  initialEditingId,
   onSave,
   onDeleteRequest,
   onClose,
 }: DayDialogProps) {
-  const [formOpen, setFormOpen] = useState(entries.length === 0);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(
+    entries.length === 0 || Boolean(initialEditingId),
+  );
+  const [editingId, setEditingId] = useState<string | null>(
+    initialEditingId ?? null,
+  );
 
   const editing = editingId
     ? (entries.find((e) => e.id === editingId) ?? null)
@@ -413,7 +491,13 @@ export default function PlanningPage() {
   const [courses, setCourses] = useState<string[]>([]);
   const [classes, setClasses] = useState<string[]>([]);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
-  const [openDate, setOpenDate] = useState<string | null>(null);
+  const [view, setView] = useState<PlanningView>("grid");
+  const [scope, setScope] = useState<PlanningScope>("week");
+  const [query, setQuery] = useState("");
+  const [dialog, setDialog] = useState<{
+    date: string;
+    editingId?: string;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -507,6 +591,51 @@ export default function PlanningPage() {
     const list = byDate.get(p.date) ?? [];
     list.push(p);
     byDate.set(p.date, list);
+  }
+
+  // Every entry of the open day (not only the viewed week) so the dialog can
+  // edit an entry reached through the all-sessions list.
+  const dialogEntries = dialog
+    ? myEntries
+        .filter((p) => p.date === dialog.date)
+        .sort((a, b) =>
+          (a.sessionTime ?? "99:99").localeCompare(b.sessionTime ?? "99:99"),
+        )
+    : [];
+
+  const todayKey = dateKeyOf(new Date());
+  // "+ Add Entry" targets today when it is visible; inside another week it
+  // falls back to that week's Monday so the new entry stays in view.
+  const addEntryDate =
+    scope === "week" && !weekKeySet.has(todayKey) ? weekKeys[0] : todayKey;
+
+  // Current week reads as an agenda (Mon → Sun); the full history reads newest
+  // first so recent sessions are on top.
+  const listSource =
+    scope === "week"
+      ? weekEntries
+      : [...myEntries].sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) ||
+            (a.sessionTime ?? "99:99").localeCompare(
+              b.sessionTime ?? "99:99",
+            ),
+        );
+
+  const searchTerm = query.trim().toLowerCase();
+  const listEntries = searchTerm
+    ? listSource.filter((p) =>
+        [p.course, p.className, p.content, p.date].some((field) =>
+          field?.toLowerCase().includes(searchTerm),
+        ),
+      )
+    : listSource;
+
+  const listGroups: { date: string; entries: PlanningRecord[] }[] = [];
+  for (const entry of listEntries) {
+    const group = listGroups[listGroups.length - 1];
+    if (group && group.date === entry.date) group.entries.push(entry);
+    else listGroups.push({ date: entry.date, entries: [entry] });
   }
 
   const stepWeek = (dir: 1 | -1) =>
@@ -605,6 +734,15 @@ export default function PlanningPage() {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
+        <Segmented
+          label="Planning view"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "grid", label: "Grid View", icon: LayoutGrid },
+            { value: "list", label: "Linear View", icon: List },
+          ]}
+        />
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -633,56 +771,180 @@ export default function PlanningPage() {
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-7 gap-2">
-        {weekDays.map((d, i) => {
-          const key = weekKeys[i];
-          const dayEntries = byDate.get(key) ?? [];
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setOpenDate(key)}
-              className="flex min-h-56 flex-col items-stretch gap-1.5 rounded-md border p-2 text-left transition-colors hover:bg-accent/50"
-            >
-              <span className="pb-1 text-center">
-                <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {WEEKDAYS[i]}
+      {view === "grid" ? (
+        <div className="mt-4 grid grid-cols-7 gap-2">
+          {weekDays.map((d, i) => {
+            const key = weekKeys[i];
+            const dayEntries = byDate.get(key) ?? [];
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDialog({ date: key })}
+                className="flex min-h-56 flex-col items-stretch gap-1.5 rounded-md border p-2 text-left transition-colors hover:bg-accent/50"
+              >
+                <span className="pb-1 text-center">
+                  <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {WEEKDAYS[i]}
+                  </span>
+                  <span className="text-base font-semibold">{d.getDate()}</span>
                 </span>
-                <span className="text-base font-semibold">{d.getDate()}</span>
+                {dayEntries.map((e) => (
+                  <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
+                    {e.sessionTime && (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-accent-foreground">
+                        <Clock className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{e.sessionTime}</span>
+                      </span>
+                    )}
+                    {e.className && (
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <Users className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{e.className}</span>
+                      </span>
+                    )}
+                    <span className="block truncate text-xs font-medium text-accent-foreground">
+                      {e.course || "Logged session"}
+                    </span>
+                    <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+                      {e.content}
+                    </span>
+                  </span>
+                ))}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-4 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Segmented
+                label="Linear view scope"
+                value={scope}
+                onChange={setScope}
+                options={[
+                  { value: "week", label: "Current Week" },
+                  { value: "all", label: "All Sessions" },
+                ]}
+              />
+              <span className="text-xs text-muted-foreground">
+                {listEntries.length}{" "}
+                {listEntries.length === 1 ? "session" : "sessions"}
               </span>
-              {dayEntries.map((e) => (
-                <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
-                  {e.sessionTime && (
-                    <span className="flex items-center gap-1 text-[10px] font-medium text-accent-foreground">
-                      <Clock className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{e.sessionTime}</span>
-                    </span>
-                  )}
-                  {e.className && (
-                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                      <Users className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{e.className}</span>
-                    </span>
-                  )}
-                  <span className="block truncate text-xs font-medium text-accent-foreground">
-                    {e.course || "Logged session"}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
-                    {e.content}
-                  </span>
-                </span>
-              ))}
-            </button>
-          );
-        })}
-      </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search course, class or topic…"
+                  aria-label="Search planning entries"
+                  className="w-64 pl-8"
+                />
+              </div>
+              <Button size="sm" onClick={() => setDialog({ date: addEntryDate })}>
+                <Plus className="h-4 w-4" />
+                Add Entry
+              </Button>
+            </div>
+          </div>
 
-      {openDate ? (
+          {listGroups.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              {searchTerm
+                ? "No sessions match your search."
+                : scope === "week"
+                  ? "No sessions logged this week."
+                  : "No sessions logged yet."}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {listGroups.map((group) => (
+                <section key={group.date} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDialog({ date: group.date })}
+                      className="text-sm font-semibold hover:underline"
+                      title="Add an entry to this day"
+                    >
+                      {dayHeading(group.date, scope === "all")}
+                    </button>
+                    <span className="text-xs text-muted-foreground">
+                      {group.entries.length}{" "}
+                      {group.entries.length === 1 ? "entry" : "entries"}
+                    </span>
+                  </div>
+                  <ul className="space-y-2">
+                    {group.entries.map((entry) => (
+                      <li key={entry.id} className="rounded-lg border p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {entry.sessionTime ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  {entry.sessionTime}
+                                </span>
+                              ) : null}
+                              <span className="text-sm font-medium">
+                                {entry.course || "Logged session"}
+                              </span>
+                            </div>
+                            {entry.className ? (
+                              <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Users className="h-3 w-3 shrink-0" />
+                                {entry.className}
+                              </p>
+                            ) : null}
+                            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                              {entry.content}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setDialog({
+                                  date: entry.date,
+                                  editingId: entry.id,
+                                })
+                              }
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Delete entry ${entry.course ?? ""}`.trim()}
+                              onClick={() => setDeleteTarget(entry)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {dialog ? (
         <DayDialog
-          date={openDate}
-          entries={byDate.get(openDate) ?? []}
+          key={`${dialog.date}:${dialog.editingId ?? "new"}`}
+          date={dialog.date}
+          entries={dialogEntries}
           courses={courses}
           classes={classes}
+          initialEditingId={dialog.editingId}
           onSave={async (values, editingId) => {
             try {
               setError(null);
@@ -695,19 +957,19 @@ export default function PlanningPage() {
                 await insertPlanning({
                   id: crypto.randomUUID(),
                   teacherId: teacher.id,
-                  date: openDate,
+                  date: dialog.date,
                   ...values,
                 });
               }
               await refresh();
-              setOpenDate(null);
+              setDialog(null);
             } catch (err) {
               setError(errorMessage(err));
-              setOpenDate(null);
+              setDialog(null);
             }
           }}
           onDeleteRequest={(entry) => setDeleteTarget(entry)}
-          onClose={() => setOpenDate(null)}
+          onClose={() => setDialog(null)}
         />
       ) : null}
 
