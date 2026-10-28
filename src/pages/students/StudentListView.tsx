@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
 import { listPrograms, listTrainings } from "@/lib/api";
+import StudentProfileDialog from "@/components/StudentProfileDialog";
 import StudentList from "./StudentList";
 import type { Student } from "./StudentForm";
 
@@ -53,6 +54,9 @@ export default function StudentListView({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  // The row whose Teams-style profile is open (null = closed). Kept here rather
+  // than in StudentsPage so switching list tabs closes it naturally.
+  const [profile, setProfile] = useState<Student | null>(null);
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<
@@ -261,11 +265,21 @@ export default function StudentListView({
             selectedIds={selectedIds}
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}
+            onOpenProfile={setProfile}
             onEdit={onEdit}
             onDelete={onDelete}
           />
         </>
       )}
+
+      <StudentProfileDialog
+        student={profile}
+        onClose={() => setProfile(null)}
+        onEdit={(student) => {
+          setProfile(null);
+          onEdit(student);
+        }}
+      />
     </div>
   );
 }

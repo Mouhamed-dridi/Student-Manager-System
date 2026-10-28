@@ -18,6 +18,7 @@ import {
   type TeacherCourseAssignment,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import StudentProfileDialog from "@/components/StudentProfileDialog";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
@@ -55,6 +56,9 @@ export default function MyClassPage() {
   // action on this page, the teacher only ever sees their own class.
   const [imported, setImported] = useState<Student[] | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  // The roster row whose profile is open (null = closed). Read-only for a
+  // teacher: no `onEdit`, the shared dialog simply hides the edit action.
+  const [profile, setProfile] = useState<Student | null>(null);
 
   // Read by importClass, which stays referentially stable so the realtime
   // effect below never re-subscribes mid-session.
@@ -221,8 +225,23 @@ export default function MyClassPage() {
                 </TableHeader>
                 <TableBody>
                   {imported.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.fullName}</TableCell>
+                    <TableRow
+                      key={s.id}
+                      onClick={() => setProfile(s)}
+                      className="cursor-pointer"
+                    >
+                      <TableCell className="font-medium">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProfile(s);
+                          }}
+                          className="cursor-pointer text-left hover:underline"
+                        >
+                          {s.fullName}
+                        </button>
+                      </TableCell>
                       <TableCell>{s.phone || "—"}</TableCell>
                       <TableCell>{s.email || "—"}</TableCell>
                       <TableCell>
@@ -282,8 +301,23 @@ export default function MyClassPage() {
                 </TableHeader>
                 <TableBody>
                   {sorted.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.fullName}</TableCell>
+                    <TableRow
+                      key={s.id}
+                      onClick={() => setProfile(s)}
+                      className="cursor-pointer"
+                    >
+                      <TableCell className="font-medium">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProfile(s);
+                          }}
+                          className="cursor-pointer text-left hover:underline"
+                        >
+                          {s.fullName}
+                        </button>
+                      </TableCell>
                       <TableCell>{s.phone || "—"}</TableCell>
                       <TableCell>{s.email || "—"}</TableCell>
                     </TableRow>
@@ -294,6 +328,11 @@ export default function MyClassPage() {
           )}
         </>
       )}
+
+      <StudentProfileDialog
+        student={profile}
+        onClose={() => setProfile(null)}
+      />
     </div>
   );
 }

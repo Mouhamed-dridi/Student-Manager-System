@@ -17,6 +17,7 @@ interface StudentListProps {
   selectedIds: ReadonlySet<string>;
   onToggleRow: (id: string) => void;
   onToggleAll: () => void;
+  onOpenProfile: (student: Student) => void;
   onEdit: (student: Student) => void;
   onDelete: (id: string) => void;
 }
@@ -26,6 +27,7 @@ export default function StudentList({
   selectedIds,
   onToggleRow,
   onToggleAll,
+  onOpenProfile,
   onEdit,
   onDelete,
 }: StudentListProps) {
@@ -60,20 +62,38 @@ export default function StudentList({
       </TableHeader>
       <TableBody>
         {students.map((s) => (
-            <TableRow key={s.id} data-selected={selectedIds.has(s.id)}>
-              <TableCell>
+            <TableRow
+              key={s.id}
+              data-selected={selectedIds.has(s.id)}
+              onClick={() => onOpenProfile(s)}
+              className="cursor-pointer"
+            >
+              {/* The checkbox and the actions own their clicks: selecting or
+                  deleting a row must not also open the profile. */}
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <Checkbox
                   checked={selectedIds.has(s.id)}
                   onCheckedChange={() => onToggleRow(s.id)}
                   aria-label={`Select ${s.fullName}`}
                 />
               </TableCell>
-              <TableCell>{s.fullName}</TableCell>
+              <TableCell className="font-medium">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenProfile(s);
+                  }}
+                  className="cursor-pointer text-left hover:underline"
+                >
+                  {s.fullName}
+                </button>
+              </TableCell>
               <TableCell>{s.program}</TableCell>
               <TableCell>{s.training}</TableCell>
               <TableCell>{s.phone}</TableCell>
             <TableCell>{s.email}</TableCell>
-            <TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
               <div className="flex gap-1">
                 <Button
                   variant="ghost"
