@@ -18,7 +18,8 @@ import {
   type TeacherCourseAssignment,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
-import StudentProfileDialog from "@/components/StudentProfileDialog";
+import { useNestedView } from "@/hooks/viewHistory";
+import StudentProfilePage from "@/components/StudentProfilePage";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
@@ -56,8 +57,8 @@ export default function MyClassPage() {
   // action on this page, the teacher only ever sees their own class.
   const [imported, setImported] = useState<Student[] | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
-  // The roster row whose profile is open (null = closed). Read-only for a
-  // teacher: no `onEdit`, the shared dialog simply hides the edit action.
+  // The roster row whose full-page profile is open (null = closed). Read-only
+  // for a teacher: no `onEdit`, so the shared page hides the edit action.
   const [profile, setProfile] = useState<Student | null>(null);
 
   // Read by importClass, which stays referentially stable so the realtime
@@ -155,6 +156,32 @@ export default function MyClassPage() {
       setError(errorMessage(err));
     }
   });
+
+  // The profile is a sub-page of My Class: the shared history stack makes the
+  // header back arrow return to the roster, like the page's own Back button.
+  useNestedView(
+    profile !== null,
+    "student-profile",
+    "Student profile",
+    () => setProfile(null),
+  );
+
+  // Prefer the latest row from either roster table so realtime refreshes keep
+  // the open profile current; fall back to the captured object if it vanished.
+  const profileStudent = profile
+    ? [...(imported ?? []), ...(roster ?? [])].find((s) => s.id === profile.id) ??
+      profile
+    : null;
+
+  if (profileStudent) {
+    return (
+      <StudentProfilePage
+        student={profileStudent}
+        onBack={() => setProfile(null)}
+        backLabel="Back to class"
+      />
+    );
+  }
 
   if (teacher === null) {
     return (
@@ -328,11 +355,6 @@ export default function MyClassPage() {
           )}
         </>
       )}
-
-      <StudentProfileDialog
-        student={profile}
-        onClose={() => setProfile(null)}
-      />
     </div>
   );
 }

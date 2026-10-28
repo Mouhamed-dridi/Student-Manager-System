@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
 import { listPrograms, listTrainings } from "@/lib/api";
-import StudentProfileDialog from "@/components/StudentProfileDialog";
 import StudentList from "./StudentList";
 import type { Student } from "./StudentForm";
 
@@ -36,6 +35,7 @@ interface ProgramOption {
 
 interface StudentListViewProps {
   students: Student[];
+  onOpenProfile: (student: Student) => void;
   onEdit: (student: Student) => void;
   onDelete: (id: string) => void;
   onDeleteMany: (ids: string[]) => void;
@@ -43,6 +43,7 @@ interface StudentListViewProps {
 
 export default function StudentListView({
   students,
+  onOpenProfile,
   onEdit,
   onDelete,
   onDeleteMany,
@@ -54,9 +55,6 @@ export default function StudentListView({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  // The row whose Teams-style profile is open (null = closed). Kept here rather
-  // than in StudentsPage so switching list tabs closes it naturally.
-  const [profile, setProfile] = useState<Student | null>(null);
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<
@@ -265,21 +263,12 @@ export default function StudentListView({
             selectedIds={selectedIds}
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}
-            onOpenProfile={setProfile}
+            onOpenProfile={onOpenProfile}
             onEdit={onEdit}
             onDelete={onDelete}
           />
         </>
       )}
-
-      <StudentProfileDialog
-        student={profile}
-        onClose={() => setProfile(null)}
-        onEdit={(student) => {
-          setProfile(null);
-          onEdit(student);
-        }}
-      />
     </div>
   );
 }

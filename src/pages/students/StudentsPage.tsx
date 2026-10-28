@@ -13,6 +13,8 @@ import {
   updateStudentProfile,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useNestedView } from "@/hooks/viewHistory";
+import StudentProfilePage from "@/components/StudentProfilePage";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 import StudentForm, { type Student } from "./StudentForm";
 import { parseStudentFile, type ImportResult } from "./importStudents";
@@ -25,6 +27,8 @@ export default function StudentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
+  // The student whose full-page profile replaces the list (null = closed).
+  const [profile, setProfile] = useState<Student | null>(null);
   const [pendingImport, setPendingImport] = useState<ImportResult | null>(null);
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -53,6 +57,16 @@ export default function StudentsPage() {
   // Quiet fallback: refetch once if the tab regains focus after a while, in
   // case the realtime connection dropped while it was in the background.
   useRefetchOnFocus(refresh);
+
+  // The profile is a sub-page of Students: registering it with the shared
+  // history stack makes the header back arrow return to the list exactly like
+  // the page's own "Back to students" button.
+  useNestedView(
+    profile !== null,
+    "student-profile",
+    "Student profile",
+    () => setProfile(null),
+  );
 
   const handleSave = async (student: Student) => {
     try {
@@ -170,6 +184,26 @@ export default function StudentsPage() {
     setActiveTab("list");
   };
 
+  // Realtime refreshes replace the `students` rows: resolve the open profile by
+  // id so the page always shows the latest record. The captured object is the
+  // fallback for the frame where the row is gone (e.g. just soft-deleted).
+  const profileStudent = profile
+    ? students?.find((s) => s.id === profile.id) ?? profile
+    : null;
+
+  if (profileStudent) {
+    return (
+      <StudentProfilePage
+        student={profileStudent}
+        onBack={() => setProfile(null)}
+        onEdit={(student) => {
+          setProfile(null);
+          handleEdit(student);
+        }}
+      />
+    );
+  }
+
   return (
     <div>
       <Tabs
@@ -227,6 +261,7 @@ export default function StudentsPage() {
           ) : (
             <StudentListView
               students={students}
+              onOpenProfile={setProfile}
               onEdit={handleEdit}
               onDelete={handleDelete}
               onDeleteMany={handleDeleteMany}
