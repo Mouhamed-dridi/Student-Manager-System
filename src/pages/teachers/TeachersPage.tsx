@@ -12,6 +12,8 @@ import {
   updateTeacherProfile,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useNestedView } from "@/hooks/viewHistory";
+import TeacherProfilePage from "@/components/TeacherProfilePage";
 import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 import TeacherForm, { type Teacher } from "./TeacherForm";
 import { parseTeacherFile, type ImportResult } from "./importTeachers";
@@ -24,6 +26,8 @@ export default function TeachersPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
+  // The teacher whose full-page profile replaces the list (null = closed).
+  const [profile, setProfile] = useState<Teacher | null>(null);
   const [pendingImport, setPendingImport] = useState<ImportResult | null>(null);
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +55,16 @@ export default function TeachersPage() {
 
   // Quiet fallback: refetch once if the tab regains focus after a while.
   useRefetchOnFocus(refresh);
+
+  // The profile is a sub-page of Teachers: registering it with the shared
+  // history stack makes the header back arrow return to the list exactly like
+  // the page's own "Back to teachers" button.
+  useNestedView(
+    profile !== null,
+    "teacher-profile",
+    "Teacher profile",
+    () => setProfile(null),
+  );
 
   const handleSave = async (teacher: Teacher) => {
     try {
@@ -166,6 +180,26 @@ export default function TeachersPage() {
     setActiveTab("list");
   };
 
+  // Realtime refreshes replace the `teachers` rows: resolve the open profile by
+  // id so the page always shows the latest record. The captured object is the
+  // fallback for the frame where the row is gone (e.g. just soft-deleted).
+  const profileTeacher = profile
+    ? teachers?.find((t) => t.id === profile.id) ?? profile
+    : null;
+
+  if (profileTeacher) {
+    return (
+      <TeacherProfilePage
+        teacher={profileTeacher}
+        onBack={() => setProfile(null)}
+        onEdit={(teacher) => {
+          setProfile(null);
+          handleEdit(teacher);
+        }}
+      />
+    );
+  }
+
   return (
     <div>
       <Tabs
@@ -223,6 +257,7 @@ export default function TeachersPage() {
           ) : (
             <TeacherListView
               teachers={teachers}
+              onOpenProfile={setProfile}
               onEdit={handleEdit}
               onDelete={handleDelete}
             />

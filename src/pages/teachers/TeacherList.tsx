@@ -23,12 +23,14 @@ import type { Teacher } from "./TeacherForm";
 
 interface TeacherListProps {
   teachers: Teacher[];
+  onOpenProfile: (teacher: Teacher) => void;
   onEdit: (teacher: Teacher) => void;
   onDelete: (id: string) => void;
 }
 
 export default function TeacherList({
   teachers,
+  onOpenProfile,
   onEdit,
   onDelete,
 }: TeacherListProps) {
@@ -53,12 +55,29 @@ export default function TeacherList({
       </TableHeader>
       <TableBody>
         {teachers.map((t) => (
-          <TableRow key={t.id}>
-            <TableCell>{t.fullName}</TableCell>
+          <TableRow
+            key={t.id}
+            onClick={() => onOpenProfile(t)}
+            className="cursor-pointer"
+          >
+            {/* The actions own their clicks: editing or deleting a row must
+                not also open the profile. */}
+            <TableCell className="font-medium">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenProfile(t);
+                }}
+                className="cursor-pointer text-left hover:underline"
+              >
+                {t.fullName}
+              </button>
+            </TableCell>
             <TableCell>{t.specialty || "—"}</TableCell>
             <TableCell>{t.phone}</TableCell>
             <TableCell>{t.email}</TableCell>
-            <TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
               <div className="flex gap-1">
                 <Button
                   variant="ghost"

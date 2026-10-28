@@ -15,12 +15,14 @@ import type { Teacher } from "./TeacherForm";
 
 interface TeacherListViewProps {
   teachers: Teacher[];
+  onOpenProfile: (teacher: Teacher) => void;
   onEdit: (teacher: Teacher) => void;
   onDelete: (id: string) => void;
 }
 
 export default function TeacherListView({
   teachers,
+  onOpenProfile,
   onEdit,
   onDelete,
 }: TeacherListViewProps) {
@@ -121,6 +123,7 @@ export default function TeacherListView({
       ) : (
         <TeacherList
           teachers={filtered}
+          onOpenProfile={onOpenProfile}
           onEdit={onEdit}
           onDelete={onDelete}
         />

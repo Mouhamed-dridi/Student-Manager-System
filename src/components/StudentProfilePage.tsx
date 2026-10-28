@@ -10,11 +10,9 @@
 // `fullName`). No column is guessed: optional fields simply render "—", and a
 // quick action is disabled when the URL it needs is missing.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  ArrowLeft,
   BookOpen,
-  Briefcase,
   CalendarDays,
   Camera,
   Code2,
@@ -23,19 +21,24 @@ import {
   IdCard,
   Mail,
   MapPin,
-  MessageCircle,
   Pencil,
   Phone,
   ShieldAlert,
   ShieldCheck,
-  type LucideIcon,
 } from "lucide-react";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import UserAvatar from "@/components/UserAvatar";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faLinkedin, faWhatsapp } from "@fortawesome/free-brands-svg-icons";
+import { faEnvelope } from "@fortawesome/free-regular-svg-icons";
+import {
+  ProfileInfoCard,
+  ProfilePageShell,
+  ProfileQuickAction,
+  ProfileStatusPill,
+} from "@/components/ProfileParts";
 import { errorMessage, loadStudentAttendance } from "@/lib/api";
 import type { AttendanceRecord } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type { Student } from "@/pages/students/StudentForm";
 
 interface StudentProfilePageProps {
@@ -48,113 +51,46 @@ interface StudentProfilePageProps {
   onEdit?: (student: Student) => void;
 }
 
-/** A tile in the contact/academic grids. */
-function InfoCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value?: string | number | null;
-}) {
-  return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm">
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        <Icon className="h-3.5 w-3.5 shrink-0" />
-        {label}
-      </div>
-      <p className="mt-2 truncate text-sm font-medium">{value || "—"}</p>
-    </div>
-  );
-}
-
-function StatusPill({ blocked }: { blocked?: boolean }) {
-  return blocked ? (
-    <span className="inline-flex items-center gap-1 rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-400">
-      <ShieldAlert className="h-3 w-3" />
-      Blocked
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-400">
-      <ShieldCheck className="h-3 w-3" />
-      Active
-    </span>
-  );
-}
-
-/**
- * Icon-only quick action with a hover/focus tooltip. Rendered as a disabled
- * tile when the record has no value for it, so the header keeps a stable set of
- * actions instead of silently dropping one.
- */
-function QuickAction({
-  icon: Icon,
-  label,
-  href,
-  external = true,
-}: {
-  icon: LucideIcon;
-  label: string;
-  href?: string;
-  external?: boolean;
-}) {
-  const tip = (
-    <span
-      role="tooltip"
-      className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-2 py-1 text-xs font-medium text-background opacity-0 shadow-md transition-opacity delay-100 group-hover/action:opacity-100 group-focus-visible/action:opacity-100"
-    >
-      {label}
-    </span>
-  );
-
-  if (!href) {
-    return (
-      <span
-        aria-label={`${label} unavailable`}
-        aria-disabled="true"
-        tabIndex={0}
-        className={cn(
-          buttonVariants({ variant: "outline", size: "icon-lg" }),
-          "group/action relative cursor-not-allowed opacity-40",
-        )}
-      >
-        <Icon />
-        {tip}
-      </span>
-    );
-  }
-
-  return (
-    <a
-      href={href}
-      aria-label={label}
-      target={external ? "_blank" : undefined}
-      rel={external ? "noreferrer" : undefined}
-      className={cn(
-        buttonVariants({ variant: "outline", size: "icon-lg" }),
-        "group/action relative",
-      )}
-    >
-      <Icon />
-      {tip}
-    </a>
-  );
-}
-
 type SocialKey = "facebook" | "instagram" | "whatsapp" | "github" | "linkedin";
 
+// Icons are nodes: the brand marks (WhatsApp, LinkedIn) come from FontAwesome
+// so they match the header action bar, the rest stay on Lucide.
 const SOCIALS: {
   key: SocialKey;
   label: string;
-  icon: LucideIcon;
+  icon: ReactNode;
   prefix: string;
 }[] = [
-  { key: "facebook", label: "Facebook", icon: Globe, prefix: "https://facebook.com/" },
-  { key: "instagram", label: "Instagram", icon: Camera, prefix: "https://instagram.com/" },
-  { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, prefix: "https://wa.me/" },
-  { key: "github", label: "GitHub", icon: Code2, prefix: "https://github.com/" },
-  { key: "linkedin", label: "LinkedIn", icon: Briefcase, prefix: "https://linkedin.com/in/" },
+  {
+    key: "facebook",
+    label: "Facebook",
+    icon: <Globe className="h-3.5 w-3.5" />,
+    prefix: "https://facebook.com/",
+  },
+  {
+    key: "instagram",
+    label: "Instagram",
+    icon: <Camera className="h-3.5 w-3.5" />,
+    prefix: "https://instagram.com/",
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    icon: <FontAwesomeIcon icon={faWhatsapp} />,
+    prefix: "https://wa.me/",
+  },
+  {
+    key: "github",
+    label: "GitHub",
+    icon: <Code2 className="h-3.5 w-3.5" />,
+    prefix: "https://github.com/",
+  },
+  {
+    key: "linkedin",
+    label: "LinkedIn",
+    icon: <FontAwesomeIcon icon={faLinkedin} />,
+    prefix: "https://linkedin.com/in/",
+  },
 ];
 
 /** Accepts a full URL or a bare handle, like the student settings form does. */
@@ -230,87 +166,58 @@ export default function StudentProfilePage({
   const recent = attendance?.slice(0, 3) ?? [];
 
   return (
-    <div className="w-full">
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="-ml-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {backLabel}
-        </Button>
-        {onEdit && (
+    <ProfilePageShell
+      name={student.fullName}
+      badges={[student.program, student.training]}
+      subtitle={email || undefined}
+      backLabel={backLabel}
+      onBack={onBack}
+      editAction={
+        onEdit ? (
           <Button
             variant="outline"
             size="sm"
-            className="ml-auto"
             onClick={() => onEdit(student)}
           >
             <Pencil className="h-4 w-4" />
             Edit profile
           </Button>
-        )}
-      </div>
-
-      {/* ----------------------------------------------------------- hero */}
-      <section className="mt-3 overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-5 bg-gradient-to-br from-primary/10 via-muted/40 to-background px-6 py-7 sm:flex-row sm:items-center md:px-8">
-          <UserAvatar
-            name={student.fullName}
-            className="h-24 w-24 border-2 text-3xl"
+        ) : undefined
+      }
+      actions={
+        <>
+          <ProfileQuickAction
+            icon={<FontAwesomeIcon icon={faWhatsapp} />}
+            label="Send WhatsApp"
+            disabled={!phone}
+            onClick={() =>
+              window.open(
+                `https://wa.me/${phone.replace(/^\+/, "")}`,
+                "_blank",
+                "noopener,noreferrer",
+              )
+            }
           />
-
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-3xl font-semibold tracking-tight">
-              {student.fullName}
-            </h1>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {student.program && (
-                <span className="rounded-full border bg-background/80 px-2.5 py-0.5 text-xs font-medium">
-                  {student.program}
-                </span>
-              )}
-              {student.training && (
-                <span className="rounded-full border bg-background/80 px-2.5 py-0.5 text-xs font-medium">
-                  {student.training}
-                </span>
-              )}
-              {email && (
-                <span className="truncate text-sm text-muted-foreground">
-                  {email}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Quick actions: WhatsApp / LinkedIn / Email, each with a tooltip. */}
-          <div className="flex shrink-0 items-center gap-2">
-            <QuickAction
-              icon={MessageCircle}
-              label="Send WhatsApp"
-              href={
-                phone
-                  ? `https://wa.me/${phone.replace(/^\+/, "")}`
-                  : undefined
-              }
-            />
-            <QuickAction
-              icon={Briefcase}
-              label="View LinkedIn"
-              href={linkedin || undefined}
-            />
-            <QuickAction
-              icon={Mail}
-              label="Send Email"
-              href={email ? `mailto:${email}` : undefined}
-              external={false}
-            />
-          </div>
-        </div>
-
-        <Tabs defaultValue="overview" className="gap-0">
+          <ProfileQuickAction
+            icon={<FontAwesomeIcon icon={faLinkedin} />}
+            label="View LinkedIn"
+            disabled={!linkedin}
+            onClick={() =>
+              window.open(linkedin, "_blank", "noopener,noreferrer")
+            }
+          />
+          <ProfileQuickAction
+            icon={<FontAwesomeIcon icon={faEnvelope} />}
+            label="Send Email"
+            disabled={!email}
+            onClick={() => {
+              window.location.href = `mailto:${email}`;
+            }}
+          />
+        </>
+      }
+    >
+      <Tabs defaultValue="overview" className="gap-0">
           <div className="border-b px-6 md:px-8">
             <TabsList variant="line" className="h-11">
               <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -323,20 +230,20 @@ export default function StudentProfilePage({
           {/* Overview: the contact grid plus a short about section. */}
           <TabsContent value="overview" className="space-y-6 px-6 py-6 md:px-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoCard icon={Mail} label="Email" value={student.email} />
-              <InfoCard icon={Phone} label="Phone" value={student.phone} />
-              <InfoCard
+              <ProfileInfoCard icon={Mail} label="Email" value={student.email} />
+              <ProfileInfoCard icon={Phone} label="Phone" value={student.phone} />
+              <ProfileInfoCard
                 icon={GraduationCap}
                 label="Enrolled track"
                 value={track}
               />
-              <InfoCard
+              <ProfileInfoCard
                 icon={student.blocked ? ShieldAlert : ShieldCheck}
                 label="Status"
                 value={student.blocked ? "Blocked" : "Active"}
               />
-              <InfoCard icon={MapPin} label="Location" value={student.location} />
-              <InfoCard
+              <ProfileInfoCard icon={MapPin} label="Location" value={student.location} />
+              <ProfileInfoCard
                 icon={BookOpen}
                 label="Class"
                 value={student.training || "General"}
@@ -368,7 +275,7 @@ export default function StudentProfilePage({
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-muted-foreground">Account</dt>
                     <dd>
-                      <StatusPill blocked={student.blocked} />
+                      <ProfileStatusPill blocked={student.blocked} />
                     </dd>
                   </div>
                 </dl>
@@ -412,20 +319,20 @@ export default function StudentProfilePage({
 
           <TabsContent value="contact" className="space-y-6 px-6 py-6 md:px-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoCard icon={Mail} label="Email" value={student.email} />
-              <InfoCard icon={Phone} label="Phone" value={student.phone} />
-              <InfoCard icon={MapPin} label="Location" value={student.location} />
-              <InfoCard
+              <ProfileInfoCard icon={Mail} label="Email" value={student.email} />
+              <ProfileInfoCard icon={Phone} label="Phone" value={student.phone} />
+              <ProfileInfoCard icon={MapPin} label="Location" value={student.location} />
+              <ProfileInfoCard
                 icon={GraduationCap}
                 label="Enrolled track"
                 value={track}
               />
-              <InfoCard
+              <ProfileInfoCard
                 icon={BookOpen}
                 label="Class"
                 value={student.training || "General"}
               />
-              <InfoCard
+              <ProfileInfoCard
                 icon={CalendarDays}
                 label="Enrollment"
                 value={student.engagement}
@@ -440,7 +347,7 @@ export default function StudentProfilePage({
                 </p>
               ) : (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {socials.map(({ key, label, icon: Icon, value }) => (
+                  {socials.map(({ key, label, icon, value }) => (
                     <a
                       key={key}
                       href={socialUrl(key, value)}
@@ -449,7 +356,12 @@ export default function StudentProfilePage({
                       title={value}
                       className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1 text-xs font-medium transition-colors hover:bg-muted"
                     >
-                      <Icon className="h-3.5 w-3.5" />
+                      <span
+                        aria-hidden="true"
+                        className="flex items-center justify-center text-[14px] leading-none"
+                      >
+                        {icon}
+                      </span>
                       {label}
                     </a>
                   ))}
@@ -460,16 +372,16 @@ export default function StudentProfilePage({
 
           <TabsContent value="academic" className="space-y-6 px-6 py-6 md:px-8">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoCard icon={GraduationCap} label="Program" value={student.program} />
-              <InfoCard icon={BookOpen} label="Training" value={student.training} />
-              <InfoCard icon={IdCard} label="Education" value={student.education} />
-              <InfoCard icon={CalendarDays} label="Enrollment" value={student.engagement} />
-              <InfoCard
+              <ProfileInfoCard icon={GraduationCap} label="Program" value={student.program} />
+              <ProfileInfoCard icon={BookOpen} label="Training" value={student.training} />
+              <ProfileInfoCard icon={IdCard} label="Education" value={student.education} />
+              <ProfileInfoCard icon={CalendarDays} label="Enrollment" value={student.engagement} />
+              <ProfileInfoCard
                 icon={student.blocked ? ShieldAlert : ShieldCheck}
                 label="Account status"
                 value={student.blocked ? "Blocked" : "Active"}
               />
-              <InfoCard
+              <ProfileInfoCard
                 icon={MapPin}
                 label="Class"
                 value={student.training || "General"}
@@ -536,7 +448,6 @@ export default function StudentProfilePage({
             )}
           </TabsContent>
         </Tabs>
-      </section>
-    </div>
+    </ProfilePageShell>
   );
 }
