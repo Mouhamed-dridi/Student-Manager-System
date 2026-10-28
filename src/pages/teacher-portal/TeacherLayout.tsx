@@ -25,6 +25,9 @@ import TeacherEventsPage from "./TeacherEventsPage";
 import TeacherEventDetailPage from "./TeacherEventDetailPage";
 import QcmPage from "./QcmPage";
 import UserAvatar from "@/components/UserAvatar";
+import HeaderBackButton from "@/components/HeaderBackButton";
+import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
+import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
@@ -83,7 +86,18 @@ function clearTeacherSession() {
 }
 
 export default function TeacherLayout() {
-  const [active, setActive] = useState<PageKey>("dashboard");
+  return (
+    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+      <TeacherShell />
+    </ViewHistoryProvider>
+  );
+}
+
+function TeacherShell() {
+  // Sections live in the shared history stack (see useViewHistory): the header
+  // back arrow walks it, and `pushSection` is the sidebar's only navigation.
+  const { currentSection, pushSection } = useViewHistory();
+  const active = currentSection.key as PageKey;
   // Which collapsible sidebar sections are open. A parent with no entry yet
   // defaults to open when one of its children is active (see isSectionExpanded).
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
@@ -119,6 +133,15 @@ export default function TeacherLayout() {
     clearTeacherSession();
     navigate("/login");
   };
+
+  // The open event is a sub-page of the Events section, so it registers with the
+  // history stack: the header arrow and the page's own Back button agree.
+  useNestedView(
+    openEventId !== null,
+    "event-detail",
+    "Event details",
+    () => setOpenEventId(null),
+  );
 
   const isSectionActive = (item: TeacherMenuItem) =>
     item.children?.some((child) => child.key === active) ?? false;
@@ -198,7 +221,7 @@ export default function TeacherLayout() {
                         <button
                           key={child.key}
                           onClick={() => {
-                            setActive(child.key);
+                            pushSection(child.key, child.label);
                             // Leaving the events section closes any open event.
                             setOpenEventId(null);
                           }}
@@ -221,7 +244,7 @@ export default function TeacherLayout() {
               <button
                 key={item.key}
                 onClick={() => {
-                  setActive(item.key);
+                  pushSection(item.key, item.label);
                   // Leaving the events section also closes any open event.
                   setOpenEventId(null);
                 }}
@@ -248,18 +271,21 @@ export default function TeacherLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <span className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
-            {teacher ? (
-              <>
-                {teacher.fullName}
-                <span className="text-xs font-normal">
-                  · {teacher.specialty || "Teacher"}
-                </span>
-              </>
-            ) : (
-              "Teacher Portal"
-            )}
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <HeaderBackButton />
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
+              {teacher ? (
+                <>
+                  <span className="truncate">{teacher.fullName}</span>
+                  <span className="text-xs font-normal">
+                    · {teacher.specialty || "Teacher"}
+                  </span>
+                </>
+              ) : (
+                "Teacher Portal"
+              )}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <UserAvatar name={teacher?.fullName} fallback="T" />
             <Button variant="outline" size="sm" onClick={handleLogout}>

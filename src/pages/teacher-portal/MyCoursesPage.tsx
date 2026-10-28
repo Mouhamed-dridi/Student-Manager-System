@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Trash2, X } from "lucide-react";
+import { Pencil, Trash2, Upload, X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
-import CourseDetail from "@/components/CourseDetail";
+import CourseDetailPage from "@/components/CourseDetailPage";
 import SkillsInput from "@/components/SkillsInput";
 import { DataError, DataLoading } from "@/components/DataState";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ import {
   uploadCourseThumbnail,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useNestedView } from "@/hooks/viewHistory";
 import type {
   CourseMaterial,
   ScheduledCourseView,
@@ -447,6 +448,19 @@ export default function MyCoursesPage() {
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The full-page course detail is a sub-page of the Courses section, so it
+  // goes on the shared history stack: the header arrow then does exactly what
+  // the detail's own Back button does.
+  useNestedView(
+    view === "detail" && detail !== null,
+    "course-detail",
+    "Course details",
+    () => {
+      setDetail(null);
+      setView("my-courses");
+    },
+  );
+
   const refresh = useCallback(async (teacherId?: string) => {
     try {
       setError(null);
@@ -536,6 +550,17 @@ await refresh(record.id);
     setView("add-course");
   };
 
+  // The material picker lives inside the edit form (there is no separate upload
+  // dialog), so this opens the form and brings that field into view.
+  const startMaterialUpload = (course: ScheduledCourseView) => {
+    startEdit(course);
+    window.setTimeout(() => {
+      document
+        .getElementById("course-materials")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  };
+
   const handleSubmit = async (values: CourseFormValues): Promise<void> => {
     const { thumbnailFile, ...courseValues } = values;
     let record: TeacherCourseRecord;
@@ -598,7 +623,7 @@ await refresh(record.id);
 
       {view === "detail" && detail ? (
         <div className="mt-4">
-          <CourseDetail
+          <CourseDetailPage
             course={detail}
             onBack={() => {
               setDetail(null);
@@ -614,7 +639,15 @@ await refresh(record.id);
                     onClick={() => startEdit(detail)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
-                    Edit
+                    Edit Course
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => startMaterialUpload(detail)}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload Material
                   </Button>
                   <Button
                     size="sm"
@@ -622,7 +655,7 @@ await refresh(record.id);
                     onClick={() => setDeleteTarget(detail)}
                   >
                     <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                    Delete
+                    Delete Course
                   </Button>
                 </>
               ) : null

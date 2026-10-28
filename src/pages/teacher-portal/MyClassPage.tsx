@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -55,21 +46,15 @@ export default function MyClassPage() {
   const [courseCount, setCourseCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Class import is locked to the teacher's own program/training, resolved by
-  // the same teacherCourseAssignment() that pins their course writes: the
-  // profile columns first, else the class of their existing courses.
-  // undefined = still resolving; null = no assignment, so nothing is importable.
+  // The class roster is read for the teacher's assigned program/training, which
+  // teacherCourseAssignment() resolves from the profile columns first, else
+  // from the class of their existing courses. undefined = still resolving;
+  // null = no assignment.
   const [assignment, setAssignment] = useState<TeacherCourseAssignment | null | undefined>(undefined);
+  // Populated automatically once the assignment resolves — there is no import
+  // action on this page, the teacher only ever sees their own class.
   const [imported, setImported] = useState<Student[] | null>(null);
-  const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-
-  // What the realtime/focus handlers re-import. Only the Import button writes
-  // it, so a live update never changes which class is on screen.
-  const classSelection = useRef<{
-    programId?: string;
-    trainingId?: string;
-  }>({});
 
   // Read by importClass, which stays referentially stable so the realtime
   // effect below never re-subscribes mid-session.
@@ -77,18 +62,12 @@ export default function MyClassPage() {
 
   const importClass = useCallback(async () => {
     if (!teacherIdRef.current) return;
-    setImporting(true);
-    setImportError(null);
     try {
-      const { students } = await importClassForTeacher(
-        teacherIdRef.current,
-        classSelection.current,
-      );
+      const { students } = await importClassForTeacher(teacherIdRef.current);
       setImported(students);
+      setImportError(null);
     } catch (err) {
       setImportError(errorMessage(err));
-    } finally {
-      setImporting(false);
     }
   }, []);
 
@@ -111,9 +90,19 @@ export default function MyClassPage() {
           if (cancelled) return;
           setCourseCount(courses.length);
           setRoster(students);
-          setAssignment(
-            resolved.program && resolved.training ? resolved : null,
-          );
+          const assigned =
+            resolved.program && resolved.training ? resolved : null;
+          setAssignment(assigned);
+          if (!assigned) return;
+          // Load the class roster right away: the page has no Import action.
+          try {
+            const { students: classStudents } = await importClassForTeacher(
+              record.id,
+            );
+            if (!cancelled) setImported(classStudents);
+          } catch (err) {
+            if (!cancelled) setImportError(errorMessage(err));
+          }
         } catch (err) {
           if (!cancelled) setError(errorMessage(err));
         }
@@ -171,7 +160,15 @@ export default function MyClassPage() {
     );
   }
 
-  if (teacher === undefined || roster === null || assignment === undefined) {
+  if (
+    teacher === undefined ||
+    roster === null ||
+    assignment === undefined ||
+    // With an assignment the class roster is fetched automatically, so wait for
+    // it instead of flashing the fallback table. A failed fetch shows the error
+    // and falls back to the course-based roster rather than spinning forever.
+    (assignment !== null && imported === null && !importError)
+  ) {
     return <DataLoading label="Loading your class…" />;
   }
 
@@ -179,90 +176,14 @@ export default function MyClassPage() {
     (a.fullName ?? "").localeCompare(b.fullName ?? ""),
   );
 
-  const classLabel = assignment
-    ? `${assignment.program} · ${assignment.training}`
-    : "";
-
-  // The dropdown is labelled "Specialty" and keyed off the teacher's own
-  // `specialty` text, which is the thing they recognise (and the thing that
-  // resolves their class). The training it maps to is stated underneath rather
-  // than substituted for it, so the box never disagrees with the header.
-  const specialtyDisplay = teacher?.specialty || assignment?.training || "";
-
-  // Only for a teacher with no program/training AND no specialty that resolves
-  // to a training — at that point the specialty is all we can show.
-  const specialtyHint = assignment ? "" : (teacher?.specialty ?? "");
-
   return (
     <div>
       <h2 className="text-2xl font-semibold">My Class</h2>
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        <div className="space-y-2">
-          <Label>Training Type</Label>
-          <Select value={assignment?.programId ?? ""} disabled>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Not assigned" />
-            </SelectTrigger>
-            <SelectContent>
-              {/* Single option by design: the class comes from the profile, so
-                  there is no other training type this teacher may import. */}
-              {assignment && (
-                <SelectItem value={assignment.programId || "none"}>
-                  {assignment.program}
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label>Specialty</Label>
-          <Select value={specialtyDisplay} disabled>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Not assigned" />
-            </SelectTrigger>
-            <SelectContent>
-              {specialtyDisplay && (
-                <SelectItem value={specialtyDisplay}>
-                  {specialtyDisplay}
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-          {assignment && (
-            <p className="text-xs text-muted-foreground">
-              Class: {classLabel}
-            </p>
-          )}
-        </div>
-
-        <Button
-          onClick={() => {
-            classSelection.current = {
-              programId: assignment?.programId || undefined,
-              trainingId: assignment?.trainingId || undefined,
-            };
-            void importClass();
-          }}
-          disabled={!assignment || importing}
-        >
-          {importing ? "Importing…" : "Import"}
-        </Button>
-      </div>
-
       {assignment === null && (
         <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          There is no class to import yet.
-          {specialtyHint ? (
-            <>
-              {" "}
-              No training matches your specialty &ldquo;{specialtyHint}&rdquo;.
-              Ask the center to set the program and training on your profile.
-            </>
-          ) : (
-            " Ask the center to set your specialty, program and training on your profile."
-          )}
+          There is no class assigned yet. Ask the center to set your program and
+          training on your profile.
         </p>
       )}
 
@@ -275,8 +196,7 @@ export default function MyClassPage() {
       {imported ? (
         <div className="mt-4">
           <p className="mb-2 text-sm text-muted-foreground">
-            {imported.length} student{imported.length === 1 ? "" : "s"} in{" "}
-            {classLabel}
+            {imported.length} student{imported.length === 1 ? "" : "s"} enrolled
           </p>
           {imported.length === 0 ? (
             <Card className="max-w-xl">
@@ -336,8 +256,7 @@ export default function MyClassPage() {
               <CardContent className="py-8 text-center">
                 <p className="text-sm font-medium">No courses yet</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Import your class above to see its students, or add a course —
-                  students enrolled in it will appear here.
+                  Add a course — students enrolled in it will appear here.
                 </p>
               </CardContent>
             </Card>

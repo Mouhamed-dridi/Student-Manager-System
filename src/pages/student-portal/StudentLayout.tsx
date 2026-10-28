@@ -19,6 +19,9 @@ import AnnouncementsPage from "./AnnouncementsPage";
 import StudentQcmPage from "./StudentQcmPage";
 import StudentSettingsPage from "./StudentSettingsPage";
 import UserAvatar from "@/components/UserAvatar";
+import HeaderBackButton from "@/components/HeaderBackButton";
+import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
+import { useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
@@ -52,7 +55,18 @@ function clearStudentSession() {
 }
 
 export default function StudentLayout() {
-  const [active, setActive] = useState<MenuKey>("dashboard");
+  return (
+    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+      <StudentShell />
+    </ViewHistoryProvider>
+  );
+}
+
+function StudentShell() {
+  // Sections come from the shared history stack (see useViewHistory) so the
+  // header back arrow and the sidebar agree on where the student is.
+  const { currentSection, pushSection } = useViewHistory();
+  const active = currentSection.key as MenuKey;
   // undefined = still fetching the record; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
@@ -104,7 +118,7 @@ export default function StudentLayout() {
             return (
               <button
                 key={item.key}
-                onClick={() => setActive(item.key)}
+                onClick={() => pushSection(item.key, item.label)}
                 className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
                   isActive
                     ? "bg-accent text-accent-foreground"
@@ -128,10 +142,13 @@ export default function StudentLayout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <span className="text-sm font-medium text-muted-foreground">
-            {menuItems.find((item) => item.key === active)?.label ??
-              "Student Portal"}
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <HeaderBackButton />
+            <span className="truncate text-sm font-medium text-muted-foreground">
+              {menuItems.find((item) => item.key === active)?.label ??
+                "Student Portal"}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2.5">
               <UserAvatar name={student?.fullName} fallback="S" />

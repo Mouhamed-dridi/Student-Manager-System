@@ -1,6 +1,8 @@
-// "Ratings & reviews" block of the student course detail: the course average
-// with its 5-to-1 distribution, a star + comment form the signed-in student
-// can post, and every review written so far.
+// "Ratings & reviews" block of the shared course detail (components/
+// CourseDetailPage.tsx): the course average with its 5-to-1 distribution, a
+// star + comment form the signed-in student can post, and every review written
+// so far. The teacher portal renders the same block without a `studentId`, in
+// which case the form is hidden and the reviews are read-only.
 //
 // Reviews are append-only (a student may post more than one) and the average
 // spans all of them. Owns its own data so the course detail view stays
@@ -24,8 +26,10 @@ const STARS = [5, 4, 3, 2, 1];
 
 interface CourseReviewsSectionProps {
   courseId: string;
-  studentId: string;
-  studentName: string;
+  /** The signed-in student. When omitted (teacher view) the reviews are listed
+   *  read-only and the post form is hidden. */
+  studentId?: string;
+  studentName?: string;
 }
 
 function averageOf(reviews: CourseReview[]): number {
@@ -132,6 +136,7 @@ export default function CourseReviewsSection({
   });
 
   const submit = async () => {
+    if (!studentId) return;
     if (rating < 1) {
       setSubmitError("Pick a star rating before posting your review.");
       return;
@@ -142,7 +147,7 @@ export default function CourseReviewsSection({
       await addCourseReview({
         courseId,
         studentId,
-        studentName,
+        studentName: studentName ?? "",
         rating,
         comment,
       });
@@ -168,6 +173,7 @@ export default function CourseReviewsSection({
         <RatingSummary reviews={reviews} />
       )}
 
+      {studentId ? (
       <Card>
         <CardContent className="space-y-3">
           <div className="space-y-1">
@@ -212,12 +218,15 @@ export default function CourseReviewsSection({
           </div>
         </CardContent>
       </Card>
+      ) : null}
 
       {loadError ? <DataError message={loadError} /> : null}
 
       {reviews !== null && reviews.length === 0 && !loadError ? (
         <p className="text-sm text-muted-foreground">
-          No reviews yet — be the first to rate this course.
+          {studentId
+            ? "No reviews yet — be the first to rate this course."
+            : "No reviews yet."}
         </p>
       ) : null}
 

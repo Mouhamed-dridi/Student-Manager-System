@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import CourseCardsGrid from "@/components/CourseCardsGrid";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import StudentCourseDetail from "@/components/StudentCourseDetail";
+import CourseDetailPage from "@/components/CourseDetailPage";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, subscribeToTable } from "@/lib/api";
 import { courseKey } from "@/lib/courseDisplay";
@@ -11,6 +11,7 @@ import { loadScheduledCourses } from "@/lib/trainings";
 import type { ScheduledCourseView } from "@/lib/trainings";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useNestedView } from "@/hooks/viewHistory";
 import { loadCurrentStudent } from "./currentStudent";
 
 export default function CoursesPage() {
@@ -20,6 +21,12 @@ export default function CoursesPage() {
   // The course opened as a detail view, or null while the grid is showing.
   const [selected, setSelected] = useState<ScheduledCourseView | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Course details is a sub-page of Courses: it registers with the shared
+  // history stack so the header back arrow closes it like the in-page Back.
+  useNestedView(selected !== null, "course-detail", "Course details", () =>
+    setSelected(null),
+  );
 
   const refresh = useCallback(async (record: Student) => {
     try {
@@ -122,7 +129,7 @@ export default function CoursesPage() {
                   </Card>
                 )}
               >
-                <StudentCourseDetail
+                <CourseDetailPage
                   course={selected}
                   studentId={student.id}
                   studentName={student.fullName}

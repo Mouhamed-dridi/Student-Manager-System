@@ -17,6 +17,7 @@ import {
 import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useNestedView } from "@/hooks/viewHistory";
 import { loadCurrentStudent } from "./currentStudent";
 
 type AnswerMap = Record<string, number>;
@@ -40,6 +41,18 @@ export default function StudentQcmPage() {
     quiz: Quiz;
     response: QuizResponse;
   } | null>(null);
+
+  // Taking a quiz and reading its results are both sub-pages of QCM, so the
+  // header arrow returns to the quiz list exactly like "Back to quizzes" does.
+  useNestedView(
+    taking !== null || viewing !== null,
+    "quiz",
+    "Quiz",
+    () => {
+      setTaking(null);
+      setViewing(null);
+    },
+  );
 
   const refresh = useCallback(async (record: Student) => {
     try {

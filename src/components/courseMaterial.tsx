@@ -1,7 +1,7 @@
 // Rendering for one attached course material ({name, type, url}): videos play
 // inline, PDFs open in a viewer, everything else is offered as a download.
-// Shared by the teacher portal's CourseDetail and the student portal's
-// StudentCourseDetail so a material always looks the same in both.
+// Shared by the student and teacher portals through the single course detail
+// view (components/CourseDetailPage.tsx) so a material always looks the same.
 
 import { CirclePlay, Download, ExternalLink, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";

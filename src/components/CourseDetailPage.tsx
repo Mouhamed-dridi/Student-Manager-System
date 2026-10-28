@@ -1,10 +1,16 @@
-// Coursera-style course detail for the student portal: a hero with the title,
-// subtitle, instructor and cover image, a metadata badge row (instructor,
-// difficulty, duration, format), then the body — skills, overview, syllabus and
-// the attached media — with a sticky sidebar and the ratings/review block.
+// Shared Coursera-style course detail, rendered identically by the student and
+// teacher portals: a hero with the title, subtitle, instructor and cover image,
+// a metadata badge row (instructor, difficulty, duration, format), then the
+// body — skills, overview, syllabus and the attached media — with a sticky
+// sidebar and the ratings/review block.
 //
-// The teacher portal keeps its own simpler CourseDetail; only the shared
-// material rendering (components/courseMaterial.tsx) is reused.
+// Both portals mount THIS component; the only differences are props:
+//   • `actions`      — portal-specific controls (the teacher's Edit/Delete/
+//                      Upload buttons) rendered in the header row.
+//   • `studentId` /  — when present the review form is shown. Without them
+//     `studentName`    (teacher view) the reviews stay read-only.
+// Never fork this into a second layout: a teacher must see exactly what the
+// student sees, plus their controls.
 //
 // Every optional piece of metadata may be missing on an older course row (and
 // the statically seeded schedule entries never carry it at all), so each block
@@ -116,22 +122,26 @@ function SafeSection({ children }: { children: ReactNode }) {
   );
 }
 
-interface StudentCourseDetailProps {
+interface CourseDetailPageProps {
   course: ScheduledCourseView;
-  /** The signed-in student, used to stamp new reviews. */
-  studentId: string;
-  studentName: string;
   onBack: () => void;
   backLabel?: string;
+  /** Portal-specific controls, e.g. the teacher's Edit / Delete / Upload. */
+  actions?: ReactNode;
+  /** The signed-in student, used to stamp new reviews. Omit in the teacher
+   *  portal: the reviews are then listed read-only. */
+  studentId?: string;
+  studentName?: string;
 }
 
-export default function StudentCourseDetail({
+export default function CourseDetailPage({
   course,
-  studentId,
-  studentName,
   onBack,
   backLabel = "Back to courses",
-}: StudentCourseDetailProps) {
+  actions,
+  studentId,
+  studentName,
+}: CourseDetailPageProps) {
   const [instructor, setInstructor] = useState<{
     id: string;
     name: string;
@@ -197,7 +207,7 @@ export default function StudentCourseDetail({
 
   return (
     <div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="ghost"
           size="sm"
@@ -209,6 +219,11 @@ export default function StudentCourseDetail({
         </Button>
         {classLabel ? (
           <span className="text-xs text-muted-foreground">{classLabel}</span>
+        ) : null}
+        {actions ? (
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {actions}
+          </div>
         ) : null}
       </div>
 
@@ -369,7 +384,7 @@ export default function StudentCourseDetail({
           {instructorName ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Your instructor</CardTitle>
+                <CardTitle className="text-sm">Instructor</CardTitle>
               </CardHeader>
               <CardContent className="flex items-center gap-3">
                 <UserAvatar name={instructorName} className="h-10 w-10 text-sm" />

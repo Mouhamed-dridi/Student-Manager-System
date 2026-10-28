@@ -27,12 +27,19 @@ import UserManagementPage from "@/pages/users/UserManagementPage";
 import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
 import UserAvatar from "@/components/UserAvatar";
+import HeaderBackButton from "@/components/HeaderBackButton";
+import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
+import { useViewHistory } from "@/hooks/viewHistory";
 import { clearSession } from "@/lib/session";
 import { useAuthDisplayName } from "@/lib/authDisplay";
 import { brandTitle, useBranding } from "@/lib/branding";
 
-export default function Layout() {
-  const [active, setActive] = useState<MenuKey>("dashboard");
+function LayoutShell() {
+  // Sections live in the in-app history stack instead of local state: that is
+  // what the header's back arrow walks, and it keeps the sidebar highlight and
+  // the rendered page in step with the stack.
+  const { currentSection, pushSection } = useViewHistory();
+  const active = currentSection.key as MenuKey;
   // Which collapsible sidebar sections are open, keyed by parent menu key.
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     pay: true,
@@ -57,7 +64,7 @@ export default function Layout() {
     const sectionActive = isSectionActive(item, active);
     setOpenSections((prev) => toggleSectionOpen(prev, item.key, sectionActive));
     if (!sectionActive) {
-      setActive(item.key);
+      pushSection(item.key, item.label);
       // Entering Events from elsewhere always starts a new event, not an edit.
       if (item.key === "events") setEditingEvent(null);
     }
@@ -83,7 +90,7 @@ export default function Layout() {
             `"${saved.title}" was ${wasUpdate ? "updated" : "created"}.`,
           );
           setEditingEvent(null);
-          setActive("event-history");
+          pushSection("event-history", "Event History");
         }}
         onCancelEdit={() => setEditingEvent(null)}
       />
@@ -93,7 +100,7 @@ export default function Layout() {
         notice={eventNotice}
         onEdit={(event) => {
           setEditingEvent(event);
-          setActive("events");
+          pushSection("events", "New Event");
         }}
       />
     ),
@@ -152,7 +159,7 @@ export default function Layout() {
                       {item.children.map((child) => (
                         <button
                           key={child.key}
-                          onClick={() => setActive(child.key)}
+                          onClick={() => pushSection(child.key, child.label)}
                           className={cn(
                             "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors",
                             active === child.key
@@ -171,7 +178,7 @@ export default function Layout() {
             return (
               <button
                 key={item.key}
-                onClick={() => setActive(item.key)}
+                onClick={() => pushSection(item.key, item.label)}
                 className={cn(
                   "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   active === item.key
@@ -191,9 +198,12 @@ export default function Layout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
-          <span className="text-sm font-medium text-muted-foreground">
-            {brandTitle(branding)}
-          </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <HeaderBackButton />
+            <span className="truncate text-sm font-medium text-muted-foreground">
+              {brandTitle(branding)}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <UserAvatar name={displayName} fallback="A" />
             <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
@@ -209,5 +219,15 @@ export default function Layout() {
         <main className="flex-1 overflow-auto p-6">{pages[active]}</main>
       </div>
     </div>
+  );
+}
+
+export default function Layout() {
+  // The dashboard is the floor of the back stack, so the arrow stays hidden
+  // until the operator navigates away from it.
+  return (
+    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+      <LayoutShell />
+    </ViewHistoryProvider>
   );
 }
