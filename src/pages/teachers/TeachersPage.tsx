@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import {
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+} from "@/components/ui/segmented-tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
@@ -212,12 +216,12 @@ export default function TeachersPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-2xl font-semibold">Teachers</h2>
           <div className="flex items-center gap-2">
-            <TabsList>
-              <TabsTrigger value="list">Teacher List</TabsTrigger>
-              <TabsTrigger value="add" onClick={handleAddNew}>
+            <SegmentedTabsList>
+              <SegmentedTabsTrigger value="list">Teacher List</SegmentedTabsTrigger>
+              <SegmentedTabsTrigger value="add" onClick={handleAddNew}>
                 Add Teacher
-              </TabsTrigger>
-            </TabsList>
+              </SegmentedTabsTrigger>
+            </SegmentedTabsList>
             <Button
               variant="outline"
               onClick={() => fileInputRef.current?.click()}

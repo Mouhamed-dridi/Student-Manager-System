@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/tabs";
+import {
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+} from "@/components/ui/segmented-tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
@@ -112,10 +116,10 @@ export default function UserManagementPage() {
         onValueChange={(value) => setTab(value as AccountKind)}
         className="mt-4"
       >
-        <TabsList>
-          <TabsTrigger value="students">Students</TabsTrigger>
-          <TabsTrigger value="teachers">Teachers</TabsTrigger>
-        </TabsList>
+        <SegmentedTabsList>
+          <SegmentedTabsTrigger value="students">Students</SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="teachers">Teachers</SegmentedTabsTrigger>
+        </SegmentedTabsList>
       </Tabs>
 
       <div className="mt-4 space-y-3">

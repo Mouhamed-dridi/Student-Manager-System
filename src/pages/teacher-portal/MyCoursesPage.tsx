@@ -25,7 +25,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import {
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+} from "@/components/ui/segmented-tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   deleteTeacherCourse,
@@ -664,12 +668,12 @@ await refresh(record.id);
         </div>
       ) : (
         <Tabs value={view} onValueChange={handleViewChange} className="mt-4">
-        <TabsList>
-          <TabsTrigger value="my-courses">My Courses</TabsTrigger>
-          <TabsTrigger value="add-course">
+        <SegmentedTabsList>
+          <SegmentedTabsTrigger value="my-courses">My Courses</SegmentedTabsTrigger>
+          <SegmentedTabsTrigger value="add-course">
             {editing ? "Edit Course" : "Add Course"}
-          </TabsTrigger>
-        </TabsList>
+          </SegmentedTabsTrigger>
+        </SegmentedTabsList>
 
         <TabsContent value="my-courses">
           {error && (

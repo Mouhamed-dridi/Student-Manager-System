@@ -1,27 +1,50 @@
 import { useCallback, useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import { BookOpen, CalendarX, Hourglass, type LucideIcon } from "lucide-react";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  BookOpen,
+  CalendarCheck,
+  ExternalLink,
+  Hourglass,
+} from "lucide-react";
 import { DataError, DataLoading } from "@/components/DataState";
 import NotificationCallouts from "@/components/NotificationCallouts";
+import CustomizeWidgetsDialog from "@/components/dashboard/CustomizeWidgetsDialog";
+import {
+  DashboardWidgetCard,
+  DashboardWidgetEmpty,
+  DashboardWidgetStat,
+} from "@/components/dashboard/DashboardWidgets";
+import PersonalizeDashboardButton from "@/components/dashboard/PersonalizeDashboardButton";
 import {
   errorMessage,
+  listExams,
   listPayments,
   listPublications,
+  listPublishedQuizzes,
+  listStudentQuizResponses,
   loadStudentAttendance,
   subscribeToTable,
+  type AttendanceRecord,
+  type Quiz,
 } from "@/lib/api";
+import {
+  dashboardWidgetsKey,
+  loadWidgetPrefs,
+  saveWidgetPrefs,
+  widgetStatGridClass,
+} from "@/lib/dashboardWidgets";
 import { loadScheduledCourses } from "@/lib/trainings";
-import type { ScheduledCourseView } from "@/lib/trainings";
+import type { CourseMaterial, ScheduledCourseView } from "@/lib/trainings";
+import { cn } from "@/lib/utils";
+import type { ExamRecord } from "@/pages/teacher-portal/exams";
+import type { Payment } from "@/pages/pay/PaymentForm";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { loadCurrentStudent } from "./currentStudent";
+import {
+  STUDENT_WIDGETS,
+  type StudentWidgetPrefs,
+} from "./studentDashboardWidgets";
 
 const DAY_ORDER = [
   "Monday",
@@ -31,6 +54,56 @@ const DAY_ORDER = [
   "Friday",
 ];
 
+interface StudentMaterial {
+  courseName: string;
+  material: CourseMaterial;
+}
+
+interface UpcomingItem {
+  key: string;
+  kind: "Exam" | "QCM";
+  title: string;
+  detail: string;
+  date: string;
+}
+
+interface StudentDashboardData {
+  courses: ScheduledCourseView[];
+  materials: StudentMaterial[];
+  pendingPayments: Payment[];
+  attendance: AttendanceRecord[];
+  upcoming: UpcomingItem[];
+  announcements: Publication[];
+}
+
+function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+    now.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+function norm(value: string | undefined | null): string {
+  return (value ?? "").trim().toLocaleLowerCase();
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
+}
+
+function formatCurrency(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+  }).format(value);
+}
+
+/** The next scheduled course from today onwards (falls back to the first). */
 function nextUpcoming(
   courses: ScheduledCourseView[],
   today: Date,
@@ -40,82 +113,119 @@ function nextUpcoming(
   const nowSlot = `${String(today.getHours()).padStart(2, "0")}:${String(
     today.getMinutes(),
   ).padStart(2, "0")}`;
-  const upcoming = courses.find((c) => {
-    const dayIdx = DAY_ORDER.indexOf(c.day ?? "");
+  const upcoming = courses.find((course) => {
+    const dayIdx = DAY_ORDER.indexOf(course.day ?? "");
     if (dayIdx < todayIdx) return false;
     if (dayIdx > todayIdx) return true;
-    const start = ((c.time ?? "").split(/[–-]/)[0] ?? "").trim();
+    const start = ((course.time ?? "").split(/[–-]/)[0] ?? "").trim();
     return !start || start >= nowSlot;
   });
   return upcoming ?? courses[0];
 }
 
-interface StudentStats {
-  pending: number;
-  absences: number;
-}
-
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: LucideIcon;
-  label: string;
-  value: ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {label}
-        </CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <p className="text-2xl font-semibold">{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function StudentDashboardPage() {
   // undefined = session record still loading; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
-  const [stats, setStats] = useState<StudentStats | null>(null);
-  const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
-  const [announcements, setAnnouncements] = useState<Publication[] | null>(
-    null,
-  );
+  const [data, setData] = useState<StudentDashboardData | null>(null);
+  // Keyed per student record so two students sharing a browser keep their own
+  // layout (src/lib/dashboardWidgets.ts).
+  const [prefs, setPrefs] = useState<StudentWidgetPrefs | null>(null);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [quizError, setQuizError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (record: Student) => {
     try {
       setError(null);
-      const [payments, attendance, scheduled, pubs] = await Promise.all([
-        listPayments(),
-        loadStudentAttendance(record.fullName),
-        loadScheduledCourses(record.program, record.training, {
-          programId: record.programId,
-          trainingId: record.trainingId,
-        }).catch(() => []),
-        listPublications().catch(() => []),
+      setQuizError(null);
+      const [payments, attendance, scheduled, publications, allExams] =
+        await Promise.all([
+          listPayments().catch(() => [] as Payment[]),
+          loadStudentAttendance(record.fullName).catch(
+            () => [] as AttendanceRecord[],
+          ),
+          loadScheduledCourses(record.program, record.training, {
+            programId: record.programId,
+            trainingId: record.trainingId,
+          }).catch(() => [] as ScheduledCourseView[]),
+          listPublications().catch(() => [] as Publication[]),
+          listExams().catch(() => [] as ExamRecord[]),
+        ]);
+
+      const liveCourseIds = scheduled
+        .map((course) => course.id)
+        .filter((id): id is string => Boolean(id));
+      const [quizzes, responses] = await Promise.all([
+        listPublishedQuizzes(liveCourseIds).catch((err) => {
+          // Quizzes may not be migrated on this database; say so in the widget
+          // rather than showing an empty "nothing to do" list.
+          setQuizError(errorMessage(err));
+          return [] as Quiz[];
+        }),
+        listStudentQuizResponses(record.id).catch(() => []),
       ]);
-      const mine = payments.filter((p) => p.studentId === record.id);
-      setStats({
-        pending: mine.filter((p) => p.status === "pending").length,
-        absences: attendance.length,
-      });
-      setCourses(scheduled);
-      setAnnouncements(
-        pubs
-          .filter((p) => p.recipients.includes("students"))
+      const answered = new Set(responses.map((response) => response.quizId));
+
+      const today = todayIso();
+      const exams = allExams
+        .filter((exam) => exam.date >= today)
+        .filter((exam) => {
+          const program = norm(exam.program);
+          const training = norm(exam.training);
+          // An exam with no class snapshots targets everyone.
+          if (!program && !training) return true;
+          return (
+            program === norm(record.program) &&
+            training === norm(record.training)
+          );
+        })
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .slice(0, 3)
+        .map<UpcomingItem>((exam) => ({
+          key: `exam-${exam.id}`,
+          kind: "Exam",
+          title: exam.title || "Untitled exam",
+          detail: [exam.type, exam.duration].filter(Boolean).join(" · ") || "Exam",
+          date: exam.date,
+        }));
+
+      const openQuizzes = quizzes
+        .filter((quiz) => !answered.has(quiz.id))
+        .slice(0, 3)
+        .map<UpcomingItem>((quiz) => ({
+          key: `quiz-${quiz.id}`,
+          kind: "QCM",
+          title: quiz.title || "Untitled quiz",
+          detail: `${quiz.questions.length} question${
+            quiz.questions.length === 1 ? "" : "s"
+          }`,
+          date: quiz.createdAt,
+        }));
+
+      const materials = scheduled.flatMap((course) =>
+        (course.materials ?? []).map((material) => ({
+          courseName: course.name,
+          material,
+        })),
+      );
+
+      setData({
+        courses: scheduled,
+        materials,
+        pendingPayments: payments.filter(
+          (payment) =>
+            payment.studentId === record.id && payment.status === "pending",
+        ),
+        attendance,
+        upcoming: [...exams, ...openQuizzes],
+        announcements: publications
+          .filter((pub) => pub.recipients.includes("students"))
           .sort(
             (a, b) =>
               new Date(b.createdAt).getTime() -
               new Date(a.createdAt).getTime(),
           ),
-      );
+      });
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -124,10 +234,20 @@ export default function StudentDashboardPage() {
   useEffect(() => {
     let cancelled = false;
     loadCurrentStudent()
-      .then(async (record) => {
+      .then((record) => {
         if (cancelled) return;
         setStudent(record);
-        if (record) await refresh(record);
+        if (!record) return;
+        // Preferences depend on the student id, which only exists after the
+        // session record resolves — so they are read here, not in a
+        // synchronous effect.
+        setPrefs(
+          loadWidgetPrefs(
+            dashboardWidgetsKey("student", record.id),
+            STUDENT_WIDGETS,
+          ),
+        );
+        void refresh(record);
       })
       .catch(() => {
         if (!cancelled) setStudent(null);
@@ -155,129 +275,238 @@ export default function StudentDashboardPage() {
     );
   }
 
-  if (student === undefined) {
+  if (student === undefined || !prefs) {
     return <DataLoading label="Loading your dashboard…" />;
   }
 
   const firstName = student.fullName.trim().split(/\s+/)[0] || "Student";
-  const weekCourses = (courses ?? [])
+  const kpiCount = [prefs.courses, prefs.payments, prefs.attendance].filter(
+    Boolean,
+  ).length;
+  const visibleCount = STUDENT_WIDGETS.filter((w) => prefs[w.id]).length;
+  const sortedCourses = (data?.courses ?? [])
     .slice()
     .sort(
       (a, b) =>
         DAY_ORDER.indexOf(a.day ?? "") - DAY_ORDER.indexOf(b.day ?? "") ||
         (a.time ?? "").localeCompare(b.time ?? ""),
     );
-  const latestCourse = nextUpcoming(weekCourses, new Date());
+  const nextCourse = nextUpcoming(sortedCourses, new Date());
+  const pendingTotal = (data?.pendingPayments ?? []).reduce(
+    (sum, payment) => sum + payment.amount,
+    0,
+  );
+  const lastAttendance = (data?.attendance ?? [])[0]?.date;
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold">Dashboard</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Welcome back, {firstName}! You are assigned to{" "}
-        {student.training || "—"} ({student.program}).
-      </p>
-
-      <NotificationCallouts publications={announcements ?? []} />
-
-      {error && (
-        <div className="mt-4">
-          <DataError message={error} />
-        </div>
-      )}
-
-      {stats === null ? (
-        !error && <DataLoading label="Loading your dashboard…" />
-      ) : (
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          <StatCard
-            icon={BookOpen}
-            label="Latest Course"
-            value={
-              latestCourse ? (
-                <>
-                  <span className="block truncate">{latestCourse.name}</span>
-                  {latestCourse.day && latestCourse.time ? (
-                    <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                      {latestCourse.day} · {latestCourse.time}
-                    </span>
-                  ) : null}
-                </>
-              ) : (
-                "No courses yet"
-              )
-            }
-          />
-          <StatCard
-            icon={Hourglass}
-            label="Pending Payments"
-            value={String(stats.pending)}
-          />
-          <StatCard
-            icon={CalendarX}
-            label="Absence Records"
-            value={String(stats.absences)}
-          />
-        </div>
-      )}
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">This Week's Schedule</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {courses === null ? (
-              <DataLoading label="Loading schedule…" />
-            ) : weekCourses.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No courses scheduled for your program and training yet.
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {weekCourses.map((c, i) => (
-                  <li
-                    key={c.id ?? `${c.name}-${c.day}-${i}`}
-                    className="flex items-center justify-between py-2 text-sm"
-                  >
-                    <span className="font-medium">{c.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {c.day && c.time ? `${c.day} · ${c.time}` : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Latest Announcements</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {announcements === null ? (
-              <DataLoading label="Loading announcements…" />
-            ) : announcements.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No announcements yet.
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {announcements.slice(0, 3).map((p) => (
-                  <li key={p.id} className="py-2">
-                    <p className="text-sm font-medium">{p.title}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {p.createdAt
-                        ? new Date(p.createdAt).toLocaleDateString()
-                        : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-semibold">Welcome back, {firstName}</h2>
+        <PersonalizeDashboardButton onClick={() => setCustomizeOpen(true)} />
       </div>
+
+      <NotificationCallouts publications={data?.announcements ?? []} />
+
+      {error && <DataError message={error} />}
+
+      {!data ? (
+        !error && <DataLoading label="Loading your dashboard…" />
+      ) : visibleCount === 0 ? (
+        <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
+          All widgets are hidden. Use{" "}
+          <span className="font-medium text-foreground">
+            Personalize your dashboard
+          </span>{" "}
+          to bring some back.
+        </p>
+      ) : (
+        <>
+          {kpiCount > 0 && (
+            <div className={cn("grid gap-4", widgetStatGridClass(kpiCount))}>
+              {prefs.courses && (
+                <DashboardWidgetStat
+                  icon={BookOpen}
+                  label="Enrolled Courses"
+                  value={String(data.courses.length)}
+                  hint={
+                    nextCourse
+                      ? `Next: ${nextCourse.name}${
+                          nextCourse.day && nextCourse.time
+                            ? ` · ${nextCourse.day} ${nextCourse.time}`
+                            : ""
+                        }`
+                      : "No courses scheduled yet"
+                  }
+                />
+              )}
+              {prefs.payments && (
+                <DashboardWidgetStat
+                  icon={Hourglass}
+                  label="Pending Payments"
+                  value={String(data.pendingPayments.length)}
+                  hint={
+                    data.pendingPayments.length > 0
+                      ? `${formatCurrency(pendingTotal)} outstanding`
+                      : "Nothing outstanding"
+                  }
+                />
+              )}
+              {prefs.attendance && (
+                <DashboardWidgetStat
+                  icon={CalendarCheck}
+                  label="Attendance Record"
+                  value={String(data.attendance.length)}
+                  hint={
+                    lastAttendance
+                      ? `Last entry ${formatDate(lastAttendance)}`
+                      : "No entries logged yet"
+                  }
+                />
+              )}
+            </div>
+          )}
+
+          {(prefs.exams || prefs.announcements) && (
+            <div
+              className={cn(
+                "grid gap-4",
+                prefs.exams && prefs.announcements && "lg:grid-cols-2",
+              )}
+            >
+              {prefs.exams && (
+                <DashboardWidgetCard
+                  title="Upcoming Exams / QCM"
+                  subtitle="Exams ahead and quizzes you have not answered"
+                >
+                  {data.upcoming.length === 0 ? (
+                    quizError ? (
+                      <p className="text-sm text-destructive">{quizError}</p>
+                    ) : (
+                      <DashboardWidgetEmpty>
+                        Nothing scheduled. You are all caught up.
+                      </DashboardWidgetEmpty>
+                    )
+                  ) : (
+                    <>
+                      <ul className="divide-y">
+                        {data.upcoming.map((item) => (
+                          <li
+                            key={item.key}
+                            className="flex items-start justify-between gap-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">
+                                {item.title}
+                              </p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {item.kind} · {item.detail}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {item.date ? formatDate(item.date) : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {quizError && (
+                        <p className="mt-2 text-xs text-destructive">
+                          Quizzes unavailable: {quizError}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </DashboardWidgetCard>
+              )}
+
+              {prefs.announcements && (
+                <DashboardWidgetCard
+                  title="Recent Announcements"
+                  subtitle="Notices sent to students"
+                >
+                  {data.announcements.length === 0 ? (
+                    <DashboardWidgetEmpty>
+                      No announcements yet.
+                    </DashboardWidgetEmpty>
+                  ) : (
+                    <ul className="divide-y">
+                      {data.announcements.slice(0, 3).map((pub) => (
+                        <li key={pub.id} className="py-2">
+                          <p className="text-sm font-medium">{pub.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {pub.createdAt
+                              ? new Date(pub.createdAt).toLocaleDateString()
+                              : ""}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </DashboardWidgetCard>
+              )}
+            </div>
+          )}
+
+          {prefs.materials && (
+            <DashboardWidgetCard
+              title="Course Materials Quick Access"
+              subtitle={
+                data.materials.length === 0
+                  ? "Files attached to your courses"
+                  : `${data.materials.length} file${
+                      data.materials.length === 1 ? "" : "s"
+                    } across your courses`
+              }
+            >
+              {data.materials.length === 0 ? (
+                <DashboardWidgetEmpty>
+                  No course materials have been attached yet.
+                </DashboardWidgetEmpty>
+              ) : (
+                <ul className="grid gap-2 sm:grid-cols-2">
+                  {data.materials.map(({ courseName, material }, index) => (
+                    <li
+                      key={`${courseName}-${material.name}-${index}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {material.name}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {courseName}
+                          {material.type ? ` · ${material.type}` : ""}
+                        </p>
+                      </div>
+                      {material.url ? (
+                        <a
+                          href={material.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                        >
+                          Open
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DashboardWidgetCard>
+          )}
+        </>
+      )}
+
+      <CustomizeWidgetsDialog
+        open={customizeOpen}
+        widgets={STUDENT_WIDGETS}
+        preferences={prefs}
+        onOpenChange={setCustomizeOpen}
+        onSave={(next) => {
+          setPrefs(next);
+          saveWidgetPrefs(dashboardWidgetsKey("student", student.id), next);
+        }}
+      />
     </div>
   );
 }
