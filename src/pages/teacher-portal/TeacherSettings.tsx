@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faGithub,
+  faLinkedin,
+  faWhatsapp,
+} from "@fortawesome/free-brands-svg-icons";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -38,10 +44,13 @@ import {
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
 import {
   fileToAvatarDataUrl,
+  loadTeacherSocialLinks,
   notifyTeacherProfileChanged,
   saveTeacherAvatar,
+  saveTeacherSocialLinks,
   useTeacherAvatar,
 } from "@/lib/teacherProfile";
+import type { TeacherSocialLinks } from "@/lib/teacherProfile";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
@@ -114,6 +123,117 @@ export default function TeacherSettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// The three social platforms a teacher can fill in. Stored per teacher in this
+// browser (the teachers table has no linkedin/whatsapp/github columns), the
+// same trade-off as the avatar above.
+const SOCIAL_FIELDS = [
+  {
+    key: "linkedin",
+    label: "LinkedIn",
+    icon: faLinkedin,
+    placeholder: "linkedin.com/in/username",
+  },
+  {
+    key: "whatsapp",
+    label: "WhatsApp",
+    icon: faWhatsapp,
+    placeholder: "wa.me/15551234567",
+  },
+  {
+    key: "github",
+    label: "GitHub",
+    icon: faGithub,
+    placeholder: "github.com/username",
+  },
+] as const;
+
+function SocialLinksCard({ teacherId }: { teacherId: string }) {
+  const [links, setLinks] = useState<TeacherSocialLinks>(() =>
+    loadTeacherSocialLinks(teacherId),
+  );
+  const [message, setMessage] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
+  const handleChange = (key: keyof TeacherSocialLinks, value: string) => {
+    setLinks((prev) => ({ ...prev, [key]: value }));
+    setMessage(null);
+    setLinkError(null);
+  };
+
+  const handleSave = () => {
+    setMessage(null);
+    setLinkError(null);
+    try {
+      saveTeacherSocialLinks(teacherId, links);
+      setMessage("Links saved in this browser.");
+    } catch (err) {
+      setLinkError(errorMessage(err));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Social links</CardTitle>
+        <CardDescription>
+          Optional links to your professional profiles.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {SOCIAL_FIELDS.map(({ key, label, icon, placeholder }) => (
+          <div key={key} className="space-y-2">
+            <Label htmlFor={`teacher-${key}`}>{label}</Label>
+            <div className="flex items-stretch overflow-hidden rounded-lg border border-input transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
+              <span
+                aria-hidden="true"
+                className="flex items-center border-r border-input bg-muted/60 px-2.5 text-muted-foreground"
+              >
+                <FontAwesomeIcon icon={icon} className="text-sm" />
+              </span>
+              <Input
+                id={`teacher-${key}`}
+                type="url"
+                inputMode="url"
+                autoComplete="off"
+                spellCheck={false}
+                value={links[key]}
+                onChange={(event) => handleChange(key, event.target.value)}
+                placeholder={placeholder}
+                className="rounded-none border-0 bg-transparent focus-visible:ring-0 dark:bg-transparent"
+              />
+            </div>
+          </div>
+        ))}
+
+        <p className="text-xs text-muted-foreground">
+          Saved in this browser only — the teachers table has no social-media
+          columns, so nothing is uploaded to the database.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={handleSave}>Save Links</Button>
+          {message && (
+            <p className="text-sm text-green-600 dark:text-green-400">
+              {message}
+            </p>
+          )}
+          {linkError && (
+            <p className="text-sm text-red-600 dark:text-red-400">
+              {linkError}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -373,6 +493,8 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
           </div>
         </CardContent>
       </Card>
+
+      <SocialLinksCard key={teacher.id} teacherId={teacher.id} />
     </div>
   );
 }

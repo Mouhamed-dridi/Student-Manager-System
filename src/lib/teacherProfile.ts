@@ -89,11 +89,80 @@ export function useTeacherAvatar(teacherId?: string): string | null {
   return useSyncExternalStore(subscribe, getSnapshot, () => null);
 }
 
+// ------------------------------------------------------------ social links
+//
+// Same reasoning as the avatar: `teachers` has no linkedin/whatsapp/github
+// columns, so the links a teacher enters in Settings are kept in this browser
+// under ssm-teacher-social:<teacherId>. Nothing is uploaded.
+
+const SOCIAL_KEY_PREFIX = "ssm-teacher-social:";
+
+export interface TeacherSocialLinks {
+  linkedin: string;
+  whatsapp: string;
+  github: string;
+}
+
+export const EMPTY_TEACHER_SOCIAL_LINKS: TeacherSocialLinks = {
+  linkedin: "",
+  whatsapp: "",
+  github: "",
+};
+
+export function teacherSocialKey(teacherId: string): string {
+  return `${SOCIAL_KEY_PREFIX}${teacherId}`;
+}
+
+/** Stored links for one teacher; blanks when absent or unreadable. */
+export function loadTeacherSocialLinks(
+  teacherId?: string,
+): TeacherSocialLinks {
+  if (!teacherId) return { ...EMPTY_TEACHER_SOCIAL_LINKS };
+  try {
+    const raw = localStorage.getItem(teacherSocialKey(teacherId));
+    if (!raw) return { ...EMPTY_TEACHER_SOCIAL_LINKS };
+    const parsed: unknown = JSON.parse(raw);
+    const record =
+      parsed && typeof parsed === "object"
+        ? (parsed as Partial<TeacherSocialLinks>)
+        : {};
+    return {
+      linkedin: typeof record.linkedin === "string" ? record.linkedin : "",
+      whatsapp: typeof record.whatsapp === "string" ? record.whatsapp : "",
+      github: typeof record.github === "string" ? record.github : "",
+    };
+  } catch {
+    return { ...EMPTY_TEACHER_SOCIAL_LINKS };
+  }
+}
+
+/** Trims and stores the links, or clears the entry when all three are blank. */
+export function saveTeacherSocialLinks(
+  teacherId: string,
+  links: TeacherSocialLinks,
+): void {
+  const next: TeacherSocialLinks = {
+    linkedin: links.linkedin.trim(),
+    whatsapp: links.whatsapp.trim(),
+    github: links.github.trim(),
+  };
+  try {
+    if (!next.linkedin && !next.whatsapp && !next.github) {
+      localStorage.removeItem(teacherSocialKey(teacherId));
+    } else {
+      localStorage.setItem(teacherSocialKey(teacherId), JSON.stringify(next));
+    }
+  } catch {
+    throw new Error(
+      "The social links could not be saved in this browser. Free up some storage and try again.",
+    );
+  }
+}
+
 /** Tells the shell to re-read the teacher record (new name/specialty). */
 export function notifyTeacherProfileChanged(): void {
   window.dispatchEvent(new Event(TEACHER_PROFILE_CHANGED_EVENT));
 }
-
 export function subscribeTeacherProfileChanged(
   listener: () => void,
 ): () => void {
