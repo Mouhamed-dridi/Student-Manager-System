@@ -9,6 +9,7 @@ import {
   Users,
   CalendarDays,
   CalendarClock,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,11 +25,13 @@ import PlanningPage from "./PlanningPage";
 import TeacherEventsPage from "./TeacherEventsPage";
 import TeacherEventDetailPage from "./TeacherEventDetailPage";
 import QcmPage from "./QcmPage";
+import TeacherSettingsPage from "./TeacherSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
+import { subscribeTeacherProfileChanged, useTeacherAvatar } from "@/lib/teacherProfile";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
@@ -44,7 +47,8 @@ type PageKey =
   | "class"
   | "planning"
   | "events"
-  | "qcm";
+  | "qcm"
+  | "settings";
 
 type TeacherMenuItem =
   | { key: PageKey; label: string; icon: LucideIcon; children?: undefined }
@@ -79,6 +83,7 @@ const menuItems: TeacherMenuItem[] = [
   // Read-only view of the operator's events; CalendarClock keeps it distinct
   // from Planning's CalendarDays.
   { key: "events", label: "Events", icon: CalendarClock },
+  { key: "settings", label: "Settings", icon: Settings },
 ];
 
 function clearTeacherSession() {
@@ -110,6 +115,7 @@ function TeacherShell() {
   const navigate = useNavigate();
   const branding = useBranding();
   const unreadAnnouncements = useUnreadAnnouncements("teachers");
+  const avatar = useTeacherAvatar(teacher?.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +124,21 @@ function TeacherShell() {
     });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Saving the Profile tab asks the shell to re-read the record, so a new name
+  // reaches the header and top bar without a page reload.
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeTeacherProfileChanged(() => {
+      loadCurrentTeacher().then((next) => {
+        if (!cancelled) setTeacher(next);
+      });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -175,6 +196,7 @@ function TeacherShell() {
     planning: <PlanningPage />,
     events: <TeacherEventsPage onOpenEvent={setOpenEventId} />,
     qcm: <QcmPage />,
+    settings: <TeacherSettingsPage />,
   };
 
   return (
@@ -287,7 +309,11 @@ function TeacherShell() {
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <UserAvatar name={teacher?.fullName} fallback="T" />
+            <UserAvatar
+              name={teacher?.fullName}
+              src={avatar ?? undefined}
+              fallback="T"
+            />
             <Button variant="outline" size="sm" onClick={handleLogout}>
               Logout
             </Button>

@@ -56,11 +56,14 @@ export default function PayPage() {
 
   const paymentsWithNames = useMemo(() => {
     if (!students || !payments) return payments;
-    return payments.map((p) => ({
-      ...p,
-      studentName:
-        students.find((s) => s.id === p.studentId)?.fullName ?? p.studentName,
-    }));
+    return payments.map((p) => {
+      const student = students.find((s) => s.id === p.studentId);
+      return {
+        ...p,
+        studentName: student?.fullName ?? p.studentName,
+        program: student?.program ?? p.program,
+      };
+    });
   }, [students, payments]);
 
   const handleAdd = async (payment: Payment) => {

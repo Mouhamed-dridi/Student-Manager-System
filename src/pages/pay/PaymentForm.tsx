@@ -15,6 +15,8 @@ export interface Payment {
   id: string;
   studentId: string;
   studentName: string;
+  /** Display-only: resolved from the student record by the list pages. */
+  program?: Student["program"];
   amount: number;
   planType: "one_time" | "semester" | "monthly";
   paymentDate: string;
@@ -86,6 +88,7 @@ export default function PaymentForm({
       id: initial?.id ?? crypto.randomUUID(),
       studentId: selectedStudent.id,
       studentName: selectedStudent.fullName,
+      program: selectedStudent.program ?? initial?.program,
       amount: parseFloat(amount),
       planType,
       paymentDate: date,

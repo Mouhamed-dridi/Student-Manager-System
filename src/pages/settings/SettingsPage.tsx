@@ -52,12 +52,7 @@ import {
 } from "@/lib/license";
 import { LicenseTab } from "./LicenseTab";
 import LicenseRenewDialog from "./LicenseRenewDialog";
-
-const LANGUAGE_OPTIONS = [
-  { value: "en", label: "English" },
-  { value: "fr", label: "Français" },
-  { value: "ar", label: "العربية" },
-];
+import { LANGUAGE_OPTIONS } from "@/lib/languages";
 
 const TABS = [
   { key: "general", label: "General" },
