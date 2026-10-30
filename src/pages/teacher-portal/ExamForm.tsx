@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,8 @@ export interface ExamFormData {
   attachment?: string;
   /** Newly picked file, uploaded by the page before the exam is saved. */
   attachmentFile?: File;
+  /** Alias for attachmentFile */
+  examFile?: File;
 }
 
 interface ExamFormProps {
@@ -37,6 +39,8 @@ interface ExamFormProps {
   onSubmit: (data: ExamFormData) => Promise<void> | void;
   onCancel?: () => void;
   uploading: boolean;
+  /** When true (default for new exams), an attachment file is mandatory. */
+  requireAttachment?: boolean;
 }
 
 /** Keeps a stored value that is not one of the presets editable via "Other". */
@@ -52,11 +56,13 @@ export function ExamForm({
   onSubmit,
   onCancel,
   uploading,
+  requireAttachment,
 }: ExamFormProps) {
   const [title, setTitle] = useState(initialData?.title ?? "");
   const [date, setDate] = useState(initialData?.date ?? "");
   const [attachment, setAttachment] = useState(initialData?.attachment ?? "");
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [typeState, setTypeState] = useState(() =>
     splitChoice(initialData?.type, EXAM_TYPE_OPTIONS),
@@ -65,6 +71,8 @@ export function ExamForm({
     splitChoice(initialData?.duration, EXAM_DURATION_OPTIONS),
   );
   const [semester, setSemester] = useState(initialData?.semester ?? "");
+
+  const isAttachmentRequired = requireAttachment ?? !initialData;
 
   const typeValue =
     typeState.choice === OTHER_OPTION ? typeState.custom.trim() : typeState.choice;
@@ -80,8 +88,41 @@ export function ExamForm({
     durationValue !== "" &&
     semester !== "";
 
+  const handleFormSubmit = async () => {
+    if (!valid || saving) return;
+
+    if (isAttachmentRequired && !attachmentFile && !attachment) {
+      setAttachmentError("Please add an exam file before submitting.");
+      return;
+    }
+
+    setAttachmentError(null);
+    setSaving(true);
+    try {
+      await onSubmit({
+        id: initialData?.id ?? crypto.randomUUID(),
+        title: title.trim(),
+        date,
+        type: typeValue || undefined,
+        duration: durationValue || undefined,
+        semester: semester || undefined,
+        attachment: attachment || undefined,
+        attachmentFile: attachmentFile ?? undefined,
+        examFile: attachmentFile ?? undefined,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <div className="max-w-xl space-y-4">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleFormSubmit();
+      }}
+      className="max-w-xl space-y-4"
+    >
       <div className="space-y-2">
         <Label htmlFor="exam-title">Title</Label>
         <Input
@@ -184,18 +225,44 @@ export function ExamForm({
         ) : null}
       </div>
       <div className="space-y-2">
-        <Label htmlFor="exam-file">Attachment (PDF)</Label>
+        <Label htmlFor="exam-file" className="flex items-center gap-1">
+          Attachment (PDF)
+          {isAttachmentRequired ? (
+            <span className="text-destructive font-semibold" title="Required">
+              *
+            </span>
+          ) : null}
+        </Label>
         <Input
           id="exam-file"
           type="file"
           accept=".pdf,application/pdf"
           disabled={saving}
+          aria-invalid={!!attachmentError}
+          className={
+            attachmentError
+              ? "border-destructive focus-visible:ring-destructive"
+              : ""
+          }
           onChange={(e) => {
             const picked = e.target.files?.[0] ?? null;
             setAttachmentFile(picked);
             setAttachment(picked?.name ?? "");
+            if (picked) {
+              setAttachmentError(null);
+            }
           }}
         />
+        {attachmentError ? (
+          <p
+            id="exam-file-error"
+            className="flex items-center gap-1.5 text-xs font-medium text-destructive animate-in fade-in duration-150"
+            role="alert"
+          >
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            {attachmentError}
+          </p>
+        ) : null}
         {attachment ? (
           <p className="text-xs text-muted-foreground">
             Selected file: {attachment}
@@ -203,27 +270,7 @@ export function ExamForm({
         ) : null}
       </div>
       <div className="flex gap-2">
-        <Button
-          disabled={!valid || saving}
-          onClick={async () => {
-            if (!valid || saving) return;
-            setSaving(true);
-            try {
-              await onSubmit({
-                id: initialData?.id ?? crypto.randomUUID(),
-                title: title.trim(),
-                date,
-                type: typeValue || undefined,
-                duration: durationValue || undefined,
-                semester: semester || undefined,
-                attachment: attachment || undefined,
-                attachmentFile: attachmentFile ?? undefined,
-              });
-            } finally {
-              setSaving(false);
-            }
-          }}
-        >
+        <Button type="submit" disabled={!valid || saving}>
           {saving ? (
             <span className="flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -236,11 +283,11 @@ export function ExamForm({
           )}
         </Button>
         {initialData && onCancel ? (
-          <Button variant="outline" onClick={onCancel}>
+          <Button variant="outline" type="button" onClick={onCancel}>
             Cancel
           </Button>
         ) : null}
       </div>
-    </div>
+    </form>
   );
 }

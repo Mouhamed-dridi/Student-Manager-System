@@ -19,12 +19,9 @@ import {
   listExams,
   listPayments,
   listPublications,
-  listPublishedQuizzes,
-  listStudentQuizResponses,
   loadStudentAttendance,
   subscribeToTable,
   type AttendanceRecord,
-  type Quiz,
 } from "@/lib/api";
 import {
   dashboardWidgetsKey,
@@ -61,7 +58,6 @@ interface StudentMaterial {
 
 interface UpcomingItem {
   key: string;
-  kind: "Exam" | "QCM";
   title: string;
   detail: string;
   date: string;
@@ -131,13 +127,11 @@ export default function StudentDashboardPage() {
   // layout (src/lib/dashboardWidgets.ts).
   const [prefs, setPrefs] = useState<StudentWidgetPrefs | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
-  const [quizError, setQuizError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async (record: Student) => {
     try {
       setError(null);
-      setQuizError(null);
       const [payments, attendance, scheduled, publications, allExams] =
         await Promise.all([
           listPayments().catch(() => [] as Payment[]),
@@ -151,20 +145,6 @@ export default function StudentDashboardPage() {
           listPublications().catch(() => [] as Publication[]),
           listExams().catch(() => [] as ExamRecord[]),
         ]);
-
-      const liveCourseIds = scheduled
-        .map((course) => course.id)
-        .filter((id): id is string => Boolean(id));
-      const [quizzes, responses] = await Promise.all([
-        listPublishedQuizzes(liveCourseIds).catch((err) => {
-          // Quizzes may not be migrated on this database; say so in the widget
-          // rather than showing an empty "nothing to do" list.
-          setQuizError(errorMessage(err));
-          return [] as Quiz[];
-        }),
-        listStudentQuizResponses(record.id).catch(() => []),
-      ]);
-      const answered = new Set(responses.map((response) => response.quizId));
 
       const today = todayIso();
       const exams = allExams
@@ -183,23 +163,9 @@ export default function StudentDashboardPage() {
         .slice(0, 3)
         .map<UpcomingItem>((exam) => ({
           key: `exam-${exam.id}`,
-          kind: "Exam",
           title: exam.title || "Untitled exam",
           detail: [exam.type, exam.duration].filter(Boolean).join(" · ") || "Exam",
           date: exam.date,
-        }));
-
-      const openQuizzes = quizzes
-        .filter((quiz) => !answered.has(quiz.id))
-        .slice(0, 3)
-        .map<UpcomingItem>((quiz) => ({
-          key: `quiz-${quiz.id}`,
-          kind: "QCM",
-          title: quiz.title || "Untitled quiz",
-          detail: `${quiz.questions.length} question${
-            quiz.questions.length === 1 ? "" : "s"
-          }`,
-          date: quiz.createdAt,
         }));
 
       const materials = scheduled.flatMap((course) =>
@@ -217,7 +183,7 @@ export default function StudentDashboardPage() {
             payment.studentId === record.id && payment.status === "pending",
         ),
         attendance,
-        upcoming: [...exams, ...openQuizzes],
+        upcoming: exams,
         announcements: publications
           .filter((pub) => pub.recipients.includes("students"))
           .sort(
@@ -375,45 +341,34 @@ export default function StudentDashboardPage() {
             >
               {prefs.exams && (
                 <DashboardWidgetCard
-                  title="Upcoming Exams / QCM"
-                  subtitle="Exams ahead and quizzes you have not answered"
+                  title="Upcoming Exams"
+                  subtitle="Exams ahead for your class"
                 >
                   {data.upcoming.length === 0 ? (
-                    quizError ? (
-                      <p className="text-sm text-destructive">{quizError}</p>
-                    ) : (
-                      <DashboardWidgetEmpty>
-                        Nothing scheduled. You are all caught up.
-                      </DashboardWidgetEmpty>
-                    )
+                    <DashboardWidgetEmpty>
+                      Nothing scheduled. You are all caught up.
+                    </DashboardWidgetEmpty>
                   ) : (
-                    <>
-                      <ul className="divide-y">
-                        {data.upcoming.map((item) => (
-                          <li
-                            key={item.key}
-                            className="flex items-start justify-between gap-3 py-2"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                {item.title}
-                              </p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                {item.kind} · {item.detail}
-                              </p>
-                            </div>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {item.date ? formatDate(item.date) : ""}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {quizError && (
-                        <p className="mt-2 text-xs text-destructive">
-                          Quizzes unavailable: {quizError}
-                        </p>
-                      )}
-                    </>
+                    <ul className="divide-y">
+                      {data.upcoming.map((item) => (
+                        <li
+                          key={item.key}
+                          className="flex items-start justify-between gap-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {item.title}
+                            </p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {item.detail}
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {item.date ? formatDate(item.date) : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </DashboardWidgetCard>
               )}

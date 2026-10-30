@@ -622,7 +622,7 @@ await refresh(record.id);
     <div>
       <h2 className="text-2xl font-semibold">Courses</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Teaching {teacher.specialty || "—"}
+        Teaching {teacher.jobTitle || teacher.specialty || "—"}
       </p>
 
       {view === "detail" && detail ? (

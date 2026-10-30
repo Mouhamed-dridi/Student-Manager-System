@@ -36,8 +36,8 @@ export const STUDENT_WIDGETS: DashboardWidget<StudentWidgetId>[] = [
   },
   {
     id: "exams",
-    label: "Upcoming Exams / QCM",
-    description: "Exams and published quizzes ahead for you.",
+    label: "Upcoming Exams",
+    description: "Exams ahead for your class.",
   },
   {
     id: "announcements",

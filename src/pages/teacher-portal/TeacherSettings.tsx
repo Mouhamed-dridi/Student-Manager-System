@@ -36,21 +36,27 @@ import { DataLoading } from "@/components/DataState";
 import UserAvatar from "@/components/UserAvatar";
 import {
   applyDarkMode,
+  deleteProfilePicture,
   errorMessage,
   getSettings,
   saveSettings,
   updateTeacherProfile,
+  uploadProfilePicture,
 } from "@/lib/api";
+import type { UserProfile } from "@/lib/api";
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
 import {
-  fileToAvatarDataUrl,
   loadTeacherSocialLinks,
   notifyTeacherProfileChanged,
-  saveTeacherAvatar,
   saveTeacherSocialLinks,
-  useTeacherAvatar,
 } from "@/lib/teacherProfile";
 import type { TeacherSocialLinks } from "@/lib/teacherProfile";
+import {
+  loadUserProfile,
+  saveUserProfile,
+  useUserProfile,
+  userProfileFullName,
+} from "@/lib/userProfile";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
@@ -65,22 +71,35 @@ function splitFullName(fullName: string): { first: string; last: string } {
 export default function TeacherSettingsPage() {
   // undefined = session record still loading; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
+  // The form must not mount before the user_profiles row is known, otherwise
+  // the inputs would start from the teachers-table fallback and a save would
+  // write those stale values back over the database ones.
+  const [profileReady, setProfileReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     loadCurrentTeacher()
-      .then((record) => {
-        if (!cancelled) setTeacher(record);
+      .then(async (record) => {
+        if (cancelled) return;
+        setTeacher(record);
+        if (!record) return;
+        // Failure here only means "no row / table missing"; the form then falls
+        // back to the teachers record.
+        await loadUserProfile("teacher", record.id).catch(() => null);
+        if (!cancelled) setProfileReady(true);
       })
       .catch(() => {
-        if (!cancelled) setTeacher(null);
+        if (!cancelled) {
+          setTeacher(null);
+          setProfileReady(true);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  if (teacher === undefined) {
+  if (teacher === undefined || (teacher && !profileReady)) {
     return (
       <div>
         <h2 className="text-2xl font-semibold">Settings</h2>
@@ -150,10 +169,30 @@ const SOCIAL_FIELDS = [
   },
 ] as const;
 
-function SocialLinksCard({ teacherId }: { teacherId: string }) {
-  const [links, setLinks] = useState<TeacherSocialLinks>(() =>
-    loadTeacherSocialLinks(teacherId),
-  );
+function SocialLinksCard({
+  teacherId,
+  profile,
+  firstName,
+  lastName,
+  avatarUrl,
+}: {
+  teacherId: string;
+  profile: UserProfile | null;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string;
+}) {
+  const [links, setLinks] = useState<TeacherSocialLinks>(() => {
+    // Database first; the localStorage mirror only fills gaps for accounts
+    // whose links were saved before user_profiles existed.
+    const local = loadTeacherSocialLinks(teacherId);
+    return {
+      linkedin: profile?.linkedinUrl ?? local.linkedin,
+      whatsapp: profile?.whatsappNumber ?? local.whatsapp,
+      github: profile?.githubUrl ?? local.github,
+    };
+  });
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -169,14 +208,37 @@ function SocialLinksCard({ teacherId }: { teacherId: string }) {
     setLinkError(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setMessage(null);
     setLinkError(null);
+    setSaving(true);
+    const next: TeacherSocialLinks = {
+      linkedin: links.linkedin.trim(),
+      whatsapp: links.whatsapp.trim(),
+      github: links.github.trim(),
+    };
     try {
-      saveTeacherSocialLinks(teacherId, links);
-      setMessage("Links saved in this browser.");
+      // A blank link is written as NULL so "cleared" really removes it.
+      await saveUserProfile({
+        userId: teacherId,
+        role: "teacher",
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        avatarUrl,
+        linkedinUrl: next.linkedin || undefined,
+        whatsappNumber: next.whatsapp || undefined,
+        githubUrl: next.github || undefined,
+      });
+      try {
+        saveTeacherSocialLinks(teacherId, next);
+      } catch {
+        // Local mirror only — the database copy already succeeded.
+      }
+      setMessage("Links saved.");
     } catch (err) {
       setLinkError(errorMessage(err));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -215,12 +277,13 @@ function SocialLinksCard({ teacherId }: { teacherId: string }) {
         ))}
 
         <p className="text-xs text-muted-foreground">
-          Saved in this browser only — the teachers table has no social-media
-          columns, so nothing is uploaded to the database.
+          Stored on your profile (user_profiles) and mirrored in this browser.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSave}>Save Links</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? "Saving…" : "Save Links"}
+          </Button>
           {message && (
             <p className="text-sm text-green-600 dark:text-green-400">
               {message}
@@ -238,18 +301,38 @@ function SocialLinksCard({ teacherId }: { teacherId: string }) {
 }
 
 function ProfileTab({ teacher }: { teacher: Teacher }) {
-  const initial = splitFullName(teacher.fullName);
+  // The user_profiles row is the source for the name/photo shown in the top
+  // bar; the teachers record is only the fallback for accounts created before
+  // this table existed.
+  const profile = useUserProfile("teacher", teacher.id);
+  const initial = splitFullName(userProfileFullName(profile) || teacher.fullName);
   const [firstName, setFirstName] = useState(initial.first);
   const [lastName, setLastName] = useState(initial.last);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const avatar = useTeacherAvatar(teacher.id);
+  const avatar = profile?.avatarUrl;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [urlDraft, setUrlDraft] = useState("");
+
+  /**
+   * The row as it should be written: server values plus whatever the form is
+   * currently holding. Every partial save (photo, links) needs the whole row
+   * because the upsert replaces it, and blanking the other columns would lose
+   * data the person never touched.
+   */
+  const profileBase = (): UserProfile => ({
+    userId: teacher.id,
+    role: "teacher",
+    firstName: firstName.trim() || profile?.firstName || initial.first,
+    lastName: lastName.trim() || profile?.lastName || initial.last,
+    avatarUrl: avatar ?? undefined,
+    linkedinUrl: profile?.linkedinUrl,
+    whatsappNumber: profile?.whatsappNumber,
+    githubUrl: profile?.githubUrl,
+  });
 
   useEffect(() => {
     if (!saveMessage) return;
@@ -267,45 +350,37 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
     if (!file) return;
     setAvatarError(null);
     setAvatarBusy(true);
+    let uploaded: string | undefined;
     try {
-      saveTeacherAvatar(teacher.id, await fileToAvatarDataUrl(file));
+      // Storage first: the row only ever points at an object that exists.
+      uploaded = await uploadProfilePicture(teacher.id, file);
+      const previous = avatar;
+      await saveUserProfile({ ...profileBase(), avatarUrl: uploaded });
+      // The replaced object is no longer referenced — drop it, but never let
+      // that failure surface (the new photo is already live).
+      if (previous && previous !== uploaded) {
+        void deleteProfilePicture(previous).catch(() => {});
+      }
     } catch (err) {
+      // Do not leave an unreferenced object behind when the row write fails.
+      if (uploaded) void deleteProfilePicture(uploaded).catch(() => {});
       setAvatarError(errorMessage(err));
     } finally {
       setAvatarBusy(false);
     }
   };
 
-  const handleUseUrl = () => {
-    const value = urlDraft.trim();
-    if (!value) {
-      setAvatarError("Paste an image URL first.");
-      return;
-    }
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null);
+    setAvatarBusy(true);
+    const previous = avatar;
     try {
-      const parsed = new URL(value);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new Error("unsupported protocol");
-      }
-    } catch {
-      setAvatarError("Enter a valid http(s) image URL.");
-      return;
-    }
-    try {
-      saveTeacherAvatar(teacher.id, value);
-      setUrlDraft("");
-      setAvatarError(null);
+      await saveUserProfile({ ...profileBase(), avatarUrl: undefined });
+      if (previous) void deleteProfilePicture(previous).catch(() => {});
     } catch (err) {
       setAvatarError(errorMessage(err));
-    }
-  };
-
-  const handleRemoveAvatar = () => {
-    try {
-      saveTeacherAvatar(teacher.id, null);
-      setAvatarError(null);
-    } catch (err) {
-      setAvatarError(errorMessage(err));
+    } finally {
+      setAvatarBusy(false);
     }
   };
 
@@ -322,8 +397,8 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
       .replace(/\s+/g, " ")
       .trim();
     try {
-      // Only the identity fields change here; everything else is passed through
-      // untouched so the operator's record is not rewritten with guesses.
+      // The name is also the login identity and what the operator's lists show,
+      // so the people table stays in step with the profile row.
       await updateTeacherProfile(teacher.id, {
         fullName,
         specialty: teacher.specialty,
@@ -335,6 +410,11 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
         education: teacher.education,
         program: teacher.program,
         training: teacher.training,
+      });
+      await saveUserProfile({
+        ...profileBase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
       });
       setSaveMessage("Changes saved.");
       // The navbar and header show the record loaded by TeacherLayout; ask it to
@@ -381,13 +461,14 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
                   disabled={avatarBusy}
                 >
                   <ImagePlus className="mr-2 h-4 w-4" />
-                  {avatarBusy ? "Preparing…" : "Upload photo"}
+                  {avatarBusy ? "Uploading…" : "Upload photo"}
                 </Button>
                 {avatar && (
                   <Button
                     type="button"
                     variant="ghost"
                     onClick={handleRemoveAvatar}
+                    disabled={avatarBusy}
                   >
                     <Trash2 className="mr-2 h-4 w-4" />
                     Remove
@@ -395,30 +476,10 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
                 )}
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={urlDraft}
-                  onChange={(event) => setUrlDraft(event.target.value)}
-                  placeholder="https://example.com/photo.jpg"
-                  aria-label="Image URL"
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleUseUrl}
-                  disabled={!urlDraft.trim()}
-                >
-                  Use URL
-                </Button>
-              </div>
-
               <p className="text-xs text-muted-foreground">
-                Saved in this browser only — the teachers table has no photo
-                column, so nothing is uploaded to the database. A picked image
-                is downscaled to 256px before it is stored.
+                Uploaded to the profilePictuer Storage bucket; the public URL is
+                saved on your profile (user_profiles) and shown across the
+                portal.
               </p>
               {avatarError && (
                 <p className="text-xs text-red-600 dark:text-red-400">
@@ -461,19 +522,6 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="teacher-email">Login email (read-only)</Label>
-            <Input
-              id="teacher-email"
-              value={teacher.email || "—"}
-              disabled
-              readOnly
-            />
-            <p className="text-xs text-muted-foreground">
-              Managed by the administration and cannot be changed here.
-            </p>
-          </div>
-
           <Separator />
 
           <div className="flex flex-wrap items-center gap-3">
@@ -494,7 +542,16 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
         </CardContent>
       </Card>
 
-      <SocialLinksCard key={teacher.id} teacherId={teacher.id} />
+      <SocialLinksCard
+        key={teacher.id}
+        teacherId={teacher.id}
+        profile={profile}
+        // Server values only: saving links must not smuggle in an unsaved
+        // name edit that the teachers row has not seen yet.
+        firstName={profile?.firstName ?? initial.first}
+        lastName={profile?.lastName ?? initial.last}
+        avatarUrl={avatar ?? undefined}
+      />
     </div>
   );
 }

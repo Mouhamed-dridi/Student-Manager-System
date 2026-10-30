@@ -24,14 +24,18 @@ import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import TeacherEventsPage from "./TeacherEventsPage";
 import TeacherEventDetailPage from "./TeacherEventDetailPage";
-import QcmPage from "./QcmPage";
 import TeacherSettingsPage from "./TeacherSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
-import { subscribeTeacherProfileChanged, useTeacherAvatar } from "@/lib/teacherProfile";
+import { subscribeTeacherProfileChanged } from "@/lib/teacherProfile";
+import {
+  loadUserProfile,
+  useUserProfile,
+  userProfileFullName,
+} from "@/lib/userProfile";
 import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
@@ -47,7 +51,6 @@ type PageKey =
   | "class"
   | "planning"
   | "events"
-  | "qcm"
   | "settings";
 
 type TeacherMenuItem =
@@ -63,10 +66,10 @@ const menuItems: TeacherMenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "courses", label: "Courses", icon: BookOpenCheck },
-  // Course exams (create form, saved table, grade matrix) and interactive
-  // quizzes (QCM) grouped under one collapsible parent. Sections are state, not
-  // routes, so the parent only opens the submenu — selecting a child sets the
-  // active page and the parent stays expanded while a child is active.
+  // Course exams (create form, saved table, grade matrix) grouped under one
+  // collapsible parent. Sections are state, not routes, so the parent only opens
+  // the submenu — selecting a child sets the active page and the parent stays
+  // expanded while a child is active.
   {
     key: "exams",
     label: "Exams",
@@ -75,7 +78,6 @@ const menuItems: TeacherMenuItem[] = [
       { key: "exam-create", label: "Create Exam" },
       { key: "exams-table", label: "Exams Table" },
       { key: "exam-score", label: "Exam Score" },
-      { key: "qcm", label: "QCM" },
     ],
   },
   { key: "class", label: "Class", icon: Users },
@@ -115,7 +117,11 @@ function TeacherShell() {
   const navigate = useNavigate();
   const branding = useBranding();
   const unreadAnnouncements = useUnreadAnnouncements("teachers");
-  const avatar = useTeacherAvatar(teacher?.id);
+  // user_profiles wins over the teachers row: it is what the Settings page
+  // writes, and its cache updates the moment a save returns.
+  const profile = useUserProfile("teacher", teacher?.id);
+  const displayName = userProfileFullName(profile) || teacher?.fullName;
+  const avatar = profile?.avatarUrl;
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +132,12 @@ function TeacherShell() {
       cancelled = true;
     };
   }, []);
+
+  // Warm the profile cache on every portal load (a no-op once it is cached).
+  useEffect(() => {
+    if (!teacher?.id) return;
+    void loadUserProfile("teacher", teacher.id).catch(() => null);
+  }, [teacher?.id]);
 
   // Saving the Profile tab asks the shell to re-read the record, so a new name
   // reaches the header and top bar without a page reload.
@@ -169,7 +181,7 @@ function TeacherShell() {
 
   // Explicit toggle state wins; otherwise a parent is expanded exactly when one
   // of its children is the active page. This keeps "Exams" open on arriving at
-  // Exams & Notes or QCM, while still letting the parent button collapse it.
+  // any exam section, while still letting the parent button collapse it.
   const isSectionExpanded = (item: TeacherMenuItem) =>
     openSections[item.key] ?? isSectionActive(item);
 
@@ -195,7 +207,6 @@ function TeacherShell() {
     class: <MyClassPage />,
     planning: <PlanningPage />,
     events: <TeacherEventsPage onOpenEvent={setOpenEventId} />,
-    qcm: <QcmPage />,
     settings: <TeacherSettingsPage />,
   };
 
@@ -298,9 +309,9 @@ function TeacherShell() {
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
               {teacher ? (
                 <>
-                  <span className="truncate">{teacher.fullName}</span>
+                  <span className="truncate">{displayName}</span>
                   <span className="text-xs font-normal">
-                    · {teacher.specialty || "Teacher"}
+                    · {teacher.jobTitle || teacher.specialty || "Teacher"}
                   </span>
                 </>
               ) : (
@@ -310,7 +321,7 @@ function TeacherShell() {
           </div>
           <div className="flex items-center gap-3">
             <UserAvatar
-              name={teacher?.fullName}
+              name={displayName}
               src={avatar ?? undefined}
               fallback="T"
             />

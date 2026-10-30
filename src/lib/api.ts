@@ -4004,3 +4004,191 @@ export function subscribeToTable(
     void supabase.removeChannel(channel);
   };
 }
+
+// ------------------------------------------------------------ user profiles
+//
+// `user_profiles` carries the identity bits neither people table owns: the
+// avatar and the three social links. Shape confirmed against the live database
+// (supabase/user-profiles-migration.sql mirrors it):
+//
+//   id uuid pk · user_id uuid · role text · first_name · last_name
+//   avatar_url · linkedin_url · whatsapp_number · github_url
+//   created_at · updated_at
+//
+// The uniqueness rule is `unique_user_role` on (user_id, role), NOT user_id
+// alone. A bare `.upsert()` targets the primary key (`id`) and would insert a
+// duplicate row, so the upsert below names both conflict columns explicitly.
+//
+// This app has no Supabase Auth, so `user_id` is the id of the teacher/student
+// row the portal session belongs to. The table is probed at runtime: on a
+// deployment built from `schema.sql` without the migration the settings pages
+// fall back to the localStorage mirrors instead of failing the whole query.
+
+export type UserProfileRole = "teacher" | "student";
+
+export interface UserProfile {
+  userId: string;
+  role: UserProfileRole;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string;
+  linkedinUrl?: string;
+  whatsappNumber?: string;
+  githubUrl?: string;
+}
+
+interface UserProfileRow {
+  user_id: string;
+  role: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  linkedin_url: string | null;
+  whatsapp_number: string | null;
+  github_url: string | null;
+}
+
+const USER_PROFILE_SELECT =
+  "user_id, role, first_name, last_name, avatar_url, linkedin_url, whatsapp_number, github_url";
+
+function userProfileFromRow(row: UserProfileRow): UserProfile {
+  return {
+    userId: row.user_id,
+    role: row.role === "student" ? "student" : "teacher",
+    firstName: row.first_name ?? "",
+    lastName: row.last_name ?? "",
+    avatarUrl: row.avatar_url ?? undefined,
+    linkedinUrl: row.linkedin_url ?? undefined,
+    whatsappNumber: row.whatsapp_number ?? undefined,
+    githubUrl: row.github_url ?? undefined,
+  };
+}
+
+let userProfilesTablePromise: Promise<boolean> | null = null;
+
+/** True when the live database has the `user_profiles` table. */
+export async function hasUserProfilesTable(): Promise<boolean> {
+  if (!userProfilesTablePromise) {
+    userProfilesTablePromise = withTimeout(
+      supabase.from("user_profiles").select("user_id").limit(1),
+      PROBE_TIMEOUT_MS,
+    )
+      .then(({ error }) => !error)
+      .catch(() => false);
+  }
+  return userProfilesTablePromise;
+}
+
+/** One profile row for a person, or null when none exists yet. */
+export async function getUserProfile(
+  userId: string,
+  role: UserProfileRole,
+): Promise<UserProfile | null> {
+  if (!userId) return null;
+  if (!(await hasUserProfilesTable())) return null;
+  const { data, error } = await withTimeout(
+    supabase
+      .from("user_profiles")
+      .select(USER_PROFILE_SELECT)
+      .eq("user_id", userId)
+      .eq("role", role)
+      .maybeSingle(),
+  );
+  if (error) throw new Error(error.message);
+  return data ? userProfileFromRow(data as UserProfileRow) : null;
+}
+
+/** Creates or replaces the (user_id, role) row. */
+export async function upsertUserProfile(profile: UserProfile): Promise<void> {
+  if (!(await hasUserProfilesTable())) {
+    throw new Error(
+      "The user_profiles table is missing. Run supabase/user-profiles-migration.sql in the Supabase SQL Editor, then reload.",
+    );
+  }
+  const { error } = await withTimeout(
+    supabase.from("user_profiles").upsert(
+      {
+        user_id: profile.userId,
+        role: profile.role,
+        first_name: profile.firstName,
+        last_name: profile.lastName,
+        avatar_url: profile.avatarUrl ?? null,
+        linkedin_url: profile.linkedinUrl ?? null,
+        whatsapp_number: profile.whatsappNumber ?? null,
+        github_url: profile.githubUrl ?? null,
+      },
+      { onConflict: "user_id,role" },
+    ),
+  );
+  if (error) throw new Error(error.message);
+}
+
+// ------------------------------------------------------- profile pictures
+//
+// Profile photos live in the public `profilePictuer` bucket (note the spelling
+// — bucket names are case-sensitive and this one was created that way). The
+// public URL is stored in `user_profiles.avatar_url`, so the picture follows the
+// person across browsers instead of staying in localStorage.
+//
+// Policies: supabase/profile-picture-bucket-migration.sql grants the anon key
+// select/insert/update/delete on this bucket, like the other buckets. Without it
+// Supabase answers "new row violates row-level security policy", so the upload
+// error below points at that file.
+
+const PROFILE_PICTURE_BUCKET = "profilePictuer";
+
+/**
+ * Uploads a picked photo and returns its public URL. Each upload gets a fresh
+ * name (id + random) so replacing a photo never overwrites the object the
+ * previous `avatar_url` points at.
+ */
+export async function uploadProfilePicture(
+  userId: string,
+  file: File,
+): Promise<string> {
+  const rawExt = file.name.includes(".")
+    ? (file.name.split(".").pop() ?? "").toLowerCase()
+    : "";
+  const fileExt =
+    rawExt.replace(/[^a-z0-9]/g, "") || file.type.split("/")[1] || "jpg";
+  const fileName = `${userId}-${crypto.randomUUID()}.${fileExt}`;
+
+  const { error } = await withTimeout(
+    supabase.storage.from(PROFILE_PICTURE_BUCKET).upload(fileName, file, {
+      contentType: file.type || undefined,
+      upsert: true,
+    }),
+  );
+  if (error) {
+    const hint = /row-level security/i.test(error.message)
+      ? " Run supabase/profile-picture-bucket-migration.sql in the Supabase SQL Editor to allow uploads to the profilePictuer bucket."
+      : "";
+    throw new Error(`${error.message}.${hint}`);
+  }
+
+  const { data } = supabase.storage
+    .from(PROFILE_PICTURE_BUCKET)
+    .getPublicUrl(fileName);
+  if (!data?.publicUrl) {
+    throw new Error("The uploaded photo has no public URL.");
+  }
+  return data.publicUrl;
+}
+
+/**
+ * Best-effort removal of a photo this bucket owns. A URL the person pasted in
+ * (or one already pointing at another host) is ignored, and callers treat
+ * failures as non-fatal — the database row is cleared either way.
+ */
+export async function deleteProfilePicture(publicUrl?: string): Promise<void> {
+  if (!publicUrl) return;
+  const marker = `/object/public/${PROFILE_PICTURE_BUCKET}/`;
+  const at = publicUrl.indexOf(marker);
+  if (at < 0) return;
+  const path = decodeURIComponent(publicUrl.slice(at + marker.length));
+  if (!path) return;
+  const { error } = await withTimeout(
+    supabase.storage.from(PROFILE_PICTURE_BUCKET).remove([path]),
+  );
+  if (error) throw new Error(error.message);
+}

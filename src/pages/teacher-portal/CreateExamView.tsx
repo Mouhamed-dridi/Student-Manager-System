@@ -31,25 +31,36 @@ export default function CreateExamView() {
   }
 
   const handleSubmit = async (data: ExamFormData) => {
-    const { attachmentFile, ...fields } = data;
+    const examFile = data.attachmentFile ?? data.examFile;
+
+    // Validation Check on Submit:
+    // Verify that an exam file/attachment has been selected.
+    if (!examFile) {
+      setError("Please add an exam file before submitting.");
+      return;
+    }
+
+    const { attachmentFile: _unused, examFile: _alsoUnused, ...fields } = data;
     try {
       setError(null);
-      // Upload first: if Storage or the schema blocks it, the exam is not saved.
-      let attachmentUrl: string | undefined;
-      if (attachmentFile) {
-        setUploading(true);
-        try {
-          attachmentUrl = await uploadExamAttachment(attachmentFile, teacher.id);
-        } finally {
-          setUploading(false);
-        }
+      // Supabase Storage Upload:
+      // Ensure the selected exam file is successfully uploaded to the storage bucket
+      // before completing the exam record creation.
+      setUploading(true);
+      let attachmentUrl: string;
+      try {
+        attachmentUrl = await uploadExamAttachment(examFile, teacher.id);
+      } finally {
+        setUploading(false);
       }
+
       await upsertExam({
         ...fields,
         teacherId: teacher.id,
         program: "",
         training: "",
-        ...(attachmentUrl ? { attachmentUrl } : {}),
+        attachment: examFile.name,
+        attachmentUrl,
       });
       await refresh();
       setFormVersion((version) => version + 1);
@@ -65,7 +76,7 @@ export default function CreateExamView() {
       <h3 className="text-lg font-semibold">Create Exam</h3>
       <p className="mt-1 text-sm text-muted-foreground">
         Create exams for your classes. Choose a type, semester, set the date and
-        duration, and attach a file if needed.
+        duration, and attach the exam PDF (required).
       </p>
 
       <div className="mt-4">
@@ -78,6 +89,7 @@ export default function CreateExamView() {
           key={`new-${formVersion}`}
           onSubmit={handleSubmit}
           uploading={uploading}
+          requireAttachment
         />
         {created && (
           <p className="mt-3 flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400">

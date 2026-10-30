@@ -5,7 +5,6 @@ import {
   DollarSign,
   CalendarX,
   LayoutDashboard,
-  ListChecks,
   Megaphone,
   Settings,
 } from "lucide-react";
@@ -16,13 +15,18 @@ import CoursesPage from "./CoursesPage";
 import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
-import StudentQcmPage from "./StudentQcmPage";
-import StudentSettingsPage from "./StudentSettingsPage";
+import StudentSettings from "./StudentSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
+import { subscribeStudentProfileChanged } from "@/lib/studentProfile";
+import {
+  loadUserProfile,
+  useUserProfile,
+  userProfileFullName,
+} from "@/lib/userProfile";
 import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
@@ -32,7 +36,6 @@ const menuItems = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpen },
   { key: "payments", label: "My Payment", icon: DollarSign },
-  { key: "qcm", label: "QCM", icon: ListChecks },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "settings", label: "Settings", icon: Settings },
@@ -44,10 +47,9 @@ const pages: Record<MenuKey, React.ReactNode> = {
   dashboard: <StudentDashboardPage />,
   courses: <CoursesPage />,
   payments: <MyPaymentsPage />,
-  qcm: <StudentQcmPage />,
   announcements: <AnnouncementsPage />,
   absence: <MyAttendancePage />,
-  settings: <StudentSettingsPage />,
+  settings: <StudentSettings />,
 };
 
 function clearStudentSession() {
@@ -72,6 +74,10 @@ function StudentShell() {
   const navigate = useNavigate();
   const branding = useBranding();
   const unreadAnnouncements = useUnreadAnnouncements("students");
+  // user_profiles wins over the students row (see TeacherLayout).
+  const profile = useUserProfile("student", student?.id);
+  const displayName = userProfileFullName(profile) || student?.fullName;
+  const avatar = profile?.avatarUrl;
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +86,27 @@ function StudentShell() {
     });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // Warm the profile cache on every portal load (a no-op once it is cached).
+  useEffect(() => {
+    if (!student?.id) return;
+    void loadUserProfile("student", student.id).catch(() => null);
+  }, [student?.id]);
+
+  // Saving the Profile tab asks the shell to re-read the record, so a new name
+  // reaches the top bar without a page reload.
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeStudentProfileChanged(() => {
+      loadCurrentStudent().then((next) => {
+        if (!cancelled) setStudent(next);
+      });
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -151,10 +178,14 @@ function StudentShell() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2.5">
-              <UserAvatar name={student?.fullName} fallback="S" />
+              <UserAvatar
+                name={displayName}
+                src={avatar ?? undefined}
+                fallback="S"
+              />
               <div className="text-right">
                 <p className="text-sm font-semibold leading-tight">
-                  {student?.fullName ?? "Student"}
+                  {displayName || "Student"}
                 </p>
                 <p className="text-xs leading-tight text-muted-foreground">
                   {student
