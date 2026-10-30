@@ -213,7 +213,6 @@ function ProfileTab({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const [urlDraft, setUrlDraft] = useState("");
 
   /**
    * The whole row to write. The upsert replaces it, so every partial save
@@ -259,36 +258,6 @@ function ProfileTab({
     } catch (err) {
       // Do not leave an unreferenced object behind when the row write fails.
       if (uploaded) void deleteProfilePicture(uploaded).catch(() => {});
-      setAvatarError(errorMessage(err));
-    } finally {
-      setAvatarBusy(false);
-    }
-  };
-
-  const handleUseUrl = async () => {
-    const value = urlDraft.trim();
-    if (!value) {
-      setAvatarError("Paste an image URL first.");
-      return;
-    }
-    try {
-      const parsed = new URL(value);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new Error("unsupported protocol");
-      }
-    } catch {
-      setAvatarError("Enter a valid http(s) image URL.");
-      return;
-    }
-    setAvatarError(null);
-    setAvatarBusy(true);
-    const previous = avatar;
-    try {
-      await saveUserProfile({ ...profileBase(), avatarUrl: value });
-      setUrlDraft("");
-      // No-op for a pasted URL; frees the previous upload when there was one.
-      void deleteProfilePicture(previous).catch(() => {});
-    } catch (err) {
       setAvatarError(errorMessage(err));
     } finally {
       setAvatarBusy(false);
@@ -427,26 +396,6 @@ function ProfileTab({
                     Remove
                   </Button>
                 )}
-              </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  value={urlDraft}
-                  onChange={(event) => setUrlDraft(event.target.value)}
-                  placeholder="https://example.com/photo.jpg"
-                  aria-label="Image URL"
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleUseUrl}
-                  disabled={!urlDraft.trim() || avatarBusy}
-                >
-                  Use URL
-                </Button>
               </div>
 
               <p className="text-xs text-muted-foreground">
