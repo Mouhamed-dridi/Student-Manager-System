@@ -2560,6 +2560,39 @@ export async function listExams(): Promise<ExamRecord[]> {
   return (await rows<ExamRow>("exams")).map(examFromRow);
 }
 
+/**
+ * Exams for one class, filtered in the database.
+ *
+ * `exams` has no program_id: the teacher's class is snapshotted into the text
+ * columns `program` (the programs.code, e.g. "BTS") and `training` (the
+ * trainings.name) when the exam is created (see CreateExamView). Both must
+ * match, otherwise a student would see every exam of their program even when
+ * it belongs to another training.
+ */
+export async function listExamsForStudent(
+  program: string,
+  training: string,
+): Promise<ExamRecord[]> {
+  if (!program || !training) return [];
+  return (
+    await rows<ExamRow>("exams", {
+      eq: { program, training },
+      order: { column: "date", ascending: false },
+    })
+  ).map(examFromRow);
+}
+
+/** Loads the exams behind a set of grade rows (grades carry no FK to exams). */
+export async function listExamsByIds(ids: string[]): Promise<ExamRecord[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const { data, error } = await withTimeout(
+    supabase.from("exams").select("*").in("id", unique),
+  );
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((row) => examFromRow(row as ExamRow));
+}
+
 // `semester` was added after the table shipped. Reading is safe (`rows` uses
 // select *), but PostgREST rejects an unknown column in a write, so probe once
 // and fail with a migration hint instead of a raw schema error.
@@ -2649,6 +2682,16 @@ function gradeFromRow(row: GradeRow): GradeRecord {
 
 export async function listGrades(): Promise<GradeRecord[]> {
   return (await rows<GradeRow>("grades")).map(gradeFromRow);
+}
+
+/** The signed-in student's own grades, filtered in the database. */
+export async function listStudentGrades(
+  studentId: string,
+): Promise<GradeRecord[]> {
+  if (!studentId) return [];
+  return (
+    await rows<GradeRow>("grades", { eq: { student_id: studentId } })
+  ).map(gradeFromRow);
 }
 
 export async function countGradesForExam(examId: string): Promise<number> {
@@ -3203,6 +3246,34 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
 
 export async function listPlanning(): Promise<PlanningRecord[]> {
   return (await rows<PlanningRow>("planning")).map(planningFromRow);
+}
+
+/**
+ * "BTS · Réseaux et sécurité informatique" — the class label the teacher
+ * Planning form stores in `planning.class_name`. Shared by both portals so the
+ * teacher's write and the student's filter cannot drift apart.
+ */
+export function classNameFor(program: string, training: string): string {
+  return [program, training]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/**
+ * The signed-in student's weekly schedule, filtered in the database by the
+ * class label (planning has no program/training columns of its own).
+ */
+export async function listPlanningForClass(
+  className: string,
+): Promise<PlanningRecord[]> {
+  if (!className) return [];
+  return (
+    await rows<PlanningRow>("planning", {
+      eq: { class_name: className },
+      order: { column: "date", ascending: true },
+    })
+  ).map(planningFromRow);
 }
 
 // `class_name` and `session_time` were added after the table shipped. Reading

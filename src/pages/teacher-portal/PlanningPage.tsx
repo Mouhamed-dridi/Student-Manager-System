@@ -46,6 +46,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
+  classNameFor,
   deletePlanning,
   errorMessage,
   insertPlanning,
@@ -133,10 +134,6 @@ interface PlanningOptions {
   classes: string[];
 }
 
-function classLabel(program: string, training: string): string {
-  return [program, training].filter(Boolean).join(" · ");
-}
-
 /**
  * Course and class choices for the entry form. Classes come from the teacher's
  * own courses, with the profile assignment added so a teacher who has no
@@ -149,10 +146,10 @@ async function planningOptions(teacherId: string): Promise<PlanningOptions> {
   ]);
   const classes = new Set<string>();
   for (const course of all) {
-    const label = classLabel(course.program, course.training);
+    const label = classNameFor(course.program, course.training);
     if (label) classes.add(label);
   }
-  const assigned = classLabel(assignment.program, assignment.training);
+  const assigned = classNameFor(assignment.program, assignment.training);
   if (assigned) classes.add(assigned);
   return {
     courses: [...new Set(all.map((c) => c.name))],

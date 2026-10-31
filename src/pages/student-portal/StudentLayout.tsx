@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BookOpen,
+  CalendarDays,
+  ClipboardList,
   DollarSign,
   CalendarX,
+  ChevronDown,
   LayoutDashboard,
   Megaphone,
   Settings,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +20,9 @@ import MyPaymentsPage from "./MyPaymentsPage";
 import MyAttendancePage from "./MyAttendancePage";
 import AnnouncementsPage from "./AnnouncementsPage";
 import StudentSettings from "./StudentSettings";
+import StudentPlanningPage from "./StudentPlanningPage";
+import StudentExamsPage from "./StudentExamsPage";
+import StudentExamScoresPage from "./StudentExamScoresPage";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
@@ -32,20 +39,54 @@ import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
 import { useUnreadAnnouncements } from "@/hooks/useUnreadAnnouncements";
 
-const menuItems = [
+type PageKey =
+  | "dashboard"
+  | "courses"
+  | "planning"
+  | "exams-list"
+  | "exam-scores"
+  | "payments"
+  | "announcements"
+  | "absence"
+  | "settings";
+
+type StudentMenuItem =
+  | { key: PageKey; label: string; icon: LucideIcon; children?: undefined }
+  | {
+      key: "exams";
+      label: string;
+      icon: LucideIcon;
+      children: { key: PageKey; label: string }[];
+    };
+
+const menuItems: StudentMenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpen },
+  { key: "planning", label: "Planning", icon: CalendarDays },
+  // Read-only exam sections grouped under one collapsible parent, mirroring the
+  // teacher portal. Sections are state, not routes, so the parent only opens
+  // the submenu; it stays expanded while one of its children is active.
+  {
+    key: "exams",
+    label: "Exams",
+    icon: ClipboardList,
+    children: [
+      { key: "exams-list", label: "Exams" },
+      { key: "exam-scores", label: "Exam Score" },
+    ],
+  },
   { key: "payments", label: "My Payment", icon: DollarSign },
   { key: "announcements", label: "Announcements", icon: Megaphone },
   { key: "absence", label: "Absence", icon: CalendarX },
   { key: "settings", label: "Settings", icon: Settings },
-] as const;
+];
 
-type MenuKey = (typeof menuItems)[number]["key"];
-
-const pages: Record<MenuKey, React.ReactNode> = {
+const pages: Record<PageKey, React.ReactNode> = {
   dashboard: <StudentDashboardPage />,
   courses: <CoursesPage />,
+  planning: <StudentPlanningPage />,
+  "exams-list": <StudentExamsPage />,
+  "exam-scores": <StudentExamScoresPage />,
   payments: <MyPaymentsPage />,
   announcements: <AnnouncementsPage />,
   absence: <MyAttendancePage />,
@@ -68,7 +109,10 @@ function StudentShell() {
   // Sections come from the shared history stack (see useViewHistory) so the
   // header back arrow and the sidebar agree on where the student is.
   const { currentSection, pushSection } = useViewHistory();
-  const active = currentSection.key as MenuKey;
+  const active = currentSection.key as PageKey;
+  // Which collapsible sidebar sections are open. A parent with no entry yet
+  // defaults to open when one of its children is active (see isSectionExpanded).
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   // undefined = still fetching the record; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const navigate = useNavigate();
@@ -123,6 +167,30 @@ function StudentShell() {
     navigate("/login");
   };
 
+  const isSectionActive = (item: StudentMenuItem) =>
+    item.children?.some((child) => child.key === active) ?? false;
+
+  // Explicit toggle state wins; otherwise a parent is expanded exactly when one
+  // of its children is the active page.
+  const isSectionExpanded = (item: StudentMenuItem) =>
+    openSections[item.key] ?? isSectionActive(item);
+
+  const handleSectionToggle = (item: StudentMenuItem) => {
+    setOpenSections((prev) => ({
+      ...prev,
+      [item.key]: !(prev[item.key] ?? isSectionActive(item)),
+    }));
+  };
+
+  // The header shows the active section's own label, including children whose
+  // label differs from their parent ("Exam Score" inside "Exams").
+  const activeLabel =
+    menuItems
+      .flatMap((item) =>
+        item.children ? [item, ...item.children] : [item],
+      )
+      .find((item) => item.key === active)?.label ?? "Student Portal";
+
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
@@ -141,6 +209,47 @@ function StudentShell() {
         <nav className="flex-1 space-y-1 p-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
+            if (item.children) {
+              const expanded = isSectionExpanded(item);
+              return (
+                <div key={item.key}>
+                  <button
+                    onClick={() => handleSectionToggle(item)}
+                    aria-expanded={expanded}
+                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                      isSectionActive(item)
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                    <ChevronDown
+                      className={`ml-auto h-4 w-4 transition-transform ${
+                        expanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 space-y-1">
+                      {item.children.map((child) => (
+                        <button
+                          key={child.key}
+                          onClick={() => pushSection(child.key, child.label)}
+                          className={`flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors ${
+                            active === child.key
+                              ? "bg-accent text-accent-foreground"
+                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                          }`}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             const isActive = active === item.key;
             return (
               <button
@@ -172,8 +281,7 @@ function StudentShell() {
           <div className="flex min-w-0 items-center gap-2">
             <HeaderBackButton />
             <span className="truncate text-sm font-medium text-muted-foreground">
-              {menuItems.find((item) => item.key === active)?.label ??
-                "Student Portal"}
+              {activeLabel}
             </span>
           </div>
           <div className="flex items-center gap-3">

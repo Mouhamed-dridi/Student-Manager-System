@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Check } from "lucide-react";
 import { DataError, DataLoading } from "@/components/DataState";
-import { errorMessage, uploadExamAttachment, upsertExam } from "@/lib/api";
+import { errorMessage, teacherCourseAssignment, uploadExamAttachment, upsertExam } from "@/lib/api";
 import { ExamForm } from "./ExamForm";
 import type { ExamFormData } from "./ExamForm";
 import { useTeacherExams } from "./useTeacherExams";
@@ -54,11 +54,15 @@ export default function CreateExamView() {
         setUploading(false);
       }
 
+      // Stamp the exam with the teacher's class so the student portal can
+      // filter it by program/training. The backend never had a program_id on
+      // exams, and leaving these blank hides the exam from every student.
+      const assignment = await teacherCourseAssignment(teacher.id);
       await upsertExam({
         ...fields,
         teacherId: teacher.id,
-        program: "",
-        training: "",
+        program: assignment.program,
+        training: assignment.training,
         attachment: examFile.name,
         attachmentUrl,
       });
