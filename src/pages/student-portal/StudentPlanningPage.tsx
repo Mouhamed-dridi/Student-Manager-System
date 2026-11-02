@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import {
-  faCalendarDays,
-  faChevronLeft,
-  faChevronRight,
-  faClock,
-  faFileLines,
-} from "@fortawesome/free-solid-svg-icons";
+import { CalendarDays, FileText } from "lucide-react";
+import { faChevronLeft, faChevronRight, faClock } from "@fortawesome/free-solid-svg-icons";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
