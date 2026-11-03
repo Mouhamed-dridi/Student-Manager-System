@@ -482,7 +482,10 @@ create table if not exists public.publications (
 -- ---------------------------------------------------------------- planning -
 -- Lesson log: one entry per session; 'topic' holds what was covered.
 -- class_name is the group/section the session was taught to, session_time the
--- display window ("08:30 - 10:00"). Both are optional plain text.
+-- display window ("08:30 - 10:00"), and session_type the kind of session.
+-- program_id/training_id are the stable class scope the student portal filters
+-- on; class_name is kept as the display label (and as a fallback for rows
+-- written before the columns existed).
 
 create table if not exists public.planning (
   id uuid primary key default gen_random_uuid(),
@@ -492,8 +495,21 @@ create table if not exists public.planning (
   topic text,
   class_name text,
   session_time text,
+  session_type text not null default 'In-class'
+    constraint planning_session_type_check
+    check (session_type in ('In-class', 'Online', 'Exam', 'Soutenance')),
+  program_id uuid references public.programs(id),
+  training_id uuid references public.trainings(id),
   created_at timestamptz not null default now()
 );
+
+-- Idempotent for databases whose planning table already exists.
+alter table if exists public.planning
+  add column if not exists program_id uuid references public.programs(id),
+  add column if not exists training_id uuid references public.trainings(id);
+
+create index if not exists planning_program_training_idx
+  on public.planning (program_id, training_id);
 
 -- --------------------------------------------------------------------- QCM --
 -- Teacher-authored multiple-choice quizzes. `questions` is jsonb holding an

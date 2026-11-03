@@ -26,6 +26,7 @@ import type { AppEvent } from "@/lib/api";
 import UserManagementPage from "@/pages/users/UserManagementPage";
 import GeneralTrashPage from "@/pages/trash/GeneralTrashPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
+import { BackupExportPage } from "@/pages/settings/BackupExportPage";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
@@ -106,6 +107,7 @@ function LayoutShell() {
     ),
     users: <UserManagementPage />,
     trash: <GeneralTrashPage />,
+    "backup-export": <BackupExportPage />,
     settings: <SettingsPage />,
   };
 

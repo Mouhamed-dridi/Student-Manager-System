@@ -7,6 +7,7 @@ import type { Payment } from "@/pages/pay/PaymentForm";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { CourseMaterial, TeacherCourseRecord } from "@/lib/trainings";
 import type { ExamRecord, GradeRecord } from "@/pages/teacher-portal/exams";
+import { isPlanningSessionType } from "@/pages/teacher-portal/planning";
 import type { PlanningRecord } from "@/pages/teacher-portal/planning";
 
 // Every Supabase call in the app goes through this module. Rows use
@@ -3228,8 +3229,11 @@ interface PlanningRow {
   date: string;
   course: string | null;
   topic: string | null;
+  session_type?: string | null;
   class_name?: string | null;
   session_time?: string | null;
+  program_id?: string | null;
+  training_id?: string | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -3238,8 +3242,13 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
     teacherId: row.teacher_id,
     date: row.date,
     course: row.course ?? undefined,
+    sessionType: isPlanningSessionType(row.session_type)
+      ? row.session_type
+      : "In-class",
     className: row.class_name ?? undefined,
     sessionTime: row.session_time ?? undefined,
+    programId: row.program_id ?? undefined,
+    trainingId: row.training_id ?? undefined,
     content: row.topic ?? "",
   };
 }
@@ -3260,13 +3269,45 @@ export function classNameFor(program: string, training: string): string {
     .join(" · ");
 }
 
+// `program_id`/`training_id` were added after the table shipped (and after
+// class_name), so probe once: reading is safe because `rows` selects *, but a
+// filter on a column that does not exist makes PostgREST reject the whole
+// query. Writes omit the fields instead of failing, so a teacher can keep
+// logging sessions on a database that has not run the migration yet.
+let planningScopeColumnsPromise: Promise<boolean> | null = null;
+
+function hasPlanningScopeColumns(): Promise<boolean> {
+  if (!planningScopeColumnsPromise) {
+    planningScopeColumnsPromise = (async () => {
+      const [programId, trainingId] = await Promise.all([
+        hasColumn("planning", "program_id"),
+        hasColumn("planning", "training_id"),
+      ]);
+      return programId && trainingId;
+    })();
+  }
+  return planningScopeColumnsPromise;
+}
+
 /**
- * The signed-in student's weekly schedule, filtered in the database by the
- * class label (planning has no program/training columns of its own).
+ * The signed-in student's weekly schedule. Sessions are matched on the stable
+ * class scope (`program_id` + `training_id`) so a renamed program or training
+ * cannot hide them; databases without those columns fall back to the
+ * "CODE · Training" label in `class_name`.
  */
 export async function listPlanningForClass(
   className: string,
+  scope?: { programId?: string; trainingId?: string },
 ): Promise<PlanningRecord[]> {
+  const supportsScope = await hasPlanningScopeColumns();
+  if (supportsScope && scope?.programId && scope.trainingId) {
+    return (
+      await rows<PlanningRow>("planning", {
+        eq: { program_id: scope.programId, training_id: scope.trainingId },
+        order: { column: "date", ascending: true },
+      })
+    ).map(planningFromRow);
+  }
   if (!className) return [];
   return (
     await rows<PlanningRow>("planning", {
@@ -3274,6 +3315,18 @@ export async function listPlanningForClass(
       order: { column: "date", ascending: true },
     })
   ).map(planningFromRow);
+}
+
+const PLANNING_SESSION_TYPE_MISSING =
+  "The planning session type field is not set up yet. Run supabase/planning-session-type-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningSessionTypeColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningSessionTypeColumn(): Promise<boolean> {
+  if (!planningSessionTypeColumnPromise) {
+    planningSessionTypeColumnPromise = hasColumn("planning", "session_type");
+  }
+  return planningSessionTypeColumnPromise;
 }
 
 // `class_name` and `session_time` were added after the table shipped. Reading
@@ -3299,6 +3352,9 @@ function hasPlanningClassTimeColumns(): Promise<boolean> {
 }
 
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
+  if (!(await hasPlanningSessionTypeColumn())) {
+    throw new Error(PLANNING_SESSION_TYPE_MISSING);
+  }
   const supportsClassTime = await hasPlanningClassTimeColumns();
   if (
     !supportsClassTime &&
@@ -3306,6 +3362,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
   ) {
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
+  const supportsScope = await hasPlanningScopeColumns();
 
   const { error } = await withTimeout(
     supabase.from("planning").insert({
@@ -3313,6 +3370,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
       teacher_id: record.teacherId,
       date: record.date,
       course: record.course ?? null,
+      session_type: record.sessionType,
       topic: record.content,
       // Omitted on databases that have not run the migration yet, so entries
       // without class/time keep saving there.
@@ -3320,6 +3378,14 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
         ? {
             class_name: record.className ?? null,
             session_time: record.sessionTime ?? null,
+          }
+        : {}),
+      // Dropped (not rejected) before the scope migration: the student query
+      // then falls back to class_name.
+      ...(supportsScope
+        ? {
+            program_id: record.programId ?? null,
+            training_id: record.trainingId ?? null,
           }
         : {}),
     }),
@@ -3331,9 +3397,18 @@ export async function updatePlanning(
   id: string,
   values: Pick<
     PlanningRecord,
-    "course" | "className" | "sessionTime" | "content"
+    | "course"
+    | "sessionType"
+    | "className"
+    | "sessionTime"
+    | "programId"
+    | "trainingId"
+    | "content"
   >,
 ): Promise<void> {
+  if (!(await hasPlanningSessionTypeColumn())) {
+    throw new Error(PLANNING_SESSION_TYPE_MISSING);
+  }
   const supportsClassTime = await hasPlanningClassTimeColumns();
   if (
     !supportsClassTime &&
@@ -3341,18 +3416,27 @@ export async function updatePlanning(
   ) {
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
+  const supportsScope = await hasPlanningScopeColumns();
 
   const { error } = await withTimeout(
     supabase
       .from("planning")
       .update({
         course: values.course ?? null,
+        session_type: values.sessionType,
         topic: values.content,
         // Null when a field was cleared, so editing can remove a class/time.
         ...(supportsClassTime
           ? {
               class_name: values.className ?? null,
               session_time: values.sessionTime ?? null,
+            }
+          : {}),
+        // Null when the class is cleared, so a stale scope never outlives it.
+        ...(supportsScope
+          ? {
+              program_id: values.programId ?? null,
+              training_id: values.trainingId ?? null,
             }
           : {}),
       })
@@ -4262,4 +4346,108 @@ export async function deleteProfilePicture(publicUrl?: string): Promise<void> {
     supabase.storage.from(PROFILE_PICTURE_BUCKET).remove([path]),
   );
   if (error) throw new Error(error.message);
+}
+
+// ------------------------------------------------------------------ backup
+
+export type BackupTableName =
+  | "students"
+  | "teachers"
+  | "payments"
+  | "exams"
+  | "publications"
+  | "attendance"
+  | "settings"
+  | "planning";
+
+/**
+ * Raw rows for the admin Backup & Export page. Deliberately unfiltered: a
+ * backup must include soft-deleted rows too, and a bare `select *` is safe
+ * against schema drift because no unknown column is ever referenced.
+ */
+export async function listBackupRows(
+  table: BackupTableName,
+): Promise<Record<string, unknown>[]> {
+  const { data, error } = await withTimeout(supabase.from(table).select("*"));
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Record<string, unknown>[];
+}
+
+/** Exact row count for a backup card, read without transferring any rows. */
+export async function countBackupRows(
+  table: BackupTableName,
+): Promise<number> {
+  const { count, error } = await withTimeout(
+    supabase.from(table).select("*", { count: "exact", head: true }),
+  );
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/**
+ * Restore-time upsert for the Backup & Export page: writes rows back to a
+ * table keyed on the primary key, in batches of 500. A failed batch retries
+ * row by row so the live schema can silently reject only the records it
+ * cannot accept (e.g. columns that no longer exist); those are counted as
+ * failed instead of aborting the whole restore.
+ */
+export async function upsertBackupRows(
+  table: BackupTableName,
+  rows: Record<string, unknown>[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ restored: number; failed: number }> {
+  let restored = 0;
+  let failed = 0;
+  const BATCH_SIZE = 500;
+  let done = 0;
+  for (let at = 0; at < rows.length; at += BATCH_SIZE) {
+    const batch = rows.slice(at, at + BATCH_SIZE);
+    try {
+      const { error } = await withTimeout(supabase.from(table).upsert(batch));
+      if (error) throw new Error(error.message);
+      restored += batch.length;
+    } catch {
+      for (const row of batch) {
+        try {
+          const { error } = await withTimeout(supabase.from(table).upsert(row));
+          if (error) throw new Error(error.message);
+          restored += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    }
+    done += batch.length;
+    onProgress?.(done, rows.length);
+  }
+  return { restored, failed };
+}
+
+/**
+ * Login-account rows for the Backup & Export "User Management" source. User
+ * management has no table of its own — it is the login slice of the people
+ * tables — so the backup combines both under one source. Columns are selected
+ * explicitly (never `select *`) so schema drift cannot break the query, and
+ * rows are unfiltered to keep trash-deleted accounts in backups.
+ */
+export async function listUserManagementBackupRows(): Promise<{
+  students: Record<string, unknown>[];
+  teachers: Record<string, unknown>[];
+}> {
+  const [std, tch] = await Promise.all([
+    withTimeout(
+      supabase.from("students").select("id, full_name, password, blocked"),
+    ),
+    withTimeout(
+      supabase
+        .from("teachers")
+        .select("id, full_name, password, blocked, specialty"),
+    ),
+  ]);
+  if (std.error) throw new Error(std.error.message);
+  if (tch.error) throw new Error(tch.error.message);
+  return {
+    students: (std.data ?? []) as Record<string, unknown>[],
+    teachers: (tch.data ?? []) as Record<string, unknown>[],
+  };
 }

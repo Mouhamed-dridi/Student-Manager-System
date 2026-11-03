@@ -3,6 +3,7 @@ import {
   CalendarDays,
   CalendarX,
   DollarSign,
+  Download,
   GraduationCap,
   LayoutDashboard,
   Newspaper,
@@ -27,6 +28,7 @@ export type MenuKey =
   | "event-history"
   | "users"
   | "trash"
+  | "backup-export"
   | "settings";
 
 export interface MenuItem {
@@ -64,6 +66,7 @@ export const menuItems: MenuItem[] = [
   },
   { key: "users", label: "User Management", icon: UserCog },
   { key: "trash", label: "Trash", icon: Trash2 },
+  { key: "backup-export", label: "Backup & Export", icon: Download },
   { key: "settings", label: "Settings", icon: Settings },
 ];
 

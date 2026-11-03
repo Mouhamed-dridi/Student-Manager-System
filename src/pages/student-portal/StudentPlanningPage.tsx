@@ -4,6 +4,7 @@ import { CalendarDays, FileText } from "lucide-react";
 import { faChevronLeft, faChevronRight, faClock } from "@fortawesome/free-solid-svg-icons";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
+import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import {
   classNameFor,
@@ -39,7 +40,8 @@ function sortSessions(a: PlanningRecord, b: PlanningRecord): number {
 /**
  * The student's week: the teacher's planning entries for their class plus any
  * exam scheduled in the same week. Both lists are filtered in the database by
- * the student's class (program + training).
+ * the student's class (program + training); planning matches the class FKs and
+ * falls back to the class label on databases without them.
  */
 export default function StudentPlanningPage() {
   // undefined = still loading; null = the record is gone.
@@ -64,7 +66,12 @@ export default function StudentPlanningPage() {
         }
         const classLabel = classNameFor(record.program, record.training);
         const [schedule, classExams] = await Promise.all([
-          listPlanningForClass(classLabel),
+          // Scoped by the student's class FKs when the planning table carries
+          // them, else by the class label (pre-migration databases).
+          listPlanningForClass(classLabel, {
+            programId: record.programId,
+            trainingId: record.trainingId,
+          }),
           listExamsForStudent(record.program, record.training),
         ]);
         setPlanning(schedule);
@@ -221,6 +228,9 @@ export default function StudentPlanningPage() {
                             <span className="text-sm font-medium">
                               {session.course || "Session"}
                             </span>
+                            <PlanningSessionTypeBadge
+                              sessionType={session.sessionType}
+                            />
                             {session.sessionTime && (
                               <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                                 <FontAwesomeIcon

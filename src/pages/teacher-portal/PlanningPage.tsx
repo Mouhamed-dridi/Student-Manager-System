@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DataError, DataLoading } from "@/components/DataState";
+import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import {
   classNameFor,
   deletePlanning,
@@ -57,7 +58,11 @@ import {
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { cn } from "@/lib/utils";
-import type { PlanningRecord } from "./planning";
+import {
+  isPlanningSessionType,
+  PLANNING_SESSION_TYPES,
+} from "./planning";
+import type { PlanningRecord, PlanningSessionType } from "./planning";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -129,31 +134,64 @@ function dayHeading(dateKey: string, withYear: boolean): string {
   });
 }
 
+/** One selectable class: the label shown in the form plus the FKs the entry stores. */
+interface PlanningClassOption {
+  label: string;
+  programId?: string;
+  trainingId?: string;
+}
+
 interface PlanningOptions {
   courses: string[];
-  classes: string[];
+  classes: PlanningClassOption[];
 }
 
 /**
  * Course and class choices for the entry form. Classes come from the teacher's
  * own courses, with the profile assignment added so a teacher who has no
- * courses yet can still log a session for their class.
+ * courses yet can still log a session for their class. Each option carries the
+ * program/training ids so an entry can be scoped without re-parsing its label.
  */
 async function planningOptions(teacherId: string): Promise<PlanningOptions> {
   const [all, assignment] = await Promise.all([
     listTeacherCourses({ teacherId }),
     teacherCourseAssignment(teacherId),
   ]);
-  const classes = new Set<string>();
+  const classes = new Map<string, PlanningClassOption>();
+  const addClass = (
+    program: string,
+    training: string,
+    programId?: string,
+    trainingId?: string,
+  ) => {
+    const label = classNameFor(program, training);
+    if (!label) return;
+    const existing = classes.get(label);
+    classes.set(label, {
+      label,
+      programId: programId || existing?.programId,
+      trainingId: trainingId || existing?.trainingId,
+    });
+  };
   for (const course of all) {
-    const label = classNameFor(course.program, course.training);
-    if (label) classes.add(label);
+    addClass(
+      course.program,
+      course.training,
+      course.programId,
+      course.trainingId,
+    );
   }
-  const assigned = classNameFor(assignment.program, assignment.training);
-  if (assigned) classes.add(assigned);
+  addClass(
+    assignment.program,
+    assignment.training,
+    assignment.programId,
+    assignment.trainingId,
+  );
   return {
     courses: [...new Set(all.map((c) => c.name))],
-    classes: [...classes].sort((a, b) => a.localeCompare(b)),
+    classes: [...classes.values()].sort((a, b) =>
+      a.label.localeCompare(b.label),
+    ),
   };
 }
 
@@ -195,7 +233,10 @@ const NO_CLASS = "__none";
 
 interface EntryFormValues {
   course?: string;
+  sessionType: PlanningSessionType;
   className?: string;
+  programId?: string;
+  trainingId?: string;
   sessionTime?: string;
   content: string;
 }
@@ -203,7 +244,7 @@ interface EntryFormValues {
 interface EntryFormProps {
   initial?: PlanningRecord;
   courses: string[];
-  classes: string[];
+  classes: PlanningClassOption[];
   submitLabel: string;
   showCancel: boolean;
   onSubmit: (values: EntryFormValues) => void;
@@ -220,10 +261,13 @@ function EntryForm({
   onCancel,
 }: EntryFormProps) {
   const [course, setCourse] = useState(initial?.course ?? "");
+  const [sessionType, setSessionType] = useState<PlanningSessionType>(
+    initial?.sessionType ?? "In-class",
+  );
   // A teacher with a single assigned class gets it prefilled; otherwise the
   // field stays blank until they pick one.
   const [className, setClassName] = useState(
-    initial?.className ?? (classes.length === 1 ? classes[0] : ""),
+    initial?.className ?? (classes.length === 1 ? classes[0].label : ""),
   );
   const initialTime = parseSessionTime(initial?.sessionTime);
   const [startTime, setStartTime] = useState(initialTime.start);
@@ -253,8 +297,8 @@ function EntryForm({
           <SelectContent>
             <SelectItem value={NO_CLASS}>No class</SelectItem>
             {classes.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
+              <SelectItem key={c.label} value={c.label}>
+                {c.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -274,6 +318,26 @@ function EntryForm({
             {courses.map((c) => (
               <SelectItem key={c} value={c}>
                 {c}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label>Session Type</Label>
+        <Select
+          value={sessionType}
+          onValueChange={(value) => {
+            if (isPlanningSessionType(value)) setSessionType(value);
+          }}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PLANNING_SESSION_TYPES.map((type) => (
+              <SelectItem key={type} value={type}>
+                {type}
               </SelectItem>
             ))}
           </SelectContent>
@@ -329,14 +393,25 @@ function EntryForm({
         <Button
           size="sm"
           disabled={!valid}
-          onClick={() =>
+          onClick={() => {
+            const selected = classes.find((c) => c.label === className);
+            // Editing an entry whose class is no longer offered keeps its
+            // stored scope, but only while the label itself is unchanged.
+            const keepsExisting = className === (initial?.className ?? "");
             onSubmit({
               course: course || undefined,
+              sessionType,
               className: className || undefined,
+              programId:
+                selected?.programId ||
+                (keepsExisting ? initial?.programId : undefined),
+              trainingId:
+                selected?.trainingId ||
+                (keepsExisting ? initial?.trainingId : undefined),
               sessionTime: formatSessionTime(startTime, endTime),
               content: content.trim(),
-            })
-          }
+            });
+          }}
         >
           {submitLabel}
         </Button>
@@ -349,7 +424,7 @@ interface DayDialogProps {
   date: string;
   entries: PlanningRecord[];
   courses: string[];
-  classes: string[];
+  classes: PlanningClassOption[];
   /** Opens the dialog straight into the edit form for this entry. */
   initialEditingId?: string;
   onSave: (values: EntryFormValues, editingId: string | null) => void;
@@ -414,9 +489,14 @@ function DayDialog({
                 <li key={e.id} className="rounded-md border p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">
-                        {e.course || "—"}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium">
+                          {e.course || "—"}
+                        </p>
+                        <PlanningSessionTypeBadge
+                          sessionType={e.sessionType}
+                        />
+                      </div>
                       {(e.sessionTime || e.className) && (
                         <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           {e.sessionTime && (
@@ -486,7 +566,7 @@ export default function PlanningPage() {
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const [entries, setEntries] = useState<PlanningRecord[] | null>(null);
   const [courses, setCourses] = useState<string[]>([]);
-  const [classes, setClasses] = useState<string[]>([]);
+  const [classes, setClasses] = useState<PlanningClassOption[]>([]);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
   const [view, setView] = useState<PlanningView>("grid");
   const [scope, setScope] = useState<PlanningScope>("week");
@@ -800,8 +880,11 @@ export default function PlanningPage() {
                         <span className="truncate">{e.className}</span>
                       </span>
                     )}
-                    <span className="block truncate text-xs font-medium text-accent-foreground">
-                      {e.course || "Logged session"}
+                    <span className="mt-1 flex items-center justify-between gap-1">
+                      <span className="block truncate text-xs font-medium text-accent-foreground">
+                        {e.course || "Logged session"}
+                      </span>
+                      <PlanningSessionTypeBadge sessionType={e.sessionType} />
                     </span>
                     <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
                       {e.content}
@@ -886,6 +969,9 @@ export default function PlanningPage() {
                                   {entry.sessionTime}
                                 </span>
                               ) : null}
+                              <PlanningSessionTypeBadge
+                                sessionType={entry.sessionType}
+                              />
                               <span className="text-sm font-medium">
                                 {entry.course || "Logged session"}
                               </span>

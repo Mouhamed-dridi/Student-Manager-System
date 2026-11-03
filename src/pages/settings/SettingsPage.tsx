@@ -53,6 +53,7 @@ import {
 import { LicenseTab } from "./LicenseTab";
 import LicenseRenewDialog from "./LicenseRenewDialog";
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
+import { BackupExportPage } from "./BackupExportPage";
 
 const TABS = [
   { key: "general", label: "General" },
@@ -60,6 +61,7 @@ const TABS = [
   { key: "system", label: "System" },
   { key: "about", label: "About" },
   { key: "license", label: "License" },
+  { key: "backup-export", label: "Backup & Export" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -647,6 +649,10 @@ export default function SettingsPage() {
               setRenewOpen(true);
             }}
           />
+        </TabsContent>
+
+        <TabsContent value="backup-export" className="mt-6 space-y-4">
+          <BackupExportPage />
         </TabsContent>
       </Tabs>
 
