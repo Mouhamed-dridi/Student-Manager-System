@@ -1,6 +1,7 @@
 import {
   BookOpen,
   CalendarDays,
+  CalendarRange,
   CalendarX,
   DollarSign,
   Download,
@@ -22,6 +23,7 @@ export type MenuKey =
   | "pay-history"
   | "pay-trash"
   | "absence"
+  | "planification"
   | "publications"
   | "news-center"
   | "events"
@@ -53,6 +55,7 @@ export const menuItems: MenuItem[] = [
     ],
   },
   { key: "absence", label: "Absence", icon: CalendarX },
+  { key: "planification", label: "Planification", icon: CalendarRange },
   { key: "publications", label: "Publications", icon: BookOpen },
   { key: "news-center", label: "News Center", icon: Newspaper },
   {

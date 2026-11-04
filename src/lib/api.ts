@@ -3232,6 +3232,7 @@ interface PlanningRow {
   session_type?: string | null;
   class_name?: string | null;
   session_time?: string | null;
+  room_name?: string | null;
   program_id?: string | null;
   training_id?: string | null;
 }
@@ -3247,6 +3248,7 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
       : "In-class",
     className: row.class_name ?? undefined,
     sessionTime: row.session_time ?? undefined,
+    roomName: row.room_name ?? undefined,
     programId: row.program_id ?? undefined,
     trainingId: row.training_id ?? undefined,
     content: row.topic ?? "",
@@ -3351,6 +3353,20 @@ function hasPlanningClassTimeColumns(): Promise<boolean> {
   return planningClassTimeColumnsPromise;
 }
 
+// `room_name` was added for the operator Planification grid. Same rule as
+// class/time: read is safe, a write has to be skipped until the migration runs.
+const PLANNING_ROOM_MISSING =
+  "The planning room field is not set up yet. Run supabase/planning-room-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningRoomColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningRoomColumn(): Promise<boolean> {
+  if (!planningRoomColumnPromise) {
+    planningRoomColumnPromise = hasColumn("planning", "room_name");
+  }
+  return planningRoomColumnPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -3363,6 +3379,10 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
   const supportsScope = await hasPlanningScopeColumns();
+  const supportsRoom = await hasPlanningRoomColumn();
+  if (!supportsRoom && record.roomName !== undefined) {
+    throw new Error(PLANNING_ROOM_MISSING);
+  }
 
   const { error } = await withTimeout(
     supabase.from("planning").insert({
@@ -3388,6 +3408,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
             training_id: record.trainingId ?? null,
           }
         : {}),
+      ...(supportsRoom ? { room_name: record.roomName ?? null } : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -3401,10 +3422,14 @@ export async function updatePlanning(
     | "sessionType"
     | "className"
     | "sessionTime"
+    | "roomName"
     | "programId"
     | "trainingId"
     | "content"
-  >,
+  > & {
+    /** Operator editor only: reassign the session to another teacher. */
+    teacherId?: string;
+  },
 ): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -3417,6 +3442,10 @@ export async function updatePlanning(
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
   const supportsScope = await hasPlanningScopeColumns();
+  const supportsRoom = await hasPlanningRoomColumn();
+  if (!supportsRoom && values.roomName !== undefined) {
+    throw new Error(PLANNING_ROOM_MISSING);
+  }
 
   const { error } = await withTimeout(
     supabase
@@ -3439,6 +3468,10 @@ export async function updatePlanning(
               training_id: values.trainingId ?? null,
             }
           : {}),
+        ...(supportsRoom ? { room_name: values.roomName ?? null } : {}),
+        // Only written on a real reassignment, so the teacher portal's edits
+        // can never move their own sessions.
+        ...(values.teacherId ? { teacher_id: values.teacherId } : {}),
       })
       .eq("id", id),
   );

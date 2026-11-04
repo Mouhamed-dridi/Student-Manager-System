@@ -498,6 +498,10 @@ create table if not exists public.planning (
   session_type text not null default 'In-class'
     constraint planning_session_type_check
     check (session_type in ('In-class', 'Online', 'Exam', 'Soutenance')),
+  -- Room / classroom the session meets in ("ClassB1", "AC11"). Free text:
+  -- rooms are not a table in this app, and the operator's Planification grid
+  -- only badges it.
+  room_name text,
   program_id uuid references public.programs(id),
   training_id uuid references public.trainings(id),
   created_at timestamptz not null default now()
@@ -506,7 +510,8 @@ create table if not exists public.planning (
 -- Idempotent for databases whose planning table already exists.
 alter table if exists public.planning
   add column if not exists program_id uuid references public.programs(id),
-  add column if not exists training_id uuid references public.trainings(id);
+  add column if not exists training_id uuid references public.trainings(id),
+  add column if not exists room_name text;
 
 create index if not exists planning_program_training_idx
   on public.planning (program_id, training_id);

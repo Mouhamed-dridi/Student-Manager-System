@@ -18,6 +18,7 @@ import PayPage from "@/pages/pay/PayPage";
 import PaymentHistoryPage from "@/pages/pay/PaymentHistoryPage";
 import PaymentTrashPage from "@/pages/pay/PaymentTrashPage";
 import AbsencePage from "@/pages/absence/AbsencePage";
+import AdminPlanificationMain from "@/pages/planification/AdminPlanificationMain";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
 import NewsCenterPage from "@/pages/publications/NewsCenterPage";
 import EventsPage from "@/pages/events/EventsPage";
@@ -79,6 +80,7 @@ function LayoutShell() {
     "pay-history": <PaymentHistoryPage />,
     "pay-trash": <PaymentTrashPage />,
     absence: <AbsencePage />,
+    planification: <AdminPlanificationMain />,
     publications: <PublicationsPage />,
     "news-center": <NewsCenterPage />,
     events: (

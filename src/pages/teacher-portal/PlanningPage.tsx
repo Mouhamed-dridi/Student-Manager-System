@@ -35,16 +35,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { DataError, DataLoading } from "@/components/DataState";
+import PlanningEntryForm from "@/components/PlanningEntryForm";
+import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import {
   classNameFor,
@@ -58,11 +51,11 @@ import {
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { cn } from "@/lib/utils";
-import {
-  isPlanningSessionType,
-  PLANNING_SESSION_TYPES,
+import type {
+  PlanningClassOption,
+  PlanningEntryValues,
+  PlanningRecord,
 } from "./planning";
-import type { PlanningRecord, PlanningSessionType } from "./planning";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -134,13 +127,6 @@ function dayHeading(dateKey: string, withYear: boolean): string {
   });
 }
 
-/** One selectable class: the label shown in the form plus the FKs the entry stores. */
-interface PlanningClassOption {
-  label: string;
-  programId?: string;
-  trainingId?: string;
-}
-
 interface PlanningOptions {
   courses: string[];
   classes: PlanningClassOption[];
@@ -195,26 +181,6 @@ async function planningOptions(teacherId: string): Promise<PlanningOptions> {
   };
 }
 
-function normalizeClock(value: string): string {
-  const match = value.match(/^(\d{1,2}):(\d{2})/);
-  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
-}
-
-/** Splits a stored "08:30 - 10:00" back into two time inputs. */
-function parseSessionTime(value?: string): { start: string; end: string } {
-  const range = value?.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-  if (range) {
-    return { start: normalizeClock(range[1]), end: normalizeClock(range[2]) };
-  }
-  const single = value?.match(/(\d{1,2}:\d{2})/);
-  return { start: single ? normalizeClock(single[1]) : "", end: "" };
-}
-
-function formatSessionTime(start: string, end: string): string | undefined {
-  if (start && end) return `${start} - ${end}`;
-  return start || end || undefined;
-}
-
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -229,197 +195,6 @@ function startOfWeek(date: Date): Date {
   return d;
 }
 
-const NO_CLASS = "__none";
-
-interface EntryFormValues {
-  course?: string;
-  sessionType: PlanningSessionType;
-  className?: string;
-  programId?: string;
-  trainingId?: string;
-  sessionTime?: string;
-  content: string;
-}
-
-interface EntryFormProps {
-  initial?: PlanningRecord;
-  courses: string[];
-  classes: PlanningClassOption[];
-  submitLabel: string;
-  showCancel: boolean;
-  onSubmit: (values: EntryFormValues) => void;
-  onCancel: () => void;
-}
-
-function EntryForm({
-  initial,
-  courses,
-  classes,
-  submitLabel,
-  showCancel,
-  onSubmit,
-  onCancel,
-}: EntryFormProps) {
-  const [course, setCourse] = useState(initial?.course ?? "");
-  const [sessionType, setSessionType] = useState<PlanningSessionType>(
-    initial?.sessionType ?? "In-class",
-  );
-  // A teacher with a single assigned class gets it prefilled; otherwise the
-  // field stays blank until they pick one.
-  const [className, setClassName] = useState(
-    initial?.className ?? (classes.length === 1 ? classes[0].label : ""),
-  );
-  const initialTime = parseSessionTime(initial?.sessionTime);
-  const [startTime, setStartTime] = useState(initialTime.start);
-  const [endTime, setEndTime] = useState(initialTime.end);
-  const [content, setContent] = useState(initial?.content ?? "");
-
-  const timeInvalid = Boolean(startTime && endTime && endTime < startTime);
-  const valid = content.trim() !== "" && !timeInvalid;
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label>Class</Label>
-        <Select
-          value={className || NO_CLASS}
-          onValueChange={(value) =>
-            setClassName(value === NO_CLASS ? "" : (value ?? ""))
-          }
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue
-              placeholder={
-                classes.length > 0 ? "Select class" : "No class assigned"
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={NO_CLASS}>No class</SelectItem>
-            {classes.map((c) => (
-              <SelectItem key={c.label} value={c.label}>
-                {c.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Course</Label>
-        <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
-          <SelectTrigger className="w-full">
-            <SelectValue
-              placeholder={
-                courses.length > 0 ? "Select course" : "No courses available"
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {courses.map((c) => (
-              <SelectItem key={c} value={c}>
-                {c}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label>Session Type</Label>
-        <Select
-          value={sessionType}
-          onValueChange={(value) => {
-            if (isPlanningSessionType(value)) setSessionType(value);
-          }}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {PLANNING_SESSION_TYPES.map((type) => (
-              <SelectItem key={type} value={type}>
-                {type}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="log-start-time">Time</Label>
-        <div className="flex items-center gap-2">
-          <Input
-            id="log-start-time"
-            type="time"
-            className="w-32"
-            aria-label="Session start time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-          />
-          <span className="text-sm text-muted-foreground">to</span>
-          <Input
-            id="log-end-time"
-            type="time"
-            className="w-32"
-            aria-label="Session end time"
-            value={endTime}
-            onChange={(e) => setEndTime(e.target.value)}
-          />
-        </div>
-        {timeInvalid ? (
-          <p className="text-xs text-destructive">
-            End time must be after the start time.
-          </p>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Optional. Fill both sides for a time range such as 08:30 - 10:00.
-          </p>
-        )}
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="log-content">Topic / Content Covered</Label>
-        <Textarea
-          id="log-content"
-          placeholder="What was studied during this session…"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          required
-        />
-      </div>
-      <div className="flex justify-end gap-2">
-        {showCancel ? (
-          <Button variant="outline" size="sm" onClick={onCancel}>
-            Cancel
-          </Button>
-        ) : null}
-        <Button
-          size="sm"
-          disabled={!valid}
-          onClick={() => {
-            const selected = classes.find((c) => c.label === className);
-            // Editing an entry whose class is no longer offered keeps its
-            // stored scope, but only while the label itself is unchanged.
-            const keepsExisting = className === (initial?.className ?? "");
-            onSubmit({
-              course: course || undefined,
-              sessionType,
-              className: className || undefined,
-              programId:
-                selected?.programId ||
-                (keepsExisting ? initial?.programId : undefined),
-              trainingId:
-                selected?.trainingId ||
-                (keepsExisting ? initial?.trainingId : undefined),
-              sessionTime: formatSessionTime(startTime, endTime),
-              content: content.trim(),
-            });
-          }}
-        >
-          {submitLabel}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 interface DayDialogProps {
   date: string;
   entries: PlanningRecord[];
@@ -427,7 +202,7 @@ interface DayDialogProps {
   classes: PlanningClassOption[];
   /** Opens the dialog straight into the edit form for this entry. */
   initialEditingId?: string;
-  onSave: (values: EntryFormValues, editingId: string | null) => void;
+  onSave: (values: PlanningEntryValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
 }
@@ -469,7 +244,7 @@ function DayDialog({
         </DialogHeader>
 
         {formOpen || entries.length === 0 ? (
-          <EntryForm
+          <PlanningEntryForm
             key={editingId ?? "new"}
             initial={editing ?? undefined}
             courses={courses}
@@ -497,13 +272,16 @@ function DayDialog({
                           sessionType={e.sessionType}
                         />
                       </div>
-                      {(e.sessionTime || e.className) && (
+                      {(e.sessionTime || e.className || e.roomName) && (
                         <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           {e.sessionTime && (
                             <span className="inline-flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {e.sessionTime}
                             </span>
+                          )}
+                          {e.roomName && (
+                            <PlanningRoomBadge room={e.roomName} />
                           )}
                           {e.className && (
                             <span className="inline-flex items-center gap-1">
@@ -868,10 +646,13 @@ export default function PlanningPage() {
                 </span>
                 {dayEntries.map((e) => (
                   <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
-                    {e.sessionTime && (
-                      <span className="flex items-center gap-1 text-[10px] font-medium text-accent-foreground">
+                    {(e.sessionTime || e.roomName) && (
+                      <span className="flex flex-wrap items-center gap-1 text-[10px] font-medium text-accent-foreground">
                         <Clock className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{e.sessionTime}</span>
+                        {e.sessionTime && (
+                          <span className="truncate">{e.sessionTime}</span>
+                        )}
+                        {e.roomName && <PlanningRoomBadge room={e.roomName} />}
                       </span>
                     )}
                     {e.className && (
@@ -969,6 +750,9 @@ export default function PlanningPage() {
                                   {entry.sessionTime}
                                 </span>
                               ) : null}
+                              {entry.roomName ? (
+                                <PlanningRoomBadge room={entry.roomName} />
+                              ) : null}
                               <PlanningSessionTypeBadge
                                 sessionType={entry.sessionType}
                               />
@@ -1038,10 +822,12 @@ export default function PlanningPage() {
                 }
               } else {
                 await insertPlanning({
+                  ...values,
                   id: crypto.randomUUID(),
+                  // The teacher portal never reassigns, so the session always
+                  // belongs to the signed-in teacher.
                   teacherId: teacher.id,
                   date: dialog.date,
-                  ...values,
                 });
               }
               await refresh();
