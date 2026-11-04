@@ -42,3 +42,40 @@ export function sessionInTraining(
   const name = normalize(training.name);
   return name !== "" && label.includes(name);
 }
+
+/** The rows both the Planification and Branches pages read to place teachers. */
+export interface TrainingTeacherSources {
+  planning: PlanningRecord[];
+  courses: { trainingId?: string; teacherId: string }[];
+  teachers: { id: string; training?: string }[];
+}
+
+/**
+ * Teachers attached to a training. Three sources, so a legacy database is not
+ * shown as unstaffed: the live schedule, the course catalog scoped to that
+ * training, and — for rows written before planning carried the scope columns —
+ * the teacher's own free-text `training`.
+ */
+export function teacherIdsForTraining(
+  training: { id: string; name: string },
+  sources: TrainingTeacherSources,
+): string[] {
+  const ids = new Set<string>();
+  for (const entry of sources.planning) {
+    if (entry.teacherId && sessionInTraining(entry, training)) {
+      ids.add(entry.teacherId);
+    }
+  }
+  for (const course of sources.courses) {
+    if (course.trainingId === training.id && course.teacherId) {
+      ids.add(course.teacherId);
+    }
+  }
+  const name = normalize(training.name);
+  for (const teacher of sources.teachers) {
+    if (name && normalize(teacher.training) === name) {
+      ids.add(teacher.id);
+    }
+  }
+  return [...ids];
+}

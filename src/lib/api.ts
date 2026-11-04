@@ -3235,6 +3235,7 @@ interface PlanningRow {
   room_name?: string | null;
   program_id?: string | null;
   training_id?: string | null;
+  notes?: string | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -3252,6 +3253,7 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
     programId: row.program_id ?? undefined,
     trainingId: row.training_id ?? undefined,
     content: row.topic ?? "",
+    notes: row.notes ?? undefined,
   };
 }
 
@@ -3367,6 +3369,21 @@ function hasPlanningRoomColumn(): Promise<boolean> {
   return planningRoomColumnPromise;
 }
 
+// `notes` is the operator's internal comment on a session (the shared entry form
+// exposes it). Same rule as room_name: omitted from writes until the migration
+// has run, with an actionable error when a note would otherwise be lost.
+const PLANNING_NOTES_MISSING =
+  "The planning notes field is not set up yet. Run supabase/planning-notes-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningNotesColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningNotesColumn(): Promise<boolean> {
+  if (!planningNotesColumnPromise) {
+    planningNotesColumnPromise = hasColumn("planning", "notes");
+  }
+  return planningNotesColumnPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -3382,6 +3399,10 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
   const supportsRoom = await hasPlanningRoomColumn();
   if (!supportsRoom && record.roomName !== undefined) {
     throw new Error(PLANNING_ROOM_MISSING);
+  }
+  const supportsNotes = await hasPlanningNotesColumn();
+  if (!supportsNotes && record.notes !== undefined) {
+    throw new Error(PLANNING_NOTES_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -3409,6 +3430,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
           }
         : {}),
       ...(supportsRoom ? { room_name: record.roomName ?? null } : {}),
+      ...(supportsNotes ? { notes: record.notes ?? null } : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -3426,9 +3448,12 @@ export async function updatePlanning(
     | "programId"
     | "trainingId"
     | "content"
+    | "notes"
   > & {
     /** Operator editor only: reassign the session to another teacher. */
     teacherId?: string;
+    /** Operator branch timetable: move the session to another day. */
+    date?: string;
   },
 ): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
@@ -3445,6 +3470,10 @@ export async function updatePlanning(
   const supportsRoom = await hasPlanningRoomColumn();
   if (!supportsRoom && values.roomName !== undefined) {
     throw new Error(PLANNING_ROOM_MISSING);
+  }
+  const supportsNotes = await hasPlanningNotesColumn();
+  if (!supportsNotes && values.notes !== undefined) {
+    throw new Error(PLANNING_NOTES_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -3469,6 +3498,14 @@ export async function updatePlanning(
             }
           : {}),
         ...(supportsRoom ? { room_name: values.roomName ?? null } : {}),
+        // Only written when the caller actually touches the note, so the inline
+        // room dropdown (which echoes the other fields) cannot wipe it.
+        ...(supportsNotes && values.notes !== undefined
+          ? { notes: values.notes || null }
+          : {}),
+        // Only written when the caller moves the session, so a normal edit
+        // never shifts its day.
+        ...(values.date ? { date: values.date.slice(0, 10) } : {}),
         // Only written on a real reassignment, so the teacher portal's edits
         // can never move their own sessions.
         ...(values.teacherId ? { teacher_id: values.teacherId } : {}),

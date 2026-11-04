@@ -7,6 +7,7 @@ import { DataError, DataLoading } from "@/components/DataState";
 import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { subjectTone } from "@/lib/subjectColors";
 import {
   classNameFor,
   errorMessage,
@@ -220,38 +221,46 @@ export default function StudentPlanningPage() {
                     </p>
                   ) : (
                     <ul className="space-y-2 pt-3">
-                      {bucket.sessions.map((session) => (
-                        <li
-                          key={session.id}
-                          className="rounded-md border bg-background p-2.5"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="text-sm font-medium">
-                              {session.course || "Session"}
-                            </span>
-                            <PlanningSessionTypeBadge
-                              sessionType={session.sessionType}
-                            />
-                            {session.sessionTime && (
-                              <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                                <FontAwesomeIcon
-                                  icon={faClock}
-                                  className="text-[11px]"
+                      {bucket.sessions.map((session) => {
+                        const tone = subjectTone(session.course);
+                        return (
+                          <li
+                            key={session.id}
+                            className={`rounded-md border border-l-4 bg-background p-2.5 ${tone.border}`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
+                                <span
+                                  className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`}
                                 />
-                                {session.sessionTime}
+                                <span className="truncate">
+                                  {session.course || "Session"}
+                                </span>
                               </span>
+                              <PlanningSessionTypeBadge
+                                sessionType={session.sessionType}
+                              />
+                              {session.sessionTime && (
+                                <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                                  <FontAwesomeIcon
+                                    icon={faClock}
+                                    className="text-[11px]"
+                                  />
+                                  {session.sessionTime}
+                                </span>
+                              )}
+                              {session.roomName && (
+                                <PlanningRoomBadge room={session.roomName} />
+                              )}
+                            </div>
+                            {session.content && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {session.content}
+                              </p>
                             )}
-                            {session.roomName && (
-                              <PlanningRoomBadge room={session.roomName} />
-                            )}
-                          </div>
-                          {session.content && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {session.content}
-                            </p>
-                          )}
-                        </li>
-                      ))}
+                          </li>
+                        );
+                      })}
 
                       {bucket.exams.map((exam) => (
                         <li

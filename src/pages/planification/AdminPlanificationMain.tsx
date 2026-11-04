@@ -3,8 +3,10 @@
 // The main page no longer draws a day-of-week grid; it lists every training
 // grouped by qualification track (CAP, BTP, BTS), one card per training and
 // assigned teacher, with that teacher's session count for the week in view.
-// Clicking a card opens step 2 (AdminTeacherPlanningDetail) for that
-// teacher + training.
+// Clicking a card opens step 2: AdminTeacherPlanningDetail for that teacher +
+// training, or — when the training has no teacher yet — the branch timetable
+// (BranchPlanningPage) for that training, where the operator can add sessions
+// and pick the teacher and the room themselves.
 //
 // Sections in this app are state, not routes (see AGENTS.md), so "step 2" is a
 // nested view on the shared history stack rather than
@@ -16,7 +18,12 @@
 // PostgREST select of teachers would be rejected.
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, UserRound } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
+  UserRound,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import { cn } from "@/lib/utils";
@@ -41,8 +48,14 @@ import {
   formatWeekRange,
   startOfWeek,
 } from "@/pages/student-portal/scheduleDates";
+import BranchPlanningPage from "@/pages/branches/BranchPlanningPage";
 import AdminTeacherPlanningDetail from "./AdminTeacherPlanningDetail";
-import { PROGRAM_TIERS, sessionInTraining, tierCodeOf } from "./tracks";
+import {
+  PROGRAM_TIERS,
+  sessionInTraining,
+  teacherIdsForTraining,
+  tierCodeOf,
+} from "./tracks";
 import type { TierCode } from "./tracks";
 
 interface PlanificationData {
@@ -66,10 +79,6 @@ interface TrainingCardData {
   weekSessions: number;
 }
 
-function normalize(value: string | null | undefined): string {
-  return (value ?? "").trim().toLocaleLowerCase();
-}
-
 function TrainingCard({
   card,
   onOpen,
@@ -77,22 +86,21 @@ function TrainingCard({
   card: TrainingCardData;
   onOpen: () => void;
 }) {
-  const clickable = card.teacherId !== null;
+  // Every card is actionable: an unassigned training still needs its timetable
+  // built, and that is where the operator assigns a teacher.
+  const assigned = card.teacherId !== null;
   return (
     <button
       type="button"
-      onClick={clickable ? onOpen : undefined}
-      disabled={!clickable}
+      onClick={onOpen}
       title={
-        clickable
+        assigned
           ? `${card.trainingName} — ${card.teacherName}`
-          : `${card.trainingName} has no teacher assigned yet`
+          : `${card.trainingName} — open the timetable to add sessions`
       }
       className={cn(
-        "flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors",
-        clickable
-          ? "hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          : "cursor-default border-dashed",
+        "flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        !assigned && "border-dashed",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -114,6 +122,12 @@ function TrainingCard({
         <UserRound className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{card.teacherName}</span>
       </span>
+      {!assigned && (
+        <span className="flex items-center gap-1 text-[11px] font-medium">
+          Open timetable to add sessions
+          <ArrowRight className="h-3 w-3" />
+        </span>
+      )}
     </button>
   );
 }
@@ -161,11 +175,13 @@ export default function AdminPlanificationMain() {
   const [data, setData] = useState<PlanificationData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
-  // Step 2 target: which teacher's schedule, scoped to which training.
+  // Step 2 targets: a teacher's schedule, or — with no teacher yet — the
+  // training's own timetable, both scoped to a training.
   const [detail, setDetail] = useState<{
     teacherId: string;
     trainingId: string;
   } | null>(null);
+  const [branchTrainingId, setBranchTrainingId] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<PlanificationData> => {
     const [planning, teachers, programs, trainings, courses] =
@@ -265,6 +281,31 @@ export default function AdminPlanificationMain() {
     }
   }
 
+  if (branchTrainingId) {
+    const training =
+      data.trainings.find((item) => item.id === branchTrainingId) ?? null;
+    if (training) {
+      return (
+        <BranchPlanningPage
+          key={training.id}
+          branch={{
+            id: training.id,
+            name: training.name,
+            programId: training.program_id ?? "",
+            programCode: programById.get(training.program_id)?.code ?? "",
+          }}
+          planning={data.planning}
+          teachers={data.teachers}
+          courses={data.courses}
+          initialWeekStart={cursor}
+          backLabel="Back to Planification"
+          onBack={() => setBranchTrainingId(null)}
+          onReload={reload}
+        />
+      );
+    }
+  }
+
   const weekDays = Array.from({ length: 7 }, (_, index) =>
     addDays(cursor, index),
   );
@@ -282,24 +323,8 @@ export default function AdminPlanificationMain() {
 
     // Assigned teachers come from the live schedule, the course catalog and —
     // for legacy rows that carry no scope columns — the teacher's own
-    // program/training text.
-    const teacherIds = new Set<string>();
-    for (const entry of data.planning) {
-      if (entry.teacherId && sessionInTraining(entry, training)) {
-        teacherIds.add(entry.teacherId);
-      }
-    }
-    for (const course of data.courses) {
-      if (course.trainingId === training.id && course.teacherId) {
-        teacherIds.add(course.teacherId);
-      }
-    }
-    const trainingName = normalize(training.name);
-    for (const teacher of data.teachers) {
-      if (trainingName && normalize(teacher.training) === trainingName) {
-        teacherIds.add(teacher.id);
-      }
-    }
+    // program/training text. Shared with the Branches page (tracks.ts).
+    const teacherIds = teacherIdsForTraining(training, data);
 
     const weekSessionsFor = (teacherId: string) =>
       weekEntries.filter(
@@ -313,7 +338,7 @@ export default function AdminPlanificationMain() {
       tier,
     };
 
-    if (teacherIds.size === 0) {
+    if (teacherIds.length === 0) {
       cards.push({
         ...base,
         key: `${training.id}:unassigned`,
@@ -343,16 +368,21 @@ export default function AdminPlanificationMain() {
 
   const otherCards = cards.filter((card) => card.tier === "");
   const openCard = (card: TrainingCardData) => {
-    if (!card.teacherId) return;
-    setDetail({ teacherId: card.teacherId, trainingId: card.trainingId });
+    if (card.teacherId) {
+      setDetail({ teacherId: card.teacherId, trainingId: card.trainingId });
+      return;
+    }
+    // No teacher yet: the training-scoped timetable is the place to add the
+    // first session and choose the teacher and the room as part of it.
+    setBranchTrainingId(card.trainingId);
   };
 
   return (
     <div>
       <h2 className="text-2xl font-semibold">Planification</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Trainings by track. Open a training to see that teacher&apos;s weekly
-        schedule.
+        Trainings by track. Open a card for that teacher&apos;s weekly schedule,
+        or to build the timetable of a training that has no teacher yet.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">

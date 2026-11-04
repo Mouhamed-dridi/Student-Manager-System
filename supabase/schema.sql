@@ -504,6 +504,8 @@ create table if not exists public.planning (
   room_name text,
   program_id uuid references public.programs(id),
   training_id uuid references public.trainings(id),
+  -- Optional internal note, shown only in the operator's session editor.
+  notes text,
   created_at timestamptz not null default now()
 );
 
@@ -511,7 +513,8 @@ create table if not exists public.planning (
 alter table if exists public.planning
   add column if not exists program_id uuid references public.programs(id),
   add column if not exists training_id uuid references public.trainings(id),
-  add column if not exists room_name text;
+  add column if not exists room_name text,
+  add column if not exists notes text;
 
 create index if not exists planning_program_training_idx
   on public.planning (program_id, training_id);
