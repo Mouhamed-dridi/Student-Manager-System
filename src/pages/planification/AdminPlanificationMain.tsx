@@ -3,10 +3,11 @@
 // The main page no longer draws a day-of-week grid; it lists every training
 // grouped by qualification track (CAP, BTP, BTS), one card per training and
 // assigned teacher, with that teacher's session count for the week in view.
-// Clicking a card opens step 2: AdminTeacherPlanningDetail for that teacher +
-// training, or — when the training has no teacher yet — the branch timetable
-// (BranchPlanningPage) for that training, where the operator can add sessions
-// and pick the teacher and the room themselves.
+// Every card — assigned or not — opens the same step 2: the branch timetable
+// (BranchPlanningPage) for that training, with the standard 2-hour slot rows
+// and the wide session dialog. There is deliberately no second, teacher-scoped
+// layout, so a training like "Contrôle qualité" or "Réseaux et sécurité
+// informatique" behaves exactly like the others.
 //
 // Sections in this app are state, not routes (see AGENTS.md), so "step 2" is a
 // nested view on the shared history stack rather than
@@ -28,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import { cn } from "@/lib/utils";
 import {
-  classNameFor,
   errorMessage,
   listPlanning,
   listPrograms,
@@ -37,10 +37,7 @@ import {
   listTrainings,
 } from "@/lib/api";
 import type { TeacherCourseRecord } from "@/lib/trainings";
-import type {
-  PlanningClassOption,
-  PlanningRecord,
-} from "@/pages/teacher-portal/planning";
+import type { PlanningRecord } from "@/pages/teacher-portal/planning";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import {
   addDays,
@@ -49,7 +46,6 @@ import {
   startOfWeek,
 } from "@/pages/student-portal/scheduleDates";
 import BranchPlanningPage from "@/pages/branches/BranchPlanningPage";
-import AdminTeacherPlanningDetail from "./AdminTeacherPlanningDetail";
 import {
   PROGRAM_TIERS,
   sessionInTraining,
@@ -175,12 +171,7 @@ export default function AdminPlanificationMain() {
   const [data, setData] = useState<PlanificationData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
-  // Step 2 targets: a teacher's schedule, or — with no teacher yet — the
-  // training's own timetable, both scoped to a training.
-  const [detail, setDetail] = useState<{
-    teacherId: string;
-    trainingId: string;
-  } | null>(null);
+  // Step 2 target: the branch timetable of the clicked training.
   const [branchTrainingId, setBranchTrainingId] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<PlanificationData> => {
@@ -237,49 +228,6 @@ export default function AdminPlanificationMain() {
 
   const programById = new Map(data.programs.map((p) => [p.id, p]));
   const teacherById = new Map(data.teachers.map((t) => [t.id, t]));
-
-  // Every class the catalog knows: the trainings table drives the form
-  // dropdowns, so the operator can place a session on any of them.
-  const classOptions: PlanningClassOption[] = data.trainings
-    .map((training) => ({
-      label: classNameFor(
-        programById.get(training.program_id)?.code ?? "",
-        training.name,
-      ),
-      programId: training.program_id || undefined,
-      trainingId: training.id,
-    }))
-    .filter((option) => option.label)
-    .sort((a, b) => a.label.localeCompare(b.label));
-
-  const courseNames = [...new Set(data.courses.map((c) => c.name))].sort(
-    (a, b) => a.localeCompare(b),
-  );
-
-  if (detail) {
-    const teacher = teacherById.get(detail.teacherId) ?? null;
-    const training =
-      data.trainings.find((t) => t.id === detail.trainingId) ?? null;
-    if (teacher && training) {
-      return (
-        <AdminTeacherPlanningDetail
-          key={`${teacher.id}:${training.id}`}
-          teacher={teacher}
-          training={{
-            id: training.id,
-            name: training.name,
-            programCode: programById.get(training.program_id)?.code ?? "",
-          }}
-          planning={data.planning}
-          teachers={data.teachers}
-          classOptions={classOptions}
-          courseNames={courseNames}
-          onBack={() => setDetail(null)}
-          onChanged={reload}
-        />
-      );
-    }
-  }
 
   if (branchTrainingId) {
     const training =
@@ -367,13 +315,10 @@ export default function AdminPlanificationMain() {
   );
 
   const otherCards = cards.filter((card) => card.tier === "");
+  // One handler for every card: the branch timetable is the single editing
+  // surface, whether or not a teacher is already assigned. Assigning the
+  // teacher (or the room, subject, slot and note) happens inside its dialog.
   const openCard = (card: TrainingCardData) => {
-    if (card.teacherId) {
-      setDetail({ teacherId: card.teacherId, trainingId: card.trainingId });
-      return;
-    }
-    // No teacher yet: the training-scoped timetable is the place to add the
-    // first session and choose the teacher and the room as part of it.
     setBranchTrainingId(card.trainingId);
   };
 
@@ -381,8 +326,8 @@ export default function AdminPlanificationMain() {
     <div>
       <h2 className="text-2xl font-semibold">Planification</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Trainings by track. Open a card for that teacher&apos;s weekly schedule,
-        or to build the timetable of a training that has no teacher yet.
+        Trainings by track. Open a card for its weekly timetable — the standard
+        slot grid, where sessions, teachers and rooms are edited.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">

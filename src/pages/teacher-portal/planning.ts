@@ -27,16 +27,18 @@ export const PLANNING_CLASSROOMS = [
 export const DEFAULT_PLANNING_CLASSROOM = "B11";
 
 /**
- * The timetable rows the operator branch grid is built from. A session is
- * placed in a slot by matching its stored window ("08:30 - 10:00"); sessions
- * that keep another window become rows of their own, and untimed ones land in
- * a final "No time set" row, so nothing is ever hidden from the grid.
+ * The timetable rows the operator branch grid is built from: five standardised
+ * 2-hour blocks. A session is placed in a slot by matching its stored window
+ * ("08:00 - 10:00"); sessions that keep another window become rows of their
+ * own, and untimed ones land in a final "No time set" row, so nothing is ever
+ * hidden from the grid.
  */
 export const PLANNING_TIME_SLOTS = [
-  "08:30 - 10:00",
-  "10:15 - 11:45",
-  "13:30 - 15:00",
-  "15:15 - 16:45",
+  "08:00 - 10:00",
+  "10:00 - 12:00",
+  "12:00 - 14:00",
+  "14:00 - 16:00",
+  "16:00 - 18:00",
 ] as const;
 
 /** Row label for sessions stored without a time window. */
@@ -47,7 +49,7 @@ function padClock(value: string): string {
 }
 
 /**
- * "08:30 - 10:00" → minutes from midnight for both ends. Returns null when the
+ * "08:00 - 10:00" → minutes from midnight for both ends. Returns null when the
  * window is missing, unparsable, or does not move forward, which is how a
  * conflict check decides whether it can compare two sessions at all.
  */
@@ -64,8 +66,8 @@ export function planningTimeRange(
 }
 
 /**
- * Canonical row key for a stored window, so "8:30-10:00" and the slot constant
- * "08:30 - 10:00" share one grid row.
+ * Canonical row key for a stored window, so "8:00-10:00" and the slot constant
+ * "08:00 - 10:00" share one grid row.
  */
 export function planningSlotKey(value: string | null | undefined): string {
   const match = value?.match(
@@ -92,7 +94,7 @@ export interface PlanningRecord {
   sessionType: PlanningSessionType;
   /** Class / vocational section the session was taught to (planning.class_name). */
   className?: string;
-  /** Session window as a display string, e.g. "08:30 - 10:00". */
+  /** Session window as a display string, e.g. "10:00 - 12:00". */
   sessionTime?: string;
   /** Room / classroom the session meets in, e.g. "ClassB1" or "AC11". */
   roomName?: string;
