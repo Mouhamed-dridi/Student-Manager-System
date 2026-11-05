@@ -1,8 +1,9 @@
 // Operator "Planification" — step 1: the training overview.
 //
 // The main page no longer draws a day-of-week grid; it lists every training
-// grouped by qualification track (CAP, BTP, BTS), one card per training and
-// assigned teacher, with that teacher's session count for the week in view.
+// grouped by qualification track (CAP, BTP, BTS), exactly one card per training
+// — never one per teacher — with the teachers assigned to it summarised on the
+// card and the branch's session count for the week in view.
 // Every card — assigned or not — opens the same step 2: the branch timetable
 // (BranchPlanningPage) for that training, with the standard 2-hour slot rows
 // and the wide session dialog. There is deliberately no second, teacher-scoped
@@ -23,7 +24,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  UserRound,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
@@ -62,17 +63,25 @@ interface PlanificationData {
   courses: TeacherCourseRecord[];
 }
 
-/** One training/teacher pairing: the unit a card and a detail view represent. */
+/** One training: the unit a card and the branch timetable represent. */
 interface TrainingCardData {
-  key: string;
   trainingId: string;
   trainingName: string;
   /** Normalised track the card is grouped under ("" when unknown). */
   tier: TierCode | "";
-  teacherId: string | null;
-  teacherName: string;
-  /** Sessions for this teacher + training in the week being viewed. */
+  /** Every teacher attached to this training, deduplicated and sorted. */
+  teacherNames: string[];
+  /** Sessions of the whole branch — all teachers — in the week in view. */
   weekSessions: number;
+}
+
+/** "No teacher assigned" / one name / the first two plus a count. */
+function teacherSummary(teacherNames: string[]): string {
+  if (teacherNames.length === 0) return "No teacher assigned";
+  if (teacherNames.length === 1) return teacherNames[0];
+  const head = teacherNames.slice(0, 2).join(", ");
+  const rest = teacherNames.length - 2;
+  return rest > 0 ? `${head} +${rest} more` : head;
 }
 
 function TrainingCard({
@@ -84,14 +93,15 @@ function TrainingCard({
 }) {
   // Every card is actionable: an unassigned training still needs its timetable
   // built, and that is where the operator assigns a teacher.
-  const assigned = card.teacherId !== null;
+  const assigned = card.teacherNames.length > 0;
+  const summary = teacherSummary(card.teacherNames);
   return (
     <button
       type="button"
       onClick={onOpen}
       title={
         assigned
-          ? `${card.trainingName} — ${card.teacherName}`
+          ? `${card.trainingName}\n${card.teacherNames.join(", ")}`
           : `${card.trainingName} — open the timetable to add sessions`
       }
       className={cn(
@@ -115,8 +125,13 @@ function TrainingCard({
         </span>
       </div>
       <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <UserRound className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate">{card.teacherName}</span>
+        <UsersRound className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{summary}</span>
+        {card.teacherNames.length > 1 && (
+          <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold">
+            {card.teacherNames.length} teachers
+          </span>
+        )}
       </span>
       {!assigned && (
         <span className="flex items-center gap-1 text-[11px] font-medium">
@@ -156,7 +171,7 @@ function TrackColumn({
         <div className="mt-4 flex flex-col gap-4">
           {cards.map((card) => (
             <TrainingCard
-              key={card.key}
+              key={card.trainingId}
               card={card}
               onOpen={() => onOpen(card)}
             />
@@ -263,56 +278,55 @@ export default function AdminPlanificationMain() {
     weekKeySet.has(entry.date),
   );
 
+  // Exactly one card per training. The teacher list is no longer a fan-out, but
+  // a duplicated `trainings` row (same id, or the same name under the same
+  // program) would still print the branch twice, so collapse those here.
+  const uniqueTrainings = Array.from(
+    new Map(
+      data.trainings.map((training) => [
+        `${(training.program_id ?? "").trim()}::${training.name.trim().toLocaleLowerCase()}`,
+        training,
+      ]),
+    ).values(),
+  );
+
   const cards: TrainingCardData[] = [];
-  for (const training of data.trainings) {
+  for (const training of uniqueTrainings) {
     const program = programById.get(training.program_id);
-    const programCode = program?.code ?? "";
-    const tier = tierCodeOf(programCode);
 
     // Assigned teachers come from the live schedule, the course catalog and —
     // for legacy rows that carry no scope columns — the teacher's own
     // program/training text. Shared with the Branches page (tracks.ts).
-    const teacherIds = teacherIdsForTraining(training, data);
+    // The card carries the whole list, so one training is one card.
+    const teacherIds = [...new Set(teacherIdsForTraining(training, data))].sort(
+      (a, b) =>
+        (teacherById.get(a)?.fullName ?? "").localeCompare(
+          teacherById.get(b)?.fullName ?? "",
+        ),
+    );
+    const teacherNames = [
+      ...new Set(
+        teacherIds.map(
+          (teacherId) =>
+            teacherById.get(teacherId)?.fullName ?? "Unknown teacher",
+        ),
+      ),
+    ];
 
-    const weekSessionsFor = (teacherId: string) =>
-      weekEntries.filter(
-        (entry) =>
-          entry.teacherId === teacherId && sessionInTraining(entry, training),
-      ).length;
-
-    const base = {
+    cards.push({
       trainingId: training.id,
       trainingName: training.name,
-      tier,
-    };
-
-    if (teacherIds.length === 0) {
-      cards.push({
-        ...base,
-        key: `${training.id}:unassigned`,
-        teacherId: null,
-        teacherName: "No teacher assigned",
-        weekSessions: 0,
-      });
-      continue;
-    }
-
-    for (const teacherId of teacherIds) {
-      cards.push({
-        ...base,
-        key: `${training.id}:${teacherId}`,
-        teacherId,
-        teacherName: teacherById.get(teacherId)?.fullName ?? "Unknown teacher",
-        weekSessions: weekSessionsFor(teacherId),
-      });
-    }
+      tier: tierCodeOf(program?.code ?? ""),
+      teacherNames,
+      // The branch total: every session of the training in this week, whoever
+      // teaches it, matching how the timetable counts them.
+      weekSessions: weekEntries.filter((entry) =>
+        sessionInTraining(entry, training),
+      ).length,
+    });
   }
 
-  cards.sort(
-    (a, b) =>
-      a.trainingName.localeCompare(b.trainingName) ||
-      a.teacherName.localeCompare(b.teacherName),
-  );
+  cards.sort((a, b) => a.trainingName.localeCompare(b.trainingName));
 
   const otherCards = cards.filter((card) => card.tier === "");
   // One handler for every card: the branch timetable is the single editing
@@ -360,8 +374,8 @@ export default function AdminPlanificationMain() {
           </Button>
         </div>
         <span className="text-xs text-muted-foreground">
-          {data.trainings.length}{" "}
-          {data.trainings.length === 1 ? "training" : "trainings"} ·{" "}
+          {uniqueTrainings.length}{" "}
+          {uniqueTrainings.length === 1 ? "training" : "trainings"} ·{" "}
           {weekEntries.length}{" "}
           {weekEntries.length === 1 ? "session" : "sessions"} this week
         </span>
@@ -394,7 +408,7 @@ export default function AdminPlanificationMain() {
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             {otherCards.map((card) => (
               <TrainingCard
-                key={card.key}
+                key={card.trainingId}
                 card={card}
                 onOpen={() => openCard(card)}
               />
