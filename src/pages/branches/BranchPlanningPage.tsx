@@ -12,13 +12,14 @@
 //
 // Reads and writes go through src/lib/api, like every other page.
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Clock,
   Plus,
+  Printer,
   Trash2,
   TriangleAlert,
   UserRound,
@@ -150,6 +151,24 @@ export default function BranchPlanningPage({
   const [error, setError] = useState<string | null>(null);
 
   useNestedView(true, "branch-planning", "Branch timetable", onBack);
+
+  // Print / "Save as PDF" keeps only the timetable: the body class switches the
+  // `@media print` rules on (see src/index.css), so the sidebar, the week
+  // navigator and the add buttons never reach the page. Listening to the
+  // browser events covers Ctrl+P as well as the header button.
+  useEffect(() => {
+    const enterPrint = () =>
+      document.body.classList.add("planning-printing");
+    const exitPrint = () =>
+      document.body.classList.remove("planning-printing");
+    window.addEventListener("beforeprint", enterPrint);
+    window.addEventListener("afterprint", exitPrint);
+    return () => {
+      window.removeEventListener("beforeprint", enterPrint);
+      window.removeEventListener("afterprint", exitPrint);
+      document.body.classList.remove("planning-printing");
+    };
+  }, []);
 
   const teacherById = new Map(
     teachers.map((teacher) => [teacher.id, teacher.fullName]),
@@ -349,8 +368,13 @@ export default function BranchPlanningPage({
   ];
 
   return (
-    <div>
-      <Button variant="ghost" size="sm" className="-ml-2" onClick={onBack}>
+    <div id="planning-print-area">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="planning-no-print -ml-2"
+        onClick={onBack}
+      >
         <ArrowLeft className="h-4 w-4" />
         {backLabel}
       </Button>
@@ -359,8 +383,14 @@ export default function BranchPlanningPage({
       <p className="mt-1 text-sm text-muted-foreground">
         Weekly timetable — add, move or remove this branch&apos;s sessions.
       </p>
+      {/* The week navigator is screen-only, so the printed sheet names the
+          week itself. */}
+      <p className="hidden text-xs text-muted-foreground print:block">
+        {formatWeekRange(cursor)} · {weekSessions.length}{" "}
+        {weekSessions.length === 1 ? "session" : "sessions"}
+      </p>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="planning-no-print mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -418,6 +448,15 @@ export default function BranchPlanningPage({
             {weekSessions.length}{" "}
             {weekSessions.length === 1 ? "session" : "sessions"}
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            title="Print this week or save it as a PDF"
+          >
+            <Printer className="h-4 w-4" />
+            Print / PDF
+          </Button>
           <Button size="sm" onClick={() => openNew(defaultDate)}>
             <Plus className="h-4 w-4" />
             Add session
@@ -455,16 +494,21 @@ export default function BranchPlanningPage({
               Use the + in any slot below, or add a session to another week.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openNew(defaultDate)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="planning-no-print"
+            onClick={() => openNew(defaultDate)}
+          >
             <Plus className="h-4 w-4" />
             Add first session
           </Button>
         </div>
       ) : null}
 
-      <div className="mt-4 overflow-x-auto rounded-lg border">
+      <div className="planning-grid-shell mt-4 overflow-x-auto rounded-lg border">
         <div
-          className="grid min-w-[900px]"
+          className="planning-grid grid min-w-[900px]"
           style={{
             gridTemplateColumns: `72px repeat(${dayColumns.length}, minmax(0, 1fr))`,
           }}
@@ -561,7 +605,7 @@ export default function BranchPlanningPage({
                       variant="ghost"
                       size="icon-sm"
                       aria-label={`Add a session on ${formatLongDate(day.key)} at ${slot}`}
-                      className="mt-1 h-6 w-full opacity-40 transition-opacity group-hover:opacity-100"
+                      className="planning-no-print mt-1 h-6 w-full opacity-40 transition-opacity group-hover:opacity-100"
                       onClick={() =>
                         openNew(day.key, slot === NO_TIME_SLOT ? undefined : slot)
                       }
