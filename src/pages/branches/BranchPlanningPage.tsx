@@ -52,7 +52,7 @@ import {
 import { DataError } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
 import type { PlanningEntryDraft } from "@/components/PlanningEntryForm";
-import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
+import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useNestedView } from "@/hooks/viewHistory";
 import {
@@ -300,6 +300,7 @@ export default function BranchPlanningPage({
           date: dialog.date,
           teacherId: draft?.teacherId,
           roomName: draft?.roomName,
+          sessionType: draft?.sessionType,
           className: draft?.className,
           sessionTime: draft?.sessionTime,
         },
@@ -590,9 +591,10 @@ export default function BranchPlanningPage({
                               </span>
                             ) : null}
                             <span className="mt-1.5 flex flex-wrap items-center gap-1">
-                              {entry.roomName ? (
-                                <PlanningRoomBadge room={entry.roomName} />
-                              ) : null}
+                              <PlanningLocationBadge
+                                room={entry.roomName}
+                                sessionType={entry.sessionType}
+                              />
                               <PlanningSessionTypeBadge
                                 sessionType={entry.sessionType}
                               />

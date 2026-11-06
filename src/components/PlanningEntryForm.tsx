@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   DEFAULT_PLANNING_CLASSROOM,
   isPlanningSessionType,
+  ONLINE_SESSION_LOCATION,
   planningSlotKey,
   PLANNING_CLASSROOMS,
   PLANNING_SESSION_TYPES,
@@ -64,6 +66,7 @@ export interface PlanningEntryDraft {
   teacherId?: string;
   className?: string;
   roomName?: string;
+  sessionType?: PlanningSessionType;
   sessionTime?: string;
 }
 
@@ -164,8 +167,12 @@ export default function PlanningEntryForm({
       CUSTOM_TIME
     );
   });
+  // An Online session has no classroom: its location is the meeting platform,
+  // so a legacy room stored on the row is replaced when the form opens.
   const [roomName, setRoomName] = useState(
-    initial?.roomName?.trim() || DEFAULT_PLANNING_CLASSROOM,
+    initial?.sessionType === "Online"
+      ? ONLINE_SESSION_LOCATION
+      : initial?.roomName?.trim() || DEFAULT_PLANNING_CLASSROOM,
   );
   const [content, setContent] = useState(initial?.content ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
@@ -217,9 +224,18 @@ export default function PlanningEntryForm({
       teacherId: teacherId || undefined,
       className: className || undefined,
       roomName: roomName || undefined,
+      sessionType,
       sessionTime: formatSessionTime(startTime, endTime),
     });
-  }, [teacherId, className, roomName, startTime, endTime, onDraftChange]);
+  }, [
+    teacherId,
+    className,
+    roomName,
+    sessionType,
+    startTime,
+    endTime,
+    onDraftChange,
+  ]);
 
   return (
     <div className={isGrid ? "space-y-3" : "space-y-4"}>
@@ -342,7 +358,15 @@ export default function PlanningEntryForm({
           <Select
             value={sessionType}
             onValueChange={(value) => {
-              if (isPlanningSessionType(value)) setSessionType(value);
+              if (!isPlanningSessionType(value)) return;
+              setSessionType(value);
+              // Switching to Online stamps the meeting platform as the location
+              // and drops the classroom; switching back restores a real room.
+              if (value === "Online") {
+                setRoomName(ONLINE_SESSION_LOCATION);
+              } else if (roomName === ONLINE_SESSION_LOCATION) {
+                setRoomName(DEFAULT_PLANNING_CLASSROOM);
+              }
             }}
           >
             <SelectTrigger className="w-full">
@@ -358,27 +382,41 @@ export default function PlanningEntryForm({
           </Select>
         </div>
 
-        <div className={fieldClass}>
-          <Label>Classroom / Room</Label>
-          <Select
-            value={roomName}
-            onValueChange={(value) => setRoomName(value ?? "")}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select classroom" />
-            </SelectTrigger>
-            <SelectContent>
-              {roomOptions.map((room) => (
-                <SelectItem key={room} value={room}>
-                  {room}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Shown as a badge next to the session time in every planning view.
-          </p>
-        </div>
+        {sessionType === "Online" ? (
+          <div className={fieldClass}>
+            <Label>Location</Label>
+            <div className="flex h-8 items-center gap-1.5 rounded-lg border bg-muted/40 px-2.5 text-sm">
+              <Video className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+              <span className="truncate">{ONLINE_SESSION_LOCATION}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Online sessions meet on {ONLINE_SESSION_LOCATION}, so no
+              classroom is assigned.
+            </p>
+          </div>
+        ) : (
+          <div className={fieldClass}>
+            <Label>Classroom / Room</Label>
+            <Select
+              value={roomName}
+              onValueChange={(value) => setRoomName(value ?? "")}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select classroom" />
+              </SelectTrigger>
+              <SelectContent>
+                {roomOptions.map((room) => (
+                  <SelectItem key={room} value={room}>
+                    {room}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Shown as a badge next to the session time in every planning view.
+            </p>
+          </div>
+        )}
 
         <div className={fieldClass}>
           <Label>Time</Label>
@@ -510,7 +548,10 @@ export default function PlanningEntryForm({
                 selected?.trainingId ||
                 (keepsExisting ? initial?.trainingId : undefined),
               sessionTime: formatSessionTime(startTime, endTime),
-              roomName: roomName || DEFAULT_PLANNING_CLASSROOM,
+              roomName:
+                sessionType === "Online"
+                  ? ONLINE_SESSION_LOCATION
+                  : roomName || DEFAULT_PLANNING_CLASSROOM,
               content: content.trim(),
               // Omitted when there is nothing to say (and nothing stored), so a
               // database without the notes migration keeps saving sessions.

@@ -10,7 +10,10 @@
  * purpose (a shared room, a co-taught group) — so this module only reports.
  */
 
-import type { PlanningRecord } from "@/pages/teacher-portal/planning";
+import type {
+  PlanningRecord,
+  PlanningSessionType,
+} from "@/pages/teacher-portal/planning";
 import { planningTimeRange } from "@/pages/teacher-portal/planning";
 
 export type PlanningConflictKind = "teacher" | "room" | "class";
@@ -26,6 +29,7 @@ export interface PlanningConflictCandidate {
   date: string;
   teacherId?: string;
   roomName?: string;
+  sessionType?: PlanningSessionType;
   className?: string;
   sessionTime?: string;
 }
@@ -40,7 +44,13 @@ function overlaps(
   return left.start < right.end && right.start < left.end;
 }
 
-function roomKey(entry: { roomName?: string }): string {
+// Online sessions all share the meeting platform as their location, so two of
+// them overlapping is not a room double-booking.
+function roomKey(entry: {
+  roomName?: string;
+  sessionType?: PlanningSessionType;
+}): string {
+  if (entry.sessionType === "Online") return "";
   return entry.roomName?.trim().toLocaleLowerCase() ?? "";
 }
 
@@ -74,7 +84,10 @@ export function findPlanningConflicts(
       conflicts.push({ kind: "teacher", other: entry });
     }
 
-    const candidateRoom = roomKey({ roomName: candidate.roomName });
+    const candidateRoom = roomKey({
+      roomName: candidate.roomName,
+      sessionType: candidate.sessionType,
+    });
     if (candidateRoom && candidateRoom === roomKey(entry)) {
       conflicts.push({ kind: "room", other: entry });
     }

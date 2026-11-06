@@ -4,7 +4,7 @@ import { CalendarDays, FileText } from "lucide-react";
 import { faChevronLeft, faChevronRight, faClock } from "@fortawesome/free-solid-svg-icons";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
-import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
+import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { subjectTone } from "@/lib/subjectColors";
@@ -249,9 +249,10 @@ export default function StudentPlanningPage() {
                                   {session.sessionTime}
                                 </span>
                               )}
-                              {session.roomName && (
-                                <PlanningRoomBadge room={session.roomName} />
-                              )}
+                              <PlanningLocationBadge
+                                room={session.roomName}
+                                sessionType={session.sessionType}
+                              />
                             </div>
                             {session.content && (
                               <p className="mt-1 text-xs text-muted-foreground">

@@ -37,7 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { DataError, DataLoading } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
-import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
+import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import {
   classNameFor,
@@ -272,7 +272,10 @@ function DayDialog({
                           sessionType={e.sessionType}
                         />
                       </div>
-                      {(e.sessionTime || e.className || e.roomName) && (
+                      {(e.sessionTime ||
+                        e.className ||
+                        e.roomName ||
+                        e.sessionType === "Online") && (
                         <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           {e.sessionTime && (
                             <span className="inline-flex items-center gap-1">
@@ -281,7 +284,10 @@ function DayDialog({
                             </span>
                           )}
                           {e.roomName && (
-                            <PlanningRoomBadge room={e.roomName} />
+                            <PlanningLocationBadge
+                              room={e.roomName}
+                              sessionType={e.sessionType}
+                            />
                           )}
                           {e.className && (
                             <span className="inline-flex items-center gap-1">
@@ -646,13 +652,16 @@ export default function PlanningPage() {
                 </span>
                 {dayEntries.map((e) => (
                   <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
-                    {(e.sessionTime || e.roomName) && (
+                    {(e.sessionTime || e.roomName || e.sessionType === "Online") && (
                       <span className="flex flex-wrap items-center gap-1 text-[10px] font-medium text-accent-foreground">
                         <Clock className="h-3 w-3 shrink-0" />
                         {e.sessionTime && (
                           <span className="truncate">{e.sessionTime}</span>
                         )}
-                        {e.roomName && <PlanningRoomBadge room={e.roomName} />}
+                        <PlanningLocationBadge
+                          room={e.roomName}
+                          sessionType={e.sessionType}
+                        />
                       </span>
                     )}
                     {e.className && (
@@ -750,9 +759,10 @@ export default function PlanningPage() {
                                   {entry.sessionTime}
                                 </span>
                               ) : null}
-                              {entry.roomName ? (
-                                <PlanningRoomBadge room={entry.roomName} />
-                              ) : null}
+                              <PlanningLocationBadge
+                                room={entry.roomName}
+                                sessionType={entry.sessionType}
+                              />
                               <PlanningSessionTypeBadge
                                 sessionType={entry.sessionType}
                               />

@@ -27,6 +27,13 @@ export const PLANNING_CLASSROOMS = [
 export const DEFAULT_PLANNING_CLASSROOM = "B11";
 
 /**
+ * Location stamped on an Online session (planning.room_name). Online sessions
+ * never meet in a physical classroom, so the entry form stores the meeting
+ * platform here and the planning views render it as a Teams badge.
+ */
+export const ONLINE_SESSION_LOCATION = "MS Teams";
+
+/**
  * The timetable rows the operator branch grid is built from: five standardised
  * 2-hour blocks. A session is placed in a slot by matching its stored window
  * ("08:00 - 10:00"); sessions that keep another window become rows of their
