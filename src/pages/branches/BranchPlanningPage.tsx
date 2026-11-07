@@ -507,7 +507,7 @@ export default function BranchPlanningPage({
         </div>
       ) : null}
 
-      <div className="planning-grid-shell mt-4 overflow-x-auto rounded-lg border">
+      <div className="planning-grid-shell mt-4 -mx-4 overflow-x-auto rounded-lg border px-4 sm:mx-0 sm:px-0">
         <div
           className="planning-grid grid min-w-[900px]"
           style={{

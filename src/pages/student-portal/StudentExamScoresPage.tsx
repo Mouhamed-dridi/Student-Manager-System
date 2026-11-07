@@ -154,7 +154,7 @@ export default function StudentExamScoresPage() {
             />
           </div>
 
-          <div className="mt-6 overflow-x-auto rounded-lg border bg-card">
+          <div className="mt-6 -mx-4 overflow-x-auto rounded-lg border bg-card px-4 sm:mx-0 sm:px-0">
             <Table>
               <TableHeader>
                 <TableRow>

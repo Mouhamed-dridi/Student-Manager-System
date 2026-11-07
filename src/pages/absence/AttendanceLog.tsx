@@ -12,7 +12,63 @@ import {
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
-import type { AttendanceRecord } from "@/lib/api";
+import type {
+  AttendanceRecord,
+  AttendanceTargetType,
+} from "@/lib/api";
+
+// One badge per recorded target; full-class rows are a whole branch, not a
+// person, so they get their own colour and label.
+const TYPE_BADGES: Record<
+  AttendanceTargetType,
+  { label: string; className: string }
+> = {
+  student: {
+    label: "Student",
+    className:
+      "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+  },
+  teacher: {
+    label: "Teacher",
+    className:
+      "border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-400",
+  },
+  full_class: {
+    label: "Full class",
+    className:
+      "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  },
+};
+
+/**
+ * "09:00" stays as is, a stored "09:00:00" loses the seconds, and anything
+ * else (unexpected format) is shown untouched rather than hidden.
+ */
+function displayTime(value?: string | null): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return "—";
+  const match = /^(\d{1,2}):(\d{2})(?::\d\d(?:\.\d+)?)?$/.exec(trimmed);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : trimmed;
+}
+
+/**
+ * Time From / Time To cells for one row. Rows written since the migration carry
+ * both columns; older ones only have a single `time` value (which newer code
+ * may have stored as a "08:00 - 10:00" window), so it is split when it looks
+ * like a range and otherwise shown under Time From.
+ */
+function timesForRow(record: AttendanceRecord): { from: string; to: string } {
+  if (record.timeFrom || record.timeTo) {
+    return {
+      from: displayTime(record.timeFrom),
+      to: displayTime(record.timeTo),
+    };
+  }
+  const legacy = record.time?.trim();
+  if (!legacy) return { from: "—", to: "—" };
+  const [from = "", to = ""] = legacy.split(/\s*[–-]\s*/);
+  return { from: displayTime(from), to: displayTime(to) };
+}
 
 interface AttendanceLogProps {
   records: AttendanceRecord[] | null;
@@ -75,7 +131,8 @@ export default function AttendanceLog({
               <TableHead className="w-24">Program</TableHead>
               <TableHead>Training</TableHead>
               <TableHead className="w-36">Date</TableHead>
-              <TableHead className="w-28">Time</TableHead>
+              <TableHead className="w-24">Time From</TableHead>
+              <TableHead className="w-24">Time To</TableHead>
               <TableHead className="w-24">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -84,20 +141,19 @@ export default function AttendanceLog({
               <TableRow key={r.id}>
                 <TableCell>
                   <span
-                    className={
-                      r.type === "student"
-                        ? "inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400"
-                        : "inline-flex rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-400"
-                    }
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${
+                      (TYPE_BADGES[r.type] ?? TYPE_BADGES.student).className
+                    }`}
                   >
-                    {r.type === "student" ? "Student" : "Teacher"}
+                    {(TYPE_BADGES[r.type] ?? TYPE_BADGES.student).label}
                   </span>
                 </TableCell>
                 <TableCell>{r.fullName}</TableCell>
                 <TableCell>{r.program?.trim() ? r.program : "—"}</TableCell>
                 <TableCell>{r.training?.trim() ? r.training : "—"}</TableCell>
                 <TableCell>{r.date}</TableCell>
-                <TableCell>{r.time ?? "—"}</TableCell>
+                <TableCell>{timesForRow(r).from}</TableCell>
+                <TableCell>{timesForRow(r).to}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
                     <Button

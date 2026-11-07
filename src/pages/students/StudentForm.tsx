@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select";
 import { listPrograms, listTrainings } from "@/lib/api";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
+import { EDUCATION_OPTIONS, ENGAGEMENT_OPTIONS } from "./studentOptions";
 
 export interface Student {
   id: string;
@@ -36,18 +37,6 @@ export interface Student {
   blocked?: boolean;
 }
 
-const EDUCATION_OPTIONS = [
-  "Bac",
-  "Master",
-  "Licence",
-  "Engineer",
-  "1an",
-  "2an",
-  "9anne",
-];
-
-const ENGAGEMENT_OPTIONS = ["New Student", "Second Year"];
-
 interface ProgramOption {
   id: string;
   code: string;
@@ -59,30 +48,23 @@ interface TrainingOption {
   programId: string;
 }
 
+// Creates a student. Editing an existing record lives in the profile's edit
+// sheet (`EditStudentSheet`), so this form has no initial-data/edit mode.
 interface StudentFormProps {
-  initialData?: Student;
   onSave: (student: Student) => void;
   onCancel: () => void;
 }
 
-export default function StudentForm({
-  initialData,
-  onSave,
-  onCancel,
-}: StudentFormProps) {
-  const [fullName, setFullName] = useState(initialData?.fullName ?? "");
-  const [program, setProgram] = useState<Student["program"] | null>(
-    initialData?.program ?? null,
-  );
-  const [training, setTraining] = useState(initialData?.training ?? "");
-  const [phone, setPhone] = useState(initialData?.phone ?? "");
-  const [email, setEmail] = useState(initialData?.email ?? "");
-  const [location, setLocation] = useState(initialData?.location ?? "");
-  const [education, setEducation] = useState(initialData?.education ?? "");
-  const [age, setAge] = useState(
-    initialData?.age ? String(initialData.age) : "",
-  );
-  const [engagement, setEngagement] = useState(initialData?.engagement ?? "");
+export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
+  const [fullName, setFullName] = useState("");
+  const [program, setProgram] = useState<Student["program"] | null>(null);
+  const [training, setTraining] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [location, setLocation] = useState("");
+  const [education, setEducation] = useState("");
+  const [age, setAge] = useState("");
+  const [engagement, setEngagement] = useState("");
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
@@ -119,7 +101,7 @@ export default function StudentForm({
     if (!program || !training) return;
     const parsedAge = age.trim() === "" ? undefined : Math.round(Number(age));
     onSave({
-      id: initialData?.id ?? crypto.randomUUID(),
+      id: crypto.randomUUID(),
       fullName,
       program,
       training,
@@ -129,9 +111,8 @@ export default function StudentForm({
       education: education || undefined,
       age: Number.isFinite(parsedAge) ? parsedAge : undefined,
       engagement: engagement || undefined,
-      // New students start with the default password; edits leave login
-      // data untouched (StudentsPage merge-preserves it).
-      ...(initialData ? { password: DEFAULT_STUDENT_PASSWORD } : {}),
+      // New students start with the default login password.
+      password: DEFAULT_STUDENT_PASSWORD,
     });
   };
 
@@ -274,7 +255,7 @@ export default function StudentForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={!program || !training}>
-          {initialData ? "Update Student" : "Add Student"}
+          Add Student
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel

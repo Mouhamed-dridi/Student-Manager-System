@@ -176,10 +176,16 @@ export default function GeneralTrashPage() {
                         className={
                           item.personType === "teacher"
                             ? "inline-flex rounded-full border border-purple-500/30 bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-700 dark:text-purple-400"
-                            : "inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400"
+                            : item.personType === "full_class"
+                              ? "inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+                              : "inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-400"
                         }
                       >
-                        {item.personType === "teacher" ? "Teacher" : "Student"}
+                        {item.personType === "teacher"
+                          ? "Teacher"
+                          : item.personType === "full_class"
+                            ? "Full class"
+                            : "Student"}
                       </span>
                     ) : (
                       <span className="text-xs font-medium text-muted-foreground uppercase">

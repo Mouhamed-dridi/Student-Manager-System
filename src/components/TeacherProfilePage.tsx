@@ -13,7 +13,6 @@ import {
   BookOpen,
   Briefcase,
   CalendarDays,
-  Check,
   Clock,
   GraduationCap,
   Mail,
@@ -23,11 +22,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Users,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLinkedin, faWhatsapp } from "@fortawesome/free-brands-svg-icons";
@@ -43,8 +39,8 @@ import {
   errorMessage,
   listPlanning,
   listPublications,
-  updateTeacherProfile,
 } from "@/lib/api";
+import EditTeacherSheet from "@/pages/teachers/EditTeacherSheet";
 import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import { NOTIFICATION_TYPE_LABELS } from "@/pages/publications/publicationTypes";
@@ -58,64 +54,13 @@ interface TeacherProfilePageProps {
   onBack: () => void;
   backLabel?: string;
   /**
-   * Operator only: when provided the "Edit profile" button is shown. Called
-   * with the updated teacher after a successful inline save so the parent list
-   * stays in sync.
+   * Operator only: when provided the "Edit profile" button is shown. The
+   * callback fires with the saved record so the parent list stays in sync;
+   * saving itself happens in the edit sheet.
    */
   onEdit?: (teacher: Teacher) => void;
-}
-
-interface TeacherEditDraft {
-  fullName: string;
-  specialty: string;
-  phone: string;
-  email: string;
-  jobTitle: string;
-  company: string;
-  location: string;
-  education: string;
-}
-
-function teacherDraftFrom(t: Teacher): TeacherEditDraft {
-  return {
-    fullName: t.fullName ?? "",
-    specialty: t.specialty ?? "",
-    phone: t.phone ?? "",
-    email: t.email ?? "",
-    jobTitle: t.jobTitle ?? "",
-    company: t.company ?? "",
-    location: t.location ?? "",
-    education: t.education ?? "",
-  };
-}
-
-function TeacherEditField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {label}
-      </Label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder ?? label}
-        className="h-9 text-sm"
-      />
-    </div>
-  );
+  /** Opens the edit sheet as soon as the profile mounts (row edit action). */
+  initialEditOpen?: boolean;
 }
 
 interface TeacherProfileData {
@@ -198,57 +143,15 @@ export default function TeacherProfilePage({
   onBack,
   backLabel = "Back to teachers",
   onEdit,
+  initialEditOpen = false,
 }: TeacherProfilePageProps) {
-  // Local copy so inline saves reflect immediately without a page reload.
+  // Local copy so a sheet save reflects immediately without a page reload.
   const [teacher, setTeacher] = useState<Teacher>(initialTeacher);
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState<TeacherEditDraft>(() =>
-    teacherDraftFrom(initialTeacher),
-  );
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(initialEditOpen);
 
   useEffect(() => {
     setTeacher(initialTeacher);
-    setDraft(teacherDraftFrom(initialTeacher));
   }, [initialTeacher.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const startEdit = () => {
-    setDraft(teacherDraftFrom(teacher));
-    setSaveError(null);
-    setIsEditing(true);
-  };
-
-  const cancelEdit = () => {
-    setIsEditing(false);
-    setSaveError(null);
-  };
-
-  const saveEdit = () => {
-    setSaving(true);
-    setSaveError(null);
-    const profile = {
-      fullName: draft.fullName.trim(),
-      specialty: draft.specialty.trim(),
-      phone: draft.phone.trim(),
-      email: draft.email.trim(),
-      jobTitle: draft.jobTitle.trim() || undefined,
-      company: draft.company.trim() || undefined,
-      location: draft.location.trim() || undefined,
-      education: draft.education.trim() || undefined,
-      program: teacher.program,
-      training: teacher.training,
-    };
-    updateTeacherProfile(teacher.id, profile)
-      .then(() => {
-        const updated: Teacher = { ...teacher, ...profile };
-        setTeacher(updated);
-        setIsEditing(false);
-        if (onEdit) onEdit(updated);
-      })
-      .catch((err: unknown) => setSaveError(errorMessage(err)))
-      .finally(() => setSaving(false));
-  };
 
   const [data, setData] = useState<TeacherProfileData | null>(null);
 
@@ -363,31 +266,14 @@ export default function TeacherProfilePage({
       onBack={onBack}
       editAction={
         onEdit ? (
-          isEditing ? (
-            <div className="flex items-center gap-2">
-              {saveError && (
-                <span className="text-xs text-destructive">{saveError}</span>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={cancelEdit}
-                disabled={saving}
-              >
-                <X className="h-4 w-4" />
-                Cancel
-              </Button>
-              <Button size="sm" onClick={saveEdit} disabled={saving}>
-                <Check className="h-4 w-4" />
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            </div>
-          ) : (
-            <Button variant="outline" size="sm" onClick={startEdit}>
-              <Pencil className="h-4 w-4" />
-              Edit profile
-            </Button>
-          )
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setEditOpen(true)}
+          >
+            <Pencil className="h-4 w-4" />
+            Edit profile
+          </Button>
         ) : undefined
       }
       actions={
@@ -420,57 +306,6 @@ export default function TeacherProfilePage({
         </>
       }
     >
-      {/* ─── Inline edit panel ────────────────────────────────────────────── */}
-      {isEditing && (
-        <div className="border-b bg-muted/40 px-6 py-6 md:px-8">
-          <h2 className="mb-4 text-sm font-semibold">Edit profile</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <TeacherEditField
-              label="Full name"
-              value={draft.fullName}
-              onChange={(v) => setDraft((d) => ({ ...d, fullName: v }))}
-            />
-            <TeacherEditField
-              label="Department / Specialty"
-              value={draft.specialty}
-              onChange={(v) => setDraft((d) => ({ ...d, specialty: v }))}
-            />
-            <TeacherEditField
-              label="Phone"
-              value={draft.phone}
-              onChange={(v) => setDraft((d) => ({ ...d, phone: v }))}
-              type="tel"
-            />
-            <TeacherEditField
-              label="Email"
-              value={draft.email}
-              onChange={(v) => setDraft((d) => ({ ...d, email: v }))}
-              type="email"
-            />
-            <TeacherEditField
-              label="Job title"
-              value={draft.jobTitle}
-              onChange={(v) => setDraft((d) => ({ ...d, jobTitle: v }))}
-            />
-            <TeacherEditField
-              label="Company"
-              value={draft.company}
-              onChange={(v) => setDraft((d) => ({ ...d, company: v }))}
-            />
-            <TeacherEditField
-              label="Location"
-              value={draft.location}
-              onChange={(v) => setDraft((d) => ({ ...d, location: v }))}
-            />
-            <TeacherEditField
-              label="Education"
-              value={draft.education}
-              onChange={(v) => setDraft((d) => ({ ...d, education: v }))}
-            />
-          </div>
-        </div>
-      )}
-
       <Tabs defaultValue="overview" className="gap-0">
         <div className="border-b px-6 md:px-8">
           <TabsList variant="line" className="h-11">
@@ -806,6 +641,18 @@ export default function TeacherProfilePage({
           </div>
         </TabsContent>
       </Tabs>
+
+      {onEdit && (
+        <EditTeacherSheet
+          teacher={teacher}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSaved={(saved) => {
+            setTeacher(saved);
+            onEdit(saved);
+          }}
+        />
+      )}
     </ProfilePageShell>
   );
 }

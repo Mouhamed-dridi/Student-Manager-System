@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import MobileNavDrawer from "@/components/MobileNavDrawer";
 import { Separator } from "@/components/ui/separator";
 import {
   isSectionActive,
@@ -53,6 +54,9 @@ function LayoutShell() {
   const [editingEvent, setEditingEvent] = useState<AppEvent | null>(null);
   // Confirmation shown on Event History after the form saves and redirects.
   const [eventNotice, setEventNotice] = useState<string | null>(null);
+  // The mobile navigation drawer. Sections are state (not routes), so the
+  // drawer closes from its own click handlers instead of a location effect.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const navigate = useNavigate();
   const branding = useBranding();
   const displayName = useAuthDisplayName("Admin");
@@ -63,13 +67,17 @@ function LayoutShell() {
     return () => window.clearTimeout(timeout);
   }, [eventNotice]);
 
-  const handleSectionClick = (item: (typeof menuItems)[number]) => {
+  const handleSectionClick = (
+    item: (typeof menuItems)[number],
+    onNavigate?: () => void,
+  ) => {
     const sectionActive = isSectionActive(item, active);
     setOpenSections((prev) => toggleSectionOpen(prev, item.key, sectionActive));
     if (!sectionActive) {
       pushSection(item.key, item.label);
       // Entering Events from elsewhere always starts a new event, not an edit.
       if (item.key === "events") setEditingEvent(null);
+      onNavigate?.();
     }
   };
 
@@ -120,10 +128,85 @@ function LayoutShell() {
     navigate("/login");
   };
 
+  // Rendered twice (fixed sidebar on desktop, Sheet drawer on mobile).
+  // `onNavigate` closes the drawer after a section is actually selected; a
+  // click that only collapses an open parent keeps it open.
+  const renderNav = (onNavigate?: () => void) => (
+    <>
+      {menuItems.map((item) => {
+        if (item.children) {
+          const sectionActive = isSectionActive(item, active);
+          const expanded = isSectionExpanded(openSections, item, active);
+          return (
+            <div key={item.key}>
+              <button
+                onClick={() => handleSectionClick(item, onNavigate)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  sectionActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                )}
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+                <ChevronDown
+                  className={cn(
+                    "ml-auto h-4 w-4 transition-transform",
+                    expanded && "rotate-180",
+                  )}
+                />
+              </button>
+              {expanded && (
+                <div className="mt-1 space-y-1">
+                  {item.children.map((child) => (
+                    <button
+                      key={child.key}
+                      onClick={() => {
+                        pushSection(child.key, child.label);
+                        onNavigate?.();
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors",
+                        active === child.key
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                      )}
+                    >
+                      {child.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={item.key}
+            onClick={() => {
+              pushSection(item.key, item.label);
+              onNavigate?.();
+            }}
+            className={cn(
+              "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              active === item.key
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            <item.icon className="h-4 w-4" />
+            {item.label}
+          </button>
+        );
+      })}
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
+      {/* Sidebar — desktop only */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex">
         <div className="flex min-h-14 flex-col justify-center px-4">
           <span className="truncate text-lg font-semibold leading-tight">
             {branding.systemName}
@@ -135,84 +218,42 @@ function LayoutShell() {
           )}
         </div>
         <Separator />
-        <nav className="flex-1 space-y-1 p-2">
-          {menuItems.map((item) => {
-            if (item.children) {
-              const sectionActive = isSectionActive(item, active);
-              const expanded = isSectionExpanded(openSections, item, active);
-              return (
-                <div key={item.key}>
-                  <button
-                    onClick={() => handleSectionClick(item)}
-                    className={cn(
-                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      sectionActive
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                    )}
-                  >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
-                    <ChevronDown
-                      className={cn(
-                        "ml-auto h-4 w-4 transition-transform",
-                        expanded && "rotate-180",
-                      )}
-                    />
-                  </button>
-                  {expanded && (
-                    <div className="mt-1 space-y-1">
-                      {item.children.map((child) => (
-                        <button
-                          key={child.key}
-                          onClick={() => pushSection(child.key, child.label)}
-                          className={cn(
-                            "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors",
-                            active === child.key
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                          )}
-                        >
-                          {child.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-            return (
-              <button
-                key={item.key}
-                onClick={() => pushSection(item.key, item.label)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active === item.key
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </button>
-            );
-          })}
+        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
+          {renderNav()}
         </nav>
       </aside>
 
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        systemName={branding.systemName}
+        universityName={branding.universityName}
+      >
+        {renderNav(() => setMobileNavOpen(false))}
+      </MobileNavDrawer>
+
       {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="lg:hidden"
+              aria-label="Open navigation"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
             <HeaderBackButton />
             <span className="truncate text-sm font-medium text-muted-foreground">
               {brandTitle(branding)}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
             <UserAvatar name={displayName} fallback="A" />
-            <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+            <span className="hidden max-w-40 truncate text-sm font-medium text-muted-foreground sm:inline">
               {displayName}
             </span>
             <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -222,7 +263,9 @@ function LayoutShell() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-6">{pages[active]}</main>
+        <main className="w-full flex-1 overflow-auto p-4 sm:p-6">
+          {pages[active]}
+        </main>
       </div>
     </div>
   );

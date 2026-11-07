@@ -15,7 +15,6 @@ import {
   BookOpen,
   CalendarDays,
   Camera,
-  Check,
   Code2,
   Globe,
   GraduationCap,
@@ -26,11 +25,8 @@ import {
   Phone,
   ShieldAlert,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faLinkedin, faWhatsapp } from "@fortawesome/free-brands-svg-icons";
@@ -41,8 +37,9 @@ import {
   ProfileQuickAction,
   ProfileStatusPill,
 } from "@/components/ProfileParts";
-import { errorMessage, loadStudentAttendance, updateStudentProfile } from "@/lib/api";
+import { errorMessage, loadStudentAttendance } from "@/lib/api";
 import type { AttendanceRecord } from "@/lib/api";
+import EditStudentSheet from "@/pages/students/EditStudentSheet";
 import type { Student } from "@/pages/students/StudentForm";
 
 interface StudentProfilePageProps {
@@ -53,72 +50,12 @@ interface StudentProfilePageProps {
   backLabel?: string;
   /**
    * Operator only: when provided the "Edit profile" button is shown. The
-   * profile now edits inline; this callback is called with the updated student
-   * after a successful save so the parent list stays in sync.
+   * callback fires with the saved record so the parent list stays in sync;
+   * saving itself happens in the edit sheet.
    */
   onEdit?: (student: Student) => void;
-}
-
-interface EditDraft {
-  fullName: string;
-  phone: string;
-  email: string;
-  location: string;
-  education: string;
-  age: string;
-  engagement: string;
-  facebook: string;
-  instagram: string;
-  whatsapp: string;
-  github: string;
-  linkedin: string;
-}
-
-function draftFrom(s: Student): EditDraft {
-  return {
-    fullName: s.fullName ?? "",
-    phone: s.phone ?? "",
-    email: s.email ?? "",
-    location: s.location ?? "",
-    education: s.education ?? "",
-    age: s.age != null ? String(s.age) : "",
-    engagement: s.engagement ?? "",
-    facebook: s.facebook ?? "",
-    instagram: s.instagram ?? "",
-    whatsapp: s.whatsapp ?? "",
-    github: s.github ?? "",
-    linkedin: s.linkedin ?? "",
-  };
-}
-
-/** A simple labelled text input used inside the edit panel. */
-function EditField({
-  label,
-  value,
-  onChange,
-  type = "text",
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        {label}
-      </Label>
-      <Input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder ?? label}
-        className="h-9 text-sm"
-      />
-    </div>
-  );
+  /** Opens the edit sheet as soon as the profile mounts (row edit action). */
+  initialEditOpen?: boolean;
 }
 
 type SocialKey = "facebook" | "instagram" | "whatsapp" | "github" | "linkedin";
@@ -182,66 +119,16 @@ export default function StudentProfilePage({
   onBack,
   backLabel = "Back to students",
   onEdit,
+  initialEditOpen = false,
 }: StudentProfilePageProps) {
-  // Local copy of the student record so an inline save reflects immediately.
+  // Local copy of the student record so a save reflects without a refetch.
   const [student, setStudent] = useState<Student>(initialStudent);
-  const [isEditing, setIsEditing] = useState(false);
-  const [draft, setDraft] = useState<EditDraft>(() => draftFrom(initialStudent));
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(initialEditOpen);
 
   // Keep local copy in sync when the parent passes a refreshed prop (e.g. list refetch).
   useEffect(() => {
     setStudent(initialStudent);
-    setDraft(draftFrom(initialStudent));
   }, [initialStudent.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const startEdit = () => {
-    setDraft(draftFrom(student));
-    setSaveError(null);
-    setIsEditing(true);
-  };
-
-  const cancelEdit = () => {
-    setIsEditing(false);
-    setSaveError(null);
-  };
-
-  const saveEdit = () => {
-    setSaving(true);
-    setSaveError(null);
-    const profile = {
-      fullName: draft.fullName.trim(),
-      phone: draft.phone.trim(),
-      email: draft.email.trim(),
-      location: draft.location.trim() || undefined,
-      education: draft.education.trim() || undefined,
-      age: draft.age ? Number(draft.age) : undefined,
-      engagement: draft.engagement.trim() || undefined,
-      facebook: draft.facebook.trim() || undefined,
-      instagram: draft.instagram.trim() || undefined,
-      whatsapp: draft.whatsapp.trim() || undefined,
-      github: draft.github.trim() || undefined,
-      linkedin: draft.linkedin.trim() || undefined,
-      // keep the existing program/training — the operator can change them in
-      // the dedicated Students form if needed
-      program: student.program,
-      training: student.training,
-    };
-    updateStudentProfile(student.id, profile)
-      .then(() => {
-        const updated: Student = {
-          ...student,
-          ...profile,
-        };
-        setStudent(updated);
-        setIsEditing(false);
-        // Notify the parent list so its row refreshes without a full reload.
-        if (onEdit) onEdit(updated);
-      })
-      .catch((err: unknown) => setSaveError(errorMessage(err)))
-      .finally(() => setSaving(false));
-  };
 
   const fullName = student.fullName;
   // The load result is tagged with the student it belongs to, so switching
@@ -302,37 +189,14 @@ export default function StudentProfilePage({
       subtitle={email || undefined}
       backLabel={backLabel}
       onBack={onBack}
-      editAction={
-        onEdit ? (
-          isEditing ? (
-            <div className="flex items-center gap-2">
-              {saveError && (
-                <span className="text-xs text-destructive">{saveError}</span>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={cancelEdit}
-                disabled={saving}
-              >
-                <X className="h-4 w-4" />
-                Cancel
-              </Button>
-              <Button size="sm" onClick={saveEdit} disabled={saving}>
-                <Check className="h-4 w-4" />
-                {saving ? "Saving…" : "Save changes"}
-              </Button>
-            </div>
-          ) : (
-            <Button variant="outline" size="sm" onClick={startEdit}>
-              <Pencil className="h-4 w-4" />
-              Edit profile
-            </Button>
-          )
-        ) : undefined
-      }
       actions={
         <>
+          {onEdit && (
+            <Button size="sm" onClick={() => setEditOpen(true)}>
+              <Pencil className="h-4 w-4" />
+              Edit Profile
+            </Button>
+          )}
           <ProfileQuickAction
             icon={<FontAwesomeIcon icon={faWhatsapp} />}
             label="Send WhatsApp"
@@ -364,87 +228,6 @@ export default function StudentProfilePage({
         </>
       }
     >
-      {/* ─── Inline edit panel ────────────────────────────────────────────── */}
-      {isEditing && (
-        <div className="border-b bg-muted/40 px-6 py-6 md:px-8">
-          <h2 className="mb-4 text-sm font-semibold">Edit profile</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <EditField
-              label="Full name"
-              value={draft.fullName}
-              onChange={(v) => setDraft((d) => ({ ...d, fullName: v }))}
-            />
-            <EditField
-              label="Phone"
-              value={draft.phone}
-              onChange={(v) => setDraft((d) => ({ ...d, phone: v }))}
-              type="tel"
-            />
-            <EditField
-              label="Email"
-              value={draft.email}
-              onChange={(v) => setDraft((d) => ({ ...d, email: v }))}
-              type="email"
-            />
-            <EditField
-              label="Location"
-              value={draft.location}
-              onChange={(v) => setDraft((d) => ({ ...d, location: v }))}
-            />
-            <EditField
-              label="Education"
-              value={draft.education}
-              onChange={(v) => setDraft((d) => ({ ...d, education: v }))}
-              placeholder="e.g. Bac, Licence…"
-            />
-            <EditField
-              label="Age"
-              value={draft.age}
-              onChange={(v) => setDraft((d) => ({ ...d, age: v }))}
-              type="number"
-            />
-            <EditField
-              label="Enrollment"
-              value={draft.engagement}
-              onChange={(v) => setDraft((d) => ({ ...d, engagement: v }))}
-              placeholder="e.g. New Student, Second Year"
-            />
-          </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <EditField
-              label="Facebook"
-              value={draft.facebook}
-              onChange={(v) => setDraft((d) => ({ ...d, facebook: v }))}
-              placeholder="URL or username"
-            />
-            <EditField
-              label="Instagram"
-              value={draft.instagram}
-              onChange={(v) => setDraft((d) => ({ ...d, instagram: v }))}
-              placeholder="@handle"
-            />
-            <EditField
-              label="WhatsApp"
-              value={draft.whatsapp}
-              onChange={(v) => setDraft((d) => ({ ...d, whatsapp: v }))}
-              type="tel"
-            />
-            <EditField
-              label="GitHub"
-              value={draft.github}
-              onChange={(v) => setDraft((d) => ({ ...d, github: v }))}
-              placeholder="username"
-            />
-            <EditField
-              label="LinkedIn"
-              value={draft.linkedin}
-              onChange={(v) => setDraft((d) => ({ ...d, linkedin: v }))}
-              placeholder="URL or username"
-            />
-          </div>
-        </div>
-      )}
-
       <Tabs defaultValue="overview" className="gap-0">
           <div className="border-b px-6 md:px-8">
             <TabsList variant="line" className="h-11">
@@ -676,6 +459,18 @@ export default function StudentProfilePage({
             )}
           </TabsContent>
         </Tabs>
+
+      {onEdit && (
+        <EditStudentSheet
+          student={student}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          onSaved={(saved) => {
+            setStudent(saved);
+            onEdit(saved);
+          }}
+        />
+      )}
     </ProfilePageShell>
   );
 }

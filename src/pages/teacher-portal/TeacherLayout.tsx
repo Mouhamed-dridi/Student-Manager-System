@@ -6,6 +6,7 @@ import {
   Megaphone,
   BookOpenCheck,
   ClipboardList,
+  Menu,
   Users,
   CalendarDays,
   CalendarClock,
@@ -14,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import MobileNavDrawer from "@/components/MobileNavDrawer";
 import TeacherDashboardPage from "./TeacherDashboardPage";
 import TeacherAnnouncementsPage from "./TeacherAnnouncementsPage";
 import MyCoursesPage from "./MyCoursesPage";
@@ -112,6 +114,8 @@ function TeacherShell() {
   // highlighted. Sections are not routes in this portal, so the detail view is
   // a swap rather than a navigation — hence its own state beside `active`.
   const [openEventId, setOpenEventId] = useState<string | null>(null);
+  // The mobile navigation drawer; selecting a section closes it.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // undefined = still fetching the record; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const navigate = useNavigate();
@@ -210,10 +214,91 @@ function TeacherShell() {
     settings: <TeacherSettingsPage />,
   };
 
+  // Rendered twice (desktop sidebar and mobile Sheet). `onNavigate` closes the
+  // drawer once a section has actually been selected; toggling an open parent
+  // keeps it open so its children stay reachable.
+  const renderNav = (onNavigate?: () => void) => (
+    <>
+      {menuItems.map((item) => {
+        const Icon = item.icon;
+        if (item.children) {
+          const expanded = isSectionExpanded(item);
+          return (
+            <div key={item.key}>
+              <button
+                onClick={() => handleSectionToggle(item)}
+                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isSectionActive(item)
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+                <ChevronDown
+                  className={`ml-auto h-4 w-4 transition-transform ${
+                    expanded ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {expanded && (
+                <div className="mt-1 space-y-1">
+                  {item.children.map((child) => (
+                    <button
+                      key={child.key}
+                      onClick={() => {
+                        pushSection(child.key, child.label);
+                        // Leaving the events section closes any open event.
+                        setOpenEventId(null);
+                        onNavigate?.();
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors ${
+                        active === child.key
+                          ? "bg-accent text-accent-foreground"
+                          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                      }`}
+                    >
+                      {child.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+        const isActive = active === item.key;
+        return (
+          <button
+            key={item.key}
+            onClick={() => {
+              pushSection(item.key, item.label);
+              // Leaving the events section also closes any open event.
+              setOpenEventId(null);
+              onNavigate?.();
+            }}
+            className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+              isActive
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            {item.label}
+            {item.key === "announcements" && unreadAnnouncements > 0 && (
+              <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
+                {unreadAnnouncements}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
+      {/* Sidebar — desktop only */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground lg:flex">
         <div className="flex min-h-14 flex-col justify-center px-4">
           <span className="truncate text-lg font-semibold leading-tight">
             {branding.systemName}
@@ -225,92 +310,40 @@ function TeacherShell() {
           )}
         </div>
         <Separator />
-        <nav className="flex-1 space-y-1 p-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            if (item.children) {
-              const expanded = isSectionExpanded(item);
-              return (
-                <div key={item.key}>
-                  <button
-                    onClick={() => handleSectionToggle(item)}
-                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                      isSectionActive(item)
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {item.label}
-                    <ChevronDown
-                      className={`ml-auto h-4 w-4 transition-transform ${
-                        expanded ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                  {expanded && (
-                    <div className="mt-1 space-y-1">
-                      {item.children.map((child) => (
-                        <button
-                          key={child.key}
-                          onClick={() => {
-                            pushSection(child.key, child.label);
-                            // Leaving the events section closes any open event.
-                            setOpenEventId(null);
-                          }}
-                          className={`flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors ${
-                            active === child.key
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                          }`}
-                        >
-                          {child.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-            const isActive = active === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => {
-                  pushSection(item.key, item.label);
-                  // Leaving the events section also closes any open event.
-                  setOpenEventId(null);
-                }}
-                className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  isActive
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-                {item.key === "announcements" && unreadAnnouncements > 0 && (
-                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
-                    {unreadAnnouncements}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <nav className="flex-1 space-y-1 overflow-y-auto p-2">
+          {renderNav()}
         </nav>
       </aside>
 
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        systemName={branding.systemName}
+        universityName={branding.universityName}
+      >
+        {renderNav(() => setMobileNavOpen(false))}
+      </MobileNavDrawer>
+
       {/* Main area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
+        <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2 sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="lg:hidden"
+              aria-label="Open navigation"
+              onClick={() => setMobileNavOpen(true)}
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
             <HeaderBackButton />
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm font-medium text-muted-foreground">
               {teacher ? (
                 <>
                   <span className="truncate">{displayName}</span>
-                  <span className="text-xs font-normal">
+                  <span className="hidden text-xs font-normal sm:inline">
                     · {teacher.jobTitle || teacher.specialty || "Teacher"}
                   </span>
                 </>
@@ -319,7 +352,7 @@ function TeacherShell() {
               )}
             </span>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
             <UserAvatar
               name={displayName}
               src={avatar ?? undefined}
@@ -332,7 +365,7 @@ function TeacherShell() {
         </header>
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-6">
+        <main className="w-full flex-1 overflow-auto p-4 sm:p-6">
           {openEventId ? (
             <TeacherEventDetailPage
               eventId={openEventId}

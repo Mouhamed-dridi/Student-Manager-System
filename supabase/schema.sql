@@ -127,12 +127,12 @@ create table if not exists public.settings (
 -- Unified attendance log: one row per recorded presence. Each row is fully
 -- denormalised (type, full_name, class_name) so the table renders as-is and
 -- the search filter can be pushed down into the Supabase query (ilike).
--- type is 'student' or 'teacher'; class_name holds the program·training for
--- students or the specialty for teachers.
+-- type is 'student', 'teacher' or 'full_class'; class_name holds the
+-- program·training for students or the specialty for teachers.
 
 create table if not exists public.attendance (
   id uuid primary key default gen_random_uuid(),
-  type text not null check (type in ('student', 'teacher')),
+  type text not null check (type in ('student', 'teacher', 'full_class')),
   full_name text not null,
   class_name text,
   date date,
@@ -147,6 +147,57 @@ alter table if exists public.attendance
   add column if not exists training text,
   add column if not exists is_deleted boolean not null default false,
   add column if not exists deleted_at timestamptz;
+
+-- Three-target absences (see supabase/absences-migration.sql): target_type +
+-- user_id for an individual, program_tier + training_id for a full class, and
+-- the normalized date/time. Optional for the app, which probes for them.
+alter table if exists public.attendance
+  add column if not exists target_type text,
+  add column if not exists user_id uuid,
+  add column if not exists program_tier text,
+  add column if not exists training_id uuid,
+  add column if not exists absence_date date,
+  add column if not exists absence_time text,
+  add column if not exists time_from text,
+  add column if not exists time_to text;
+
+do $$
+declare
+  con record;
+begin
+  if to_regclass('public.attendance') is null then
+    return;
+  end if;
+
+  update public.attendance set target_type = type where target_type is null;
+  update public.attendance set absence_date = date where absence_date is null;
+  update public.attendance
+     set absence_time = time
+   where absence_time is null and time is not null;
+
+  -- Absence window: seed Time From / Time To from the legacy `time` value
+  -- (a single "08:00" or an older "08:00 - 10:00" window).
+  update public.attendance
+     set time_from = nullif(trim(split_part(time, ' - ', 1)), ''),
+         time_to = nullif(trim(split_part(time, ' - ', 2)), '')
+   where time is not null and time_from is null;
+
+  alter table public.attendance alter column target_type set default 'student';
+
+  for con in
+    select conname
+      from pg_constraint
+     where conrelid = 'public.attendance'::regclass
+       and contype = 'c'
+       and pg_get_constraintdef(oid) ilike '%type%'
+  loop
+    execute format('alter table public.attendance drop constraint %I', con.conname);
+  end loop;
+
+  alter table public.attendance
+    add constraint attendance_type_check
+    check (type in ('student', 'teacher', 'full_class'));
+end $$;
 
 create index if not exists attendance_log_idx
   on public.attendance (date, full_name);

@@ -13,7 +13,6 @@ import {
   listTeachers,
   softDeleteTeachers,
   subscribeToTable,
-  updateTeacherProfile,
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { useNestedView } from "@/hooks/viewHistory";
@@ -29,9 +28,12 @@ export default function TeachersPage() {
   const [teachers, setTeachers] = useState<Teacher[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
-  const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
-  // The teacher whose full-page profile replaces the list (null = closed).
-  const [profile, setProfile] = useState<Teacher | null>(null);
+  // The teacher whose full-page profile replaces the list (null = closed);
+  // `edit` opens that profile with the edit sheet already up.
+  const [profile, setProfile] = useState<{
+    teacher: Teacher;
+    edit?: boolean;
+  } | null>(null);
   const [pendingImport, setPendingImport] = useState<ImportResult | null>(null);
   const [importSummary, setImportSummary] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,21 +72,16 @@ export default function TeachersPage() {
     () => setProfile(null),
   );
 
+  // The full-page form now only creates teachers; editing happens in the
+  // profile's right-side sheet.
   const handleSave = async (teacher: Teacher) => {
     try {
       setError(null);
-      if (teachers?.some((t) => t.id === teacher.id)) {
-        // Form fields don't carry login data — the API update only touches
-        // profile fields, so login data is preserved across edits.
-        await updateTeacherProfile(teacher.id, teacher);
-      } else {
-        await insertTeachers([teacher]);
-      }
+      await insertTeachers([teacher]);
       setTeachers(await listTeachers());
     } catch (err) {
       setError(errorMessage(err));
     }
-    setEditingTeacher(null);
     setActiveTab("list");
     setImportSummary(null);
   };
@@ -100,14 +97,14 @@ export default function TeachersPage() {
     setImportSummary(null);
   };
 
+  // The row's edit action opens the profile with its edit sheet already up,
+  // replacing the old full-page edit form.
   const handleEdit = (teacher: Teacher) => {
-    setEditingTeacher(teacher);
-    setActiveTab("add");
+    setProfile({ teacher, edit: true });
     setImportSummary(null);
   };
 
   const handleAddNew = () => {
-    setEditingTeacher(null);
     setActiveTab("add");
     setImportSummary(null);
   };
@@ -188,18 +185,18 @@ export default function TeachersPage() {
   // id so the page always shows the latest record. The captured object is the
   // fallback for the frame where the row is gone (e.g. just soft-deleted).
   const profileTeacher = profile
-    ? teachers?.find((t) => t.id === profile.id) ?? profile
+    ? teachers?.find((t) => t.id === profile.teacher.id) ?? profile.teacher
     : null;
 
   if (profileTeacher) {
     return (
       <TeacherProfilePage
         teacher={profileTeacher}
+        initialEditOpen={profile?.edit}
         onBack={() => setProfile(null)}
-        onEdit={(teacher) => {
-          setProfile(null);
-          handleEdit(teacher);
-        }}
+        // Saved in the sheet: refetch so the list row matches, without closing
+        // the profile.
+        onEdit={() => void refresh()}
       />
     );
   }
@@ -261,7 +258,7 @@ export default function TeachersPage() {
           ) : (
             <TeacherListView
               teachers={teachers}
-              onOpenProfile={setProfile}
+              onOpenProfile={(teacher) => setProfile({ teacher })}
               onEdit={handleEdit}
               onDelete={handleDelete}
             />
@@ -271,13 +268,9 @@ export default function TeachersPage() {
         <TabsContent value="add" className="mt-4">
           {error && <DataError message={error} />}
           <TeacherForm
-            key={editingTeacher?.id ?? "new"}
-            initialData={editingTeacher ?? undefined}
+            key="new"
             onSave={handleSave}
-            onCancel={() => {
-              setEditingTeacher(null);
-              setActiveTab("list");
-            }}
+            onCancel={() => setActiveTab("list")}
           />
         </TabsContent>
 

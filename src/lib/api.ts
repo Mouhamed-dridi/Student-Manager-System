@@ -348,6 +348,7 @@ export async function updateStudentProfile(
     | "whatsapp"
     | "github"
     | "linkedin"
+    | "blocked"
   >,
 ): Promise<void> {
   const { programId, trainingId } = await resolveProgramTrainingIds(
@@ -374,6 +375,9 @@ export async function updateStudentProfile(
         whatsapp: profile.whatsapp ?? null,
         github: profile.github ?? null,
         linkedin: profile.linkedin ?? null,
+        // Only written when the caller passes it: login state (blocked) is
+        // managed from the Accounts page, and older callers never send it.
+        ...(profile.blocked !== undefined ? { blocked: profile.blocked } : {}),
       })
       .eq("id", id),
   );
@@ -587,7 +591,13 @@ export async function updateTeacherProfile(
     | "education"
     | "program"
     | "training"
-  >,
+  > & {
+    /**
+     * Optional so the settings pages can edit profile fields without touching
+     * the account flag; the operator's edit sheet is the caller that sets it.
+     */
+    blocked?: boolean;
+  },
 ): Promise<void> {
   const { error } = await withTimeout(
     supabase
@@ -603,6 +613,7 @@ export async function updateTeacherProfile(
         education: profile.education ?? null,
         program: profile.program ?? null,
         training: profile.training ?? null,
+        ...(profile.blocked === undefined ? {} : { blocked: profile.blocked }),
       })
       .eq("id", id),
   );
@@ -1126,8 +1137,8 @@ export interface TrashItem {
   name: string;
   detail: string;
   deletedAt: string | null;
-  /** For attendance rows: whether the absent person was a student or teacher. */
-  personType?: "student" | "teacher";
+  /** For attendance rows: the recorded absence target. */
+  personType?: AttendanceTargetType;
 }
 
 /** Every soft-deleted row from the trashable tables, newest first. */
@@ -1262,7 +1273,7 @@ const p = (
     for (const row of data ?? []) {
       const a = row as {
         id: string;
-        type: "student" | "teacher";
+        type: AttendanceTargetType;
         full_name: string;
         program: string | null;
         training: string | null;
@@ -1295,7 +1306,7 @@ const p = (
         )
       ).data as {
         id: string;
-        type: "student" | "teacher";
+        type: AttendanceTargetType;
         full_name: string;
         program: string | null;
         training: string | null;
@@ -1322,31 +1333,110 @@ const p = (
 
 // -------------------------------------------------------------- attendance
 
+/** What an absence is recorded against. */
+export type AttendanceTargetType = "student" | "teacher" | "full_class";
+
 export interface AttendanceRecord {
   id: string;
-  type: "student" | "teacher";
+  type: AttendanceTargetType;
   fullName: string;
   className: string | null;
   program: string | null;
   training: string | null;
   date: string;
+  /** Display window ("08:00 - 10:00") kept for the log and old readers. */
   time: string | null;
+  /** Absence window start/end (only once time_from/time_to exist). */
+  timeFrom: string | null;
+  timeTo: string | null;
+  /** Target recorded by the Add Absence modal (falls back to `type`). */
+  targetType: AttendanceTargetType;
+  /** students.id / teachers.id for individual targets, null for a class. */
+  userId: string | null;
+  programTier: string | null;
+  /** trainings.id for a full-class target. */
+  trainingId: string | null;
+  absenceDate: string | null;
+  absenceTime: string | null;
 }
 
 interface AttendanceRow {
   id: string;
-  type: "student" | "teacher";
+  type: AttendanceTargetType;
   full_name: string;
   class_name: string | null;
   program: string | null;
   training: string | null;
   date: string;
   time: string | null;
+  // Optional: only present once supabase/absences-migration.sql has run.
+  target_type?: string | null;
+  user_id?: string | null;
+  program_tier?: string | null;
+  training_id?: string | null;
+  absence_date?: string | null;
+  absence_time?: string | null;
+  time_from?: string | null;
+  time_to?: string | null;
 }
 
 const ATTENDANCE_SELECT = "id, type, full_name, class_name, program, training, date, time";
+const ATTENDANCE_TARGET_SELECT =
+  "target_type, user_id, program_tier, training_id, absence_date, absence_time";
+const ATTENDANCE_TIME_RANGE_SELECT = "time_from, time_to";
+
+/**
+ * Runtime probe for the three-target absence columns, used to keep reads
+ * working on a database that has not run supabase/absences-migration.sql (a
+ * select naming them would fail with 42703). Writes no longer consult it: see
+ * attendanceToWriteRowsWithTargets(). Cached for the session like the other
+ * schema probes.
+ */
+let attendanceTargetColumns: boolean | null = null;
+async function hasAbsenceTargetColumns(): Promise<boolean> {
+  if (attendanceTargetColumns !== null) return attendanceTargetColumns;
+  const { error } = await withTimeout(
+    supabase.from("attendance").select(ATTENDANCE_TARGET_SELECT).limit(0),
+    8000,
+  );
+  attendanceTargetColumns = !error;
+  return attendanceTargetColumns;
+}
+
+/**
+ * Runtime probe for the time-window columns (time_from/time_to) added by
+ * supabase/absences-migration.sql. Probed on its own so a database that has
+ * the target columns but not these still loads the log (rows then fall back to
+ * the legacy `time` value for the Time From / Time To cells).
+ */
+let attendanceTimeRangeColumns: boolean | null = null;
+async function hasAbsenceTimeRangeColumns(): Promise<boolean> {
+  if (attendanceTimeRangeColumns !== null) return attendanceTimeRangeColumns;
+  const { error } = await withTimeout(
+    supabase.from("attendance").select(ATTENDANCE_TIME_RANGE_SELECT).limit(0),
+    8000,
+  );
+  attendanceTimeRangeColumns = !error;
+  return attendanceTimeRangeColumns;
+}
+
+/** Select list for attendance reads: optional columns when available. */
+async function attendanceSelect(): Promise<string> {
+  const [targets, timeRange] = await Promise.all([
+    hasAbsenceTargetColumns(),
+    hasAbsenceTimeRangeColumns(),
+  ]);
+  const optional = [
+    targets ? ATTENDANCE_TARGET_SELECT : null,
+    timeRange ? ATTENDANCE_TIME_RANGE_SELECT : null,
+  ].filter(Boolean);
+  return optional.length > 0
+    ? `${ATTENDANCE_SELECT}, ${optional.join(", ")}`
+    : ATTENDANCE_SELECT;
+}
 
 function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
+  const targetType = (row.target_type ?? row.type) as AttendanceTargetType;
   return {
     id: row.id,
     type: row.type,
@@ -1356,6 +1446,14 @@ function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
     training: row.training,
     date: row.date,
     time: row.time,
+    timeFrom: row.time_from ?? null,
+    timeTo: row.time_to ?? null,
+    targetType,
+    userId: row.user_id ?? null,
+    programTier: row.program_tier ?? row.program ?? null,
+    trainingId: row.training_id ?? null,
+    absenceDate: row.absence_date ?? row.date ?? null,
+    absenceTime: row.absence_time ?? row.time ?? null,
   };
 }
 
@@ -1366,11 +1464,12 @@ function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
  */
 export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
   const capabilities = await generalTrashCapabilities();
+  const select = await attendanceSelect();
   const { data, error } = capabilities.attendance
     ? await withTimeout(
         supabase
           .from("attendance")
-          .select(ATTENDANCE_SELECT)
+          .select(select)
           .or("is_deleted.is.false,is_deleted.is.null")
           .order("date", { ascending: false })
           .order("time", { ascending: false }),
@@ -1378,13 +1477,15 @@ export async function loadAttendanceRecords(): Promise<AttendanceRecord[]> {
     : await withTimeout(
         supabase
           .from("attendance")
-          .select(ATTENDANCE_SELECT)
+          .select(select)
           .order("date", { ascending: false })
           .order("time", { ascending: false }),
       );
   if (error) throw new Error(error.message);
+  // The select list is built at runtime (optional target columns), so the
+  // generated row type is not usable here — the probe above guarantees shape.
   let records = (data ?? []).map((row) =>
-    attendanceFromRow(row as AttendanceRow),
+    attendanceFromRow(row as unknown as AttendanceRow),
   );
   if (!capabilities.attendance) {
     records = records.filter(
@@ -1434,11 +1535,12 @@ export async function loadStudentAttendance(
   fullName: string,
 ): Promise<AttendanceRecord[]> {
   const capabilities = await generalTrashCapabilities();
+  const select = await attendanceSelect();
   const { data, error } = capabilities.attendance
     ? await withTimeout(
         supabase
           .from("attendance")
-          .select(ATTENDANCE_SELECT)
+          .select(select)
           .eq("type", "student")
           .eq("full_name", fullName)
           .or("is_deleted.is.false,is_deleted.is.null")
@@ -1448,14 +1550,16 @@ export async function loadStudentAttendance(
     : await withTimeout(
         supabase
           .from("attendance")
-          .select(ATTENDANCE_SELECT)
+          .select(select)
           .eq("type", "student")
           .eq("full_name", fullName)
           .order("date", { ascending: false })
           .order("time", { ascending: false }),
       );
   if (error) throw new Error(error.message);
-  let rows = (data ?? []).map((row) => attendanceFromRow(row as AttendanceRow));
+  let rows = (data ?? []).map((row) =>
+    attendanceFromRow(row as unknown as AttendanceRow),
+  );
   if (!capabilities.attendance) {
     rows = rows.filter(
       (a) => !localGeneralTrashDeletedAt.has(generalTrashKey("attendance", a.id)),
@@ -1466,23 +1570,41 @@ export async function loadStudentAttendance(
 
 /** Shape accepted for writing attendance rows (modal + Excel import). */
 export interface AttendanceInput {
-  type: "student" | "teacher";
+  type: AttendanceTargetType;
   fullName: string;
   className?: string | null;
   program?: string | null;
   training?: string | null;
   date: string;
   time?: string | null;
+  /** Normalized target fields written by the Add Absence modal. */
+  targetType?: AttendanceTargetType;
+  userId?: string | null;
+  programTier?: string | null;
+  trainingId?: string | null;
+  absenceDate?: string | null;
+  absenceTime?: string | null;
+  /** Time From / Time To as typed in the Add Absence modal. */
+  timeFrom?: string | null;
+  timeTo?: string | null;
 }
 
 interface AttendanceWriteRow {
-  type: "student" | "teacher";
+  type: AttendanceTargetType;
   full_name: string;
   class_name: string;
   program: string | null;
   training: string | null;
   date: string | null;
   time: string | null;
+  target_type?: string;
+  user_id?: string | null;
+  program_tier?: string | null;
+  training_id?: string | null;
+  absence_date?: string | null;
+  absence_time?: string | null;
+  time_from?: string | null;
+  time_to?: string | null;
 }
 
 interface AttendancePersonFallback {
@@ -1520,6 +1642,17 @@ async function resolveAttendancePeople(
   return people;
 }
 
+/** "08:00" + "10:00" -> "08:00 - 10:00" (null when neither is set). */
+function attendanceTimeWindow(
+  timeFrom?: string | null,
+  timeTo?: string | null,
+): string | null {
+  const parts = [timeFrom?.trim(), timeTo?.trim()].filter(
+    (part): part is string => Boolean(part),
+  );
+  return parts.length > 0 ? parts.join(" - ") : null;
+}
+
 async function attendanceToWriteRows(
   records: AttendanceInput[],
 ): Promise<AttendanceWriteRow[]> {
@@ -1538,7 +1671,37 @@ async function attendanceToWriteRows(
       program,
       training,
       date: r.date || null,
-      time: r.time?.trim() ? r.time.trim() : null,
+      // The legacy `time` column keeps the human-readable window ("08:00 -
+      // 10:00") so the log, export and student views need no extra joins.
+      time: r.time?.trim()
+        ? r.time.trim()
+        : attendanceTimeWindow(r.timeFrom, r.timeTo),
+    };
+  });
+}
+
+/**
+ * Adds the normalized three-target and time-window columns. Every write sends
+ * them unconditionally: the attendance table carries them in production, so a
+ * full-class absence inserts straight through instead of waiting on a schema
+ * probe and throwing when it comes back false.
+ */
+async function attendanceToWriteRowsWithTargets(
+  records: AttendanceInput[],
+): Promise<AttendanceWriteRow[]> {
+  const rows = await attendanceToWriteRows(records);
+  return rows.map((row, index) => {
+    const input = records[index];
+    return {
+      ...row,
+      target_type: input.targetType ?? input.type,
+      user_id: input.userId ?? null,
+      program_tier: input.programTier ?? row.program,
+      training_id: input.trainingId ?? null,
+      time_from: input.timeFrom?.trim() || null,
+      time_to: input.timeTo?.trim() || null,
+      absence_date: input.absenceDate ?? input.date ?? null,
+      absence_time: input.absenceTime ?? row.time,
     };
   });
 }
@@ -1548,7 +1711,7 @@ export async function insertAttendanceRecords(
   records: AttendanceInput[],
 ): Promise<void> {
   if (records.length === 0) return;
-  const rows = await attendanceToWriteRows(records);
+  const rows = await attendanceToWriteRowsWithTargets(records);
   const { error } = await withTimeout(supabase.from("attendance").insert(rows));
   if (error) throw new Error(error.message);
 }
@@ -1558,7 +1721,7 @@ export async function updateAttendanceRecord(
   id: string,
   input: AttendanceInput,
 ): Promise<void> {
-  const [row] = await attendanceToWriteRows([input]);
+  const [row] = await attendanceToWriteRowsWithTargets([input]);
   const { error } = await withTimeout(
     supabase.from("attendance").update(row).eq("id", id),
   );
@@ -1568,7 +1731,7 @@ export async function updateAttendanceRecord(
 /** One attendance row fixed by the reconciliation sync. */
 export interface AttendanceSyncDetail {
   id: string;
-  type: "student" | "teacher";
+  type: AttendanceTargetType;
   fullName: string;
   changed: {
     program: boolean;

@@ -633,7 +633,8 @@ export default function PlanningPage() {
       )}
 
       {view === "grid" ? (
-        <div className="mt-4 grid grid-cols-7 gap-2">
+        <div className="mt-4 -mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
+          <div className="grid min-w-[760px] grid-cols-7 gap-2">
           {weekDays.map((d, i) => {
             const key = weekKeys[i];
             const dayEntries = byDate.get(key) ?? [];
@@ -684,6 +685,7 @@ export default function PlanningPage() {
               </button>
             );
           })}
+          </div>
         </div>
       ) : (
         <div className="mt-4 space-y-5">
