@@ -1503,6 +1503,20 @@ async function hasAbsenceTimeRangeColumns(): Promise<boolean> {
   return attendanceTimeRangeColumns;
 }
 
+let attendanceStudentIdColumn: boolean | null = null;
+async function hasAbsenceStudentIdColumn(): Promise<boolean> {
+  if (attendanceStudentIdColumn !== null) return attendanceStudentIdColumn;
+  attendanceStudentIdColumn = await hasColumn("attendance", "student_id");
+  return attendanceStudentIdColumn;
+}
+
+let attendanceTeacherIdColumn: boolean | null = null;
+async function hasAbsenceTeacherIdColumn(): Promise<boolean> {
+  if (attendanceTeacherIdColumn !== null) return attendanceTeacherIdColumn;
+  attendanceTeacherIdColumn = await hasColumn("attendance", "teacher_id");
+  return attendanceTeacherIdColumn;
+}
+
 /** Select list for attendance reads: optional columns when available. */
 async function attendanceSelect(): Promise<string> {
   const [targets, timeRange] = await Promise.all([
@@ -1668,6 +1682,8 @@ export interface AttendanceInput {
   /** Normalized target fields written by the Add Absence modal. */
   targetType?: AttendanceTargetType;
   userId?: string | null;
+  studentId?: string | null;
+  teacherId?: string | null;
   programTier?: string | null;
   trainingId?: string | null;
   absenceDate?: string | null;
@@ -1687,6 +1703,8 @@ interface AttendanceWriteRow {
   time: string | null;
   target_type?: string;
   user_id?: string | null;
+  student_id?: string | null;
+  teacher_id?: string | null;
   program_tier?: string | null;
   training_id?: string | null;
   absence_date?: string | null;
@@ -1705,13 +1723,30 @@ interface AttendancePersonFallback {
  * Builds a lookup of program/training/class fallbacks for every person whose
  * attendance rows are missing them, so writes never leave the columns NULL
  * when the person's students/teachers record carries the values.
+ *
+ * Scoped conditionally: only queries students when student records need them,
+ * and only queries teachers when teacher records need them.
  */
 async function resolveAttendancePeople(
   records: AttendanceInput[],
 ): Promise<Map<string, AttendancePersonFallback>> {
-  const needed = records.some((r) => !r.program?.trim() || !r.training?.trim());
-  if (!needed) return new Map();
-  const [students, teachers] = await Promise.all([listStudents(), listTeachers()]);
+  const needsStudents = records.some(
+    (r) =>
+      (r.targetType ?? r.type) === "student" &&
+      (!r.program?.trim() || !r.training?.trim()),
+  );
+  const needsTeachers = records.some(
+    (r) =>
+      (r.targetType ?? r.type) === "teacher" &&
+      (!r.program?.trim() || !r.training?.trim()),
+  );
+  if (!needsStudents && !needsTeachers) return new Map();
+
+  const [students, teachers] = await Promise.all([
+    needsStudents ? listStudents().catch(() => []) : Promise.resolve([]),
+    needsTeachers ? listTeachers().catch(() => []) : Promise.resolve([]),
+  ]);
+
   const people = new Map<string, AttendancePersonFallback>();
   for (const s of students) {
     people.set(`student:${s.fullName.toLowerCase()}`, {
@@ -1799,11 +1834,20 @@ async function attendanceToWriteRows(
  * them unconditionally (no client-side schema probe). The clock values are
  * single times because `time`/`time_from`/`time_to` are `time` columns in the
  * live table, and only the text `absence_time` takes the joined window.
+ *
+ * Automatically assigns student_id / teacher_id if those columns exist in the table,
+ * ensuring students have student_id set and teachers have teacher fields assigned cleanly
+ * without causing foreign key errors on student references.
  */
 async function attendanceToWriteRowsWithTargets(
   records: AttendanceInput[],
 ): Promise<AttendanceWriteRow[]> {
-  const rows = await attendanceToWriteRows(records);
+  const [rows, hasStudentId, hasTeacherId] = await Promise.all([
+    attendanceToWriteRows(records),
+    hasAbsenceStudentIdColumn(),
+    hasAbsenceTeacherIdColumn(),
+  ]);
+
   return rows.map((row, index) => {
     const input = records[index];
     // An explicit null clears the bound; `undefined` inherits whatever the
@@ -1816,12 +1860,19 @@ async function attendanceToWriteRowsWithTargets(
       input.timeTo === undefined
         ? row.time_to ?? null
         : normalizeClock(input.timeTo);
-    return {
+
+    const isStudent = (input.targetType ?? input.type) === "student";
+    const isTeacher = (input.targetType ?? input.type) === "teacher";
+    const selectedId =
+      input.studentId ?? input.teacherId ?? input.userId ?? null;
+
+    const baseRow: AttendanceWriteRow = {
       ...row,
       target_type: input.targetType ?? input.type,
-      user_id: input.userId ?? null,
-      program_tier: input.programTier ?? row.program,
-      training_id: input.trainingId ?? null,
+      user_id: selectedId,
+      program_tier: isTeacher ? null : (input.programTier ?? row.program),
+      // Teachers do not link to trainings, so training_id is kept null for teachers
+      training_id: isTeacher ? null : (input.trainingId ?? null),
       time_from: timeFrom,
       time_to: timeTo,
       time: timeFrom ?? timeTo,
@@ -1832,6 +1883,15 @@ async function attendanceToWriteRowsWithTargets(
           ? attendanceTimeWindow(timeFrom, timeTo) ?? row.time
           : input.absenceTime?.trim() || null,
     };
+
+    if (hasStudentId) {
+      baseRow.student_id = isStudent ? selectedId : null;
+    }
+    if (hasTeacherId) {
+      baseRow.teacher_id = isTeacher ? selectedId : null;
+    }
+
+    return baseRow;
   });
 }
 

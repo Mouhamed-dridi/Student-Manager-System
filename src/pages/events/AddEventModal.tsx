@@ -371,7 +371,11 @@ export default function AddEventModal({
   return (
     // Non-dismissing backdrop: clicking it does nothing, so the only exits are
     // the X in the header and Cancel in the footer.
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -379,7 +383,8 @@ export default function AddEventModal({
         className="dark animate-in fade-in zoom-in-95 max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-white shadow-2xl duration-200 sm:p-8"
         // Keeps a click inside the panel from ever reaching the overlay, so
         // working with the date pickers or the cover dropzone cannot dismiss it.
-        onClick={(event) => event.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <form onSubmit={handleSubmit}>
           {/* ------------------------------------------------------ header */}

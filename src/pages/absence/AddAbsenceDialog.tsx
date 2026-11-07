@@ -12,7 +12,7 @@
 // columns in sync for the Attendance log.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Search } from "lucide-react";
+import { Building2, GraduationCap, Loader2, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,14 +42,9 @@ import {
   type AttendanceRecord,
   type AttendanceTargetType,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const PROGRAMS = ["CAP", "BTP", "BTS"] as const;
-
-const TARGET_LABELS: Record<AttendanceTargetType, string> = {
-  student: "Individual Student",
-  teacher: "Individual Teacher",
-  full_class: "Full Class / Branch",
-};
 
 interface ProgramOption {
   id: string;
@@ -67,6 +62,7 @@ interface PersonOption {
   name: string;
   program: string;
   training: string;
+  detail?: string;
 }
 
 interface AddAbsenceDialogProps {
@@ -182,6 +178,7 @@ export default function AddAbsenceDialog({
               name: s.fullName,
               program: s.program ?? "",
               training: s.training ?? "",
+              detail: [s.program, s.training].filter(Boolean).join(" · "),
             })),
           )
         : listTeachers().then((teachers) =>
@@ -189,7 +186,8 @@ export default function AddAbsenceDialog({
               id: t.id,
               name: t.fullName,
               program: t.program ?? "",
-              training: t.training ?? "",
+              training: t.training ?? t.specialty ?? "",
+              detail: t.specialty || t.jobTitle || t.training || "Teacher",
             })),
           );
     load
@@ -348,6 +346,26 @@ export default function AddAbsenceDialog({
         programTier,
         trainingId: training.id,
         userId: null,
+        studentId: null,
+        teacherId: null,
+        date,
+        timeFrom: timeFrom || null,
+        timeTo: timeTo || null,
+        absenceDate: date,
+      };
+    } else if (type === "teacher") {
+      input = {
+        type: "teacher",
+        targetType: "teacher",
+        fullName: personName.trim(),
+        className: personTraining || selected?.detail || "Teacher",
+        program: personProgram || null,
+        training: personTraining || null,
+        programTier: null,
+        trainingId: null, // Always null for teachers so no FK or invalid uuid constraint error
+        userId: selected?.id ?? editing?.userId ?? null,
+        studentId: null, // explicitly leave student fields null
+        teacherId: selected?.id ?? editing?.userId ?? null,
         date,
         timeFrom: timeFrom || null,
         timeTo: timeTo || null,
@@ -355,15 +373,17 @@ export default function AddAbsenceDialog({
       };
     } else {
       input = {
-        type,
-        targetType: type,
+        type: "student",
+        targetType: "student",
         fullName: personName.trim(),
-        className: personTraining || null,
+        className: personTraining || "General",
         program: personProgram || null,
         training: personTraining || null,
         programTier: personProgram || null,
         trainingId: trainingForPerson,
         userId: selected?.id ?? editing?.userId ?? null,
+        studentId: selected?.id ?? editing?.userId ?? null,
+        teacherId: null, // explicitly leave teacher fields null
         date,
         timeFrom: timeFrom || null,
         timeTo: timeTo || null,
@@ -400,33 +420,66 @@ export default function AddAbsenceDialog({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Type</Label>
-            <Select
-              value={type}
-              onValueChange={handleTypeChange}
-              disabled={isEditing}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="student">
-                  {TARGET_LABELS.student}
-                </SelectItem>
-                <SelectItem value="teacher">
-                  {TARGET_LABELS.teacher}
-                </SelectItem>
-                <SelectItem value="full_class">
-                  {TARGET_LABELS.full_class}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>Target Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => handleTypeChange("student")}
+                disabled={isEditing}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border py-2 px-3 text-sm font-medium transition-all",
+                  type === "student"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isEditing && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <Users className="h-4 w-4 shrink-0" />
+                <span>Student</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange("teacher")}
+                disabled={isEditing}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border py-2 px-3 text-sm font-medium transition-all",
+                  type === "teacher"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isEditing && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <GraduationCap className="h-4 w-4 shrink-0" />
+                <span>Teacher</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange("full_class")}
+                disabled={isEditing}
+                className={cn(
+                  "flex items-center justify-center gap-2 rounded-lg border py-2 px-3 text-sm font-medium transition-all",
+                  type === "full_class"
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-input bg-background text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isEditing && "opacity-50 cursor-not-allowed",
+                )}
+              >
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span>Full Class</span>
+              </button>
+            </div>
           </div>
 
           {showSearch && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="absence-person">Full Name</Label>
+                <Label htmlFor="absence-person">
+                  {type === "student"
+                    ? "Student Name"
+                    : type === "teacher"
+                      ? "Teacher Name"
+                      : "Full Name"}
+                </Label>
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -486,9 +539,11 @@ export default function AddAbsenceDialog({
                               {person.name}
                             </span>
                             <span className="shrink-0 text-xs text-muted-foreground">
-                              {[person.program, person.training]
-                                .filter(Boolean)
-                                .join(" · ") || "—"}
+                              {type === "teacher"
+                                ? person.detail || person.training || person.program || "Teacher"
+                                : [person.program, person.training]
+                                    .filter(Boolean)
+                                    .join(" · ") || "—"}
                             </span>
                           </button>
                         ))
@@ -499,40 +554,69 @@ export default function AddAbsenceDialog({
                 {selected && (
                   <p className="text-xs text-muted-foreground">
                     {selected.name}
-                    {selected.program || selected.training
-                      ? ` — ${[selected.program, selected.training]
-                          .filter(Boolean)
-                          .join(" · ")}`
-                      : ""}
+                    {type === "teacher"
+                      ? selected.detail
+                        ? ` — ${selected.detail}`
+                        : ""
+                      : selected.program || selected.training
+                        ? ` — ${[selected.program, selected.training]
+                            .filter(Boolean)
+                            .join(" · ")}`
+                        : ""}
                   </p>
                 )}
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="absence-program">Program</Label>
-                  <Input
-                    id="absence-program"
-                    value={personProgram || ""}
-                    placeholder="—"
-                    readOnly
-                    disabled
-                  />
+              {type === "teacher" ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="absence-specialty">Department / Specialty</Label>
+                    <Input
+                      id="absence-specialty"
+                      value={personTraining || personProgram || "—"}
+                      placeholder="—"
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="absence-target-role">Role</Label>
+                    <Input
+                      id="absence-target-role"
+                      value="Teacher"
+                      readOnly
+                      disabled
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="absence-training">Training</Label>
-                  <Input
-                    id="absence-training"
-                    value={personTraining || ""}
-                    placeholder="—"
-                    readOnly
-                    disabled
-                  />
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="absence-program">Program</Label>
+                    <Input
+                      id="absence-program"
+                      value={personProgram || "—"}
+                      placeholder="—"
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="absence-training">Training</Label>
+                    <Input
+                      id="absence-training"
+                      value={personTraining || "—"}
+                      placeholder="—"
+                      readOnly
+                      disabled
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               <p className="text-xs text-muted-foreground">
-                Program and training are filled from the selected profile and
-                locked.
+                {type === "teacher"
+                  ? "Teacher details are filled from their profile."
+                  : "Program and training are filled from the student's profile and locked."}
               </p>
             </>
           )}
