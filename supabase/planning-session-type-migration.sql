@@ -1,20 +1,26 @@
--- Planning: classify each session as In-class, Online, Exam, or Soutenance.
--- Existing rows receive the default when the column is added.
--- Idempotent — safe to run more than once. Paste into the Supabase SQL Editor.
+-- Planning: classify each session as a timetable, exam or PFE session.
+--
+--   Emploi du temps   -> In-class, Online
+--   Emploi des examens -> DS, TP, TD, Principale, Exam, SYNTHESE
+--   Planning PFE      -> PFE, Soutenance
+--
+-- Existing rows receive the default ('In-class') when the column is added, and
+-- the check is rebuilt unconditionally so a database created with the original
+-- four-value constraint learns the new kinds too. Idempotent — safe to run more
+-- than once. Paste into the Supabase SQL Editor.
 
 alter table public.planning
   add column if not exists session_type text not null default 'In-class';
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'planning_session_type_check'
-      and conrelid = 'public.planning'::regclass
-  ) then
-    alter table public.planning
-      add constraint planning_session_type_check
-      check (session_type in ('In-class', 'Online', 'Exam', 'Soutenance'));
-  end if;
-end $$;
+alter table public.planning
+  drop constraint if exists planning_session_type_check;
+
+alter table public.planning
+  add constraint planning_session_type_check
+  check (
+    session_type in (
+      'In-class', 'Online',
+      'DS', 'TP', 'TD', 'Principale', 'Exam', 'SYNTHESE',
+      'PFE', 'Soutenance'
+    )
+  );

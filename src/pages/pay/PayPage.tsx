@@ -2,13 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -29,9 +22,10 @@ import {
   updatePayment,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
-import PaymentForm, { type Payment } from "./PaymentForm";
-import PaymentList from "./PaymentList";
+import AddPaymentModal from "./AddPaymentModal";
+import PaymentsView from "./PaymentsView";
 import PaymentReceiptModal from "./PaymentReceiptModal";
+import { studentProgramSnapshot, type Payment } from "./paymentTypes";
 
 export default function PayPage() {
   const [students, setStudents] = useState<Student[] | null>(null);
@@ -62,6 +56,10 @@ export default function PayPage() {
         ...p,
         studentName: student?.fullName ?? p.studentName,
         program: student?.program ?? p.program,
+        // Legacy rows predate student_program: fall back to the current record.
+        studentProgram:
+          p.studentProgram ??
+          (student ? studentProgramSnapshot(student) : undefined),
       };
     });
   }, [students, payments]);
@@ -114,68 +112,56 @@ export default function PayPage() {
     <div>
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Payments</h2>
-        <Button onClick={() => setAddDialogOpen(true)}>
+        <Button
+          onClick={() => {
+            setError(null);
+            setAddDialogOpen(true);
+          }}
+        >
           <Plus className="h-4 w-4" />
           Add Payment
         </Button>
       </div>
 
       <div className="mt-4">
-        {error && <DataError message={error} />}
+        {error && !addDialogOpen && !editing && <DataError message={error} />}
 
         {students === null || payments === null ? (
           <DataLoading label="Loading payments…" />
         ) : (
-          <PaymentList
+          <PaymentsView
             payments={paymentsWithNames ?? []}
-            onEdit={setEditing}
+            onEdit={(payment) => {
+              setError(null);
+              setEditing(payment);
+            }}
             onDelete={setDeleteTarget}
             onPrint={setReceiptTarget}
           />
         )}
       </div>
 
-      <Dialog open={addDialogOpen} onOpenChange={(open) => setAddDialogOpen(open)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Payment</DialogTitle>
-            <DialogDescription>
-              Record a new payment against a student.
-            </DialogDescription>
-          </DialogHeader>
-          {students && (
-            <PaymentForm
-              students={students}
-              onSave={handleAdd}
-              onCancel={() => setAddDialogOpen(false)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {students && addDialogOpen && (
+        <AddPaymentModal
+          open
+          students={students}
+          error={error}
+          onSave={handleAdd}
+          onClose={() => setAddDialogOpen(false)}
+        />
+      )}
 
-      <Dialog
-        open={editing !== null}
-        onOpenChange={(open) => !open && setEditing(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Payment</DialogTitle>
-            <DialogDescription>
-              Modify this payment's details. The change is recorded in the
-              history log.
-            </DialogDescription>
-          </DialogHeader>
-          {students && editing && (
-            <PaymentForm
-              key={editing.id}
-              students={students}
-              initial={editing}
-              onSave={handleEdit}
-              onCancel={() => setEditing(null)}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {students && editing && (
+        <AddPaymentModal
+          key={editing.id}
+          open
+          students={students}
+          initial={editing}
+          error={error}
+          onSave={handleEdit}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       <AlertDialog
         open={deleteTarget !== null}
@@ -199,7 +185,7 @@ export default function PayPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    {students && receiptTarget && (
+      {students && receiptTarget && (
         <PaymentReceiptModal
           payment={receiptTarget}
           student={

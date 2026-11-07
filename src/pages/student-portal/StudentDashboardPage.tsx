@@ -33,7 +33,7 @@ import { loadScheduledCourses } from "@/lib/trainings";
 import type { CourseMaterial, ScheduledCourseView } from "@/lib/trainings";
 import { cn } from "@/lib/utils";
 import type { ExamRecord } from "@/pages/teacher-portal/exams";
-import type { Payment } from "@/pages/pay/PaymentForm";
+import type { Payment } from "@/pages/pay/paymentTypes";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";

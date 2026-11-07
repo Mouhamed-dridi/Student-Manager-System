@@ -8,7 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Payment } from "./PaymentForm";
+import {
+  PLAN_LABELS,
+  formatPaymentMethod,
+  paymentPeriodLabel,
+  type Payment,
+} from "./paymentTypes";
 import type { Student } from "@/pages/students/StudentForm";
 
 interface PaymentReceiptModalProps {
@@ -18,12 +23,6 @@ interface PaymentReceiptModalProps {
   open: boolean;
   onClose: () => void;
 }
-
-const PLAN_LABELS: Record<Payment["planType"], string> = {
-  one_time: "One-Time",
-  semester: "Semester",
-  monthly: "Monthly",
-};
 
 function formatAmount(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -109,6 +108,18 @@ export default function PaymentReceiptModal({
             <DashedRow label="Student" value={payment.studentName || "—"} />
             <DashedRow label="Class" value={className || "—"} />
             <DashedRow label="Plan" value={PLAN_LABELS[payment.planType]} />
+            {payment.planType !== "one_time" && (
+              <DashedRow
+                label="Period"
+                value={paymentPeriodLabel(payment)}
+              />
+            )}
+            {payment.paymentMethod && (
+              <DashedRow
+                label="Method"
+                value={formatPaymentMethod(payment.paymentMethod)}
+              />
+            )}
           </div>
 
           <div className="border-t border-dashed border-neutral-300 pt-3">

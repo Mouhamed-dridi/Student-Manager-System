@@ -27,6 +27,12 @@ interface PeopleMultiSelectProps {
   emptyText?: string;
   /** Shown when the roster came back empty (e.g. no teachers exist). */
   noOptionsText?: string;
+  /**
+   * Extra classes for the portalled option list. The list lives on
+   * document.body, so a forced-dark modal cannot style it through its own
+   * container: pass `dark` to scope the dark theme tokens to the list.
+   */
+  popoverClassName?: string;
 }
 
 /**
@@ -56,6 +62,7 @@ export default function PeopleMultiSelect({
   placeholder = "Search…",
   emptyText = "No matches.",
   noOptionsText = "Nobody available.",
+  popoverClassName,
 }: PeopleMultiSelectProps) {
   const listId = useId();
   const [query, setQuery] = useState("");
@@ -146,7 +153,10 @@ export default function PeopleMultiSelect({
       id={listId}
       role="listbox"
       style={listStyle}
-      className="z-50 max-h-56 overflow-y-auto rounded-lg border bg-popover p-1 shadow-md"
+      className={cn(
+        "z-50 max-h-56 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md",
+        popoverClassName,
+      )}
     >
       <div className="flex gap-1 border-b px-1 pb-1">
         <button

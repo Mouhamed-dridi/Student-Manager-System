@@ -10,6 +10,12 @@
 // about a clashing teacher, room or class before saving. Clashes are reported,
 // never blocked: a shared room or a co-taught group is legitimate.
 //
+// The Planification section opens this timetable under one of its three tabs
+// (Emploi du temps / Emploi des examens / Planning PFE): `sessionTypes` filters
+// the grid to that tab, and `examMode` sends the '+' to AddExamSessionModal,
+// whose field set is the exam one (no topic, no internal note). The Branches
+// page passes neither and keeps showing every session of the week.
+//
 // Reads and writes go through src/lib/api, like every other page.
 
 import { Fragment, useEffect, useState } from "react";
@@ -51,6 +57,7 @@ import {
 } from "@/components/ui/select";
 import { DataError } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
+import AddExamSessionModal from "@/pages/planification/AddExamSessionModal";
 import type { PlanningEntryDraft } from "@/components/PlanningEntryForm";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
@@ -83,6 +90,7 @@ import type {
   PlanningClassOption,
   PlanningEntryValues,
   PlanningRecord,
+  PlanningSessionType,
 } from "@/pages/teacher-portal/planning";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import type { TeacherCourseRecord } from "@/lib/trainings";
@@ -107,6 +115,13 @@ interface BranchPlanningPageProps {
   onBack: () => void;
   /** Refresh the parent's data after a write so the two views cannot drift. */
   onReload: () => Promise<void>;
+  /**
+   * Session types this timetable shows (the Planification tab it was opened
+   * from). Omitted by the Branches page, which shows the whole week.
+   */
+  sessionTypes?: readonly PlanningSessionType[];
+  /** Exam tab: '+' opens the specialised exam dialog instead of the entry form. */
+  examMode?: boolean;
 }
 
 const ALL_CLASSES = "__all";
@@ -136,6 +151,8 @@ export default function BranchPlanningPage({
   backLabel = "Back to Branches",
   onBack,
   onReload,
+  sessionTypes,
+  examMode = false,
 }: BranchPlanningPageProps) {
   const [cursor, setCursor] = useState(() =>
     startOfWeek(initialWeekStart ?? new Date()),
@@ -147,6 +164,11 @@ export default function BranchPlanningPage({
     editingId?: string;
   } | null>(null);
   const [draft, setDraft] = useState<PlanningEntryDraft | null>(null);
+  // Exam tab only: the '+' / "Add session" path of a specialised dialog.
+  const [examDialog, setExamDialog] = useState<{
+    date: string;
+    slot?: string;
+  } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -179,6 +201,9 @@ export default function BranchPlanningPage({
 
   const branchSessions = planning
     .filter((entry) => sessionInTraining(entry, branch))
+    // The Planification tab decides which session kinds this grid draws, so
+    // lessons, exam sittings and PFE defences never mix in one week.
+    .filter((entry) => !sessionTypes || sessionTypes.includes(entry.sessionType))
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const classOptionsForFilter = [
@@ -279,6 +304,10 @@ export default function BranchPlanningPage({
   const defaultDate = weekKeySet.has(todayKey) ? todayKey : weekKeys[0];
 
   const openNew = (date: string, slot?: string) => {
+    if (examMode) {
+      setExamDialog({ date, slot: slot ?? undefined });
+      return;
+    }
     setDraft(null);
     setDialog({ date, slot });
   };
@@ -382,7 +411,9 @@ export default function BranchPlanningPage({
 
       <h2 className="mt-2 text-2xl font-semibold">{branchName}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Weekly timetable — add, move or remove this branch&apos;s sessions.
+        {examMode
+          ? "Exam schedule — add or edit this branch’s exam sittings."
+          : "Weekly timetable — add, move or remove this branch’s sessions."}
       </p>
       {/* The week navigator is screen-only, so the printed sheet names the
           week itself. */}
@@ -621,6 +652,19 @@ export default function BranchPlanningPage({
           ))}
         </div>
       </div>
+
+      {examDialog ? (
+        <AddExamSessionModal
+          branchLabel={branchName}
+          branchProgramId={branch.programId || undefined}
+          branchTrainingId={branch.id}
+          initialDate={examDialog.date}
+          initialSlot={examDialog.slot}
+          teachers={teachers}
+          onClose={() => setExamDialog(null)}
+          onSaved={onReload}
+        />
+      ) : null}
 
       {dialog ? (
         <Dialog

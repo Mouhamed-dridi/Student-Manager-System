@@ -10,7 +10,13 @@ import {
   subscribeToTable,
   type AppEvent,
 } from "@/lib/api";
-import { asLink, formatDateRange, formatTime } from "../events/eventFormat";
+import {
+  asLink,
+  formatDateRange,
+  formatGift,
+  formatTime,
+  parseEventTime,
+} from "../events/eventFormat";
 import { loadCurrentTeacher } from "./currentTeacher";
 
 /**
@@ -114,6 +120,9 @@ export default function TeacherEventDetailPage({
     );
   }
 
+  // The timezone travels inside the single `event_time` text column.
+  const eventTimezone = parseEventTime(event.eventTime).timezone;
+
   // Defined after the guards so `event` is narrowed to AppEvent, not
   // AppEvent | null | undefined.
   const toggle = async () => {
@@ -165,6 +174,11 @@ export default function TeacherEventDetailPage({
                 <span aria-hidden="true">·</span>
               )}
               {event.eventTime && <span>{formatTime(event.eventTime)}</span>}
+              {eventTimezone && (
+                <span className="text-xs text-muted-foreground/70">
+                  {eventTimezone}
+                </span>
+              )}
             </p>
           </header>
 
@@ -180,7 +194,9 @@ export default function TeacherEventDetailPage({
           {event.giftsAwards && (
             <section className="space-y-2">
               <h3 className="text-sm font-semibold">Gifts &amp; awards</h3>
-              <p className="text-sm text-muted-foreground">{event.giftsAwards}</p>
+              <p className="text-sm text-muted-foreground">
+                {formatGift(event.giftsAwards)}
+              </p>
             </section>
           )}
 

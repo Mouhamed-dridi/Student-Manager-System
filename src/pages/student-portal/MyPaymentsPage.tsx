@@ -9,14 +9,11 @@ import {
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, listPayments } from "@/lib/api";
-import type { Payment } from "@/pages/pay/PaymentForm";
+import {
+  PLAN_LABELS,
+  type Payment,
+} from "@/pages/pay/paymentTypes";
 import { getCurrentStudentId } from "@/lib/session";
-
-const PLAN_LABELS: Record<Payment["planType"], string> = {
-  one_time: "One-Time",
-  semester: "Semester",
-  monthly: "Monthly",
-};
 
 export default function MyPaymentsPage() {
   // No session id means there is nothing to load — start with an empty list.

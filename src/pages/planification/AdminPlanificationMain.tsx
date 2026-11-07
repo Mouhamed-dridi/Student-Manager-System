@@ -15,6 +15,12 @@
 // /admin/planification/teacher/:teacherId — the header arrow and the detail's
 // own Back button both return here.
 //
+// The three sub-tabs (Emploi du temps / Emploi des examens / Planning PFE) are
+// defined in planning.ts by the `session_type` values they show. The active tab
+// filters the per-card counts here and is handed to the branch timetable, which
+// filters its grid the same way and asks for the specialised exam dialog when
+// the exam tab is active — so the tab bar and every grid can never disagree.
+//
 // Reads go through src/lib/api (no inline Supabase calls) and are joined in
 // the client: `planning.teacher_id` has no FK to `teachers`, so an embedded
 // PostgREST select of teachers would be rejected.
@@ -27,6 +33,11 @@ import {
   UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  SegmentedTabsList,
+  SegmentedTabsTrigger,
+} from "@/components/ui/segmented-tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import { cn } from "@/lib/utils";
 import {
@@ -38,7 +49,14 @@ import {
   listTrainings,
 } from "@/lib/api";
 import type { TeacherCourseRecord } from "@/lib/trainings";
-import type { PlanningRecord } from "@/pages/teacher-portal/planning";
+import {
+  PLANNING_TABS,
+  planningSessionTypesForTab,
+} from "@/pages/teacher-portal/planning";
+import type {
+  PlanningRecord,
+  PlanningTab,
+} from "@/pages/teacher-portal/planning";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import {
   addDays,
@@ -186,6 +204,9 @@ export default function AdminPlanificationMain() {
   const [data, setData] = useState<PlanificationData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
+  // Sub-navigation: the timetable, the exam schedule or the PFE defences. It
+  // filters both the per-card counts here and the grid of the opened branch.
+  const [tab, setTab] = useState<PlanningTab>("timetable");
   // Step 2 target: the branch timetable of the clicked training.
   const [branchTrainingId, setBranchTrainingId] = useState<string | null>(null);
 
@@ -264,6 +285,8 @@ export default function AdminPlanificationMain() {
           backLabel="Back to Planification"
           onBack={() => setBranchTrainingId(null)}
           onReload={reload}
+          sessionTypes={planningSessionTypesForTab(tab)}
+          examMode={tab === "exams"}
         />
       );
     }
@@ -276,6 +299,11 @@ export default function AdminPlanificationMain() {
   const weekKeySet = new Set(weekKeys);
   const weekEntries = data.planning.filter((entry) =>
     weekKeySet.has(entry.date),
+  );
+  // Only the sessions of the active tab count towards a card or the toolbar.
+  const tabSessionTypes = planningSessionTypesForTab(tab);
+  const tabWeekEntries = weekEntries.filter((entry) =>
+    tabSessionTypes.includes(entry.sessionType),
   );
 
   // Exactly one card per training. The teacher list is no longer a fan-out, but
@@ -320,7 +348,7 @@ export default function AdminPlanificationMain() {
       teacherNames,
       // The branch total: every session of the training in this week, whoever
       // teaches it, matching how the timetable counts them.
-      weekSessions: weekEntries.filter((entry) =>
+      weekSessions: tabWeekEntries.filter((entry) =>
         sessionInTraining(entry, training),
       ).length,
     });
@@ -344,7 +372,21 @@ export default function AdminPlanificationMain() {
         slot grid, where sessions, teachers and rooms are edited.
       </p>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as PlanningTab)}
+        className="mt-6"
+      >
+        <SegmentedTabsList aria-label="Planification view">
+          {PLANNING_TABS.map((option) => (
+            <SegmentedTabsTrigger key={option.key} value={option.key}>
+              {option.label}
+            </SegmentedTabsTrigger>
+          ))}
+        </SegmentedTabsList>
+      </Tabs>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -376,8 +418,8 @@ export default function AdminPlanificationMain() {
         <span className="text-xs text-muted-foreground">
           {uniqueTrainings.length}{" "}
           {uniqueTrainings.length === 1 ? "training" : "trainings"} ·{" "}
-          {weekEntries.length}{" "}
-          {weekEntries.length === 1 ? "session" : "sessions"} this week
+          {tabWeekEntries.length}{" "}
+          {tabWeekEntries.length === 1 ? "session" : "sessions"} in this view
         </span>
       </div>
 

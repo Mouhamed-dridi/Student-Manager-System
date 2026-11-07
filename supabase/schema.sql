@@ -95,6 +95,14 @@ alter table if exists public.payments
   add column if not exists deleted_at timestamptz,
   add column if not exists edit_history jsonb not null default '[]'::jsonb;
 
+-- Plan details written by the Add Payment modal (see
+-- supabase/payments-plan-migration.sql). Free text, app-constrained.
+alter table if exists public.payments
+  add column if not exists payment_method text,
+  add column if not exists semester text,
+  add column if not exists payment_month text,
+  add column if not exists student_program text;
+
 -- ------------------------------------------------------ general trash ---
 -- Soft-delete columns for the operator Trash page (Payments has its own
 -- columns above). is_deleted = true moves the row to Trash; deleted_at
@@ -164,22 +172,42 @@ alter table if exists public.attendance
 do $$
 declare
   con record;
+  col record;
 begin
   if to_regclass('public.attendance') is null then
     return;
   end if;
 
+  -- `time`, `time_from` and `time_to` are text here, but databases built by an
+  -- earlier release carry them as `time`. A `time` column rejects the
+  -- "08:00 - 10:00" window (22009) and made these backfills abort, so convert
+  -- them once before touching the values.
+  for col in
+    select attname
+      from pg_attribute
+     where attrelid = 'public.attendance'::regclass
+       and attname in ('time', 'time_from', 'time_to')
+       and attnum > 0
+       and not attisdropped
+       and format_type(atttypid, atttypmod) <> 'text'
+  loop
+    execute format(
+      'alter table public.attendance alter column %I type text using %I::text',
+      col.attname, col.attname
+    );
+  end loop;
+
   update public.attendance set target_type = type where target_type is null;
   update public.attendance set absence_date = date where absence_date is null;
   update public.attendance
-     set absence_time = time
+     set absence_time = time::text
    where absence_time is null and time is not null;
 
   -- Absence window: seed Time From / Time To from the legacy `time` value
   -- (a single "08:00" or an older "08:00 - 10:00" window).
   update public.attendance
-     set time_from = nullif(trim(split_part(time, ' - ', 1)), ''),
-         time_to = nullif(trim(split_part(time, ' - ', 2)), '')
+     set time_from = nullif(trim(split_part(time::text, ' - ', 1)), ''),
+         time_to = nullif(trim(split_part(time::text, ' - ', 2)), '')
    where time is not null and time_from is null;
 
   alter table public.attendance alter column target_type set default 'student';
@@ -548,7 +576,13 @@ create table if not exists public.planning (
   session_time text,
   session_type text not null default 'In-class'
     constraint planning_session_type_check
-    check (session_type in ('In-class', 'Online', 'Exam', 'Soutenance')),
+    check (
+      session_type in (
+        'In-class', 'Online',
+        'DS', 'TP', 'TD', 'Principale', 'Exam', 'SYNTHESE',
+        'PFE', 'Soutenance'
+      )
+    ),
   -- Room / classroom the session meets in ("ClassB1", "AC11"). Free text:
   -- rooms are not a table in this app, and the operator's Planification grid
   -- only badges it.
@@ -566,6 +600,21 @@ alter table if exists public.planning
   add column if not exists training_id uuid references public.trainings(id),
   add column if not exists room_name text,
   add column if not exists notes text;
+
+-- An older planning table was constrained to the four original session types,
+-- which refuses the exam (DS, TP, TD, Principale, SYNTHESE) and PFE kinds.
+-- Rebuilt unconditionally: dropping and re-adding is idempotent.
+alter table if exists public.planning
+  drop constraint if exists planning_session_type_check;
+alter table if exists public.planning
+  add constraint planning_session_type_check
+  check (
+    session_type in (
+      'In-class', 'Online',
+      'DS', 'TP', 'TD', 'Principale', 'Exam', 'SYNTHESE',
+      'PFE', 'Soutenance'
+    )
+  );
 
 create index if not exists planning_program_training_idx
   on public.planning (program_id, training_id);

@@ -29,13 +29,7 @@ import {
   restorePayment,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
-import type { Payment } from "./PaymentForm";
-
-const PLAN_LABELS: Record<Payment["planType"], string> = {
-  one_time: "One-Time",
-  semester: "Semester",
-  monthly: "Monthly",
-};
+import { PLAN_LABELS, type Payment } from "./paymentTypes";
 
 function formatDate(value: string) {
   return value ? new Date(value).toLocaleDateString() : "—";

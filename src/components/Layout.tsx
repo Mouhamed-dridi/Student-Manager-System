@@ -105,7 +105,10 @@ function LayoutShell() {
           setEditingEvent(null);
           pushSection("event-history", "Event History");
         }}
-        onCancelEdit={() => setEditingEvent(null)}
+        onClose={() => {
+          setEditingEvent(null);
+          pushSection("event-history", "Event History");
+        }}
       />
     ),
     "event-history": (

@@ -1,11 +1,65 @@
-export const PLANNING_SESSION_TYPES = [
-  "In-class",
-  "Online",
+/** Regular timetable sessions — the "Emploi du temps" tab. */
+export const PLANNING_TIMETABLE_SESSION_TYPES = ["In-class", "Online"] as const;
+
+/** Exam sessions — the "Emploi des examens" tab. */
+export const PLANNING_EXAM_SESSION_TYPES = [
+  "DS",
   "Exam",
-  "Soutenance",
+  "TP",
+  "TD",
+  "Principale",
+  "SYNTHESE",
+] as const;
+
+/** Final-year projects — the "Planning PFE" tab. */
+export const PLANNING_PFE_SESSION_TYPES = ["PFE", "Soutenance"] as const;
+
+export const PLANNING_SESSION_TYPES = [
+  ...PLANNING_TIMETABLE_SESSION_TYPES,
+  ...PLANNING_EXAM_SESSION_TYPES,
+  ...PLANNING_PFE_SESSION_TYPES,
 ] as const;
 
 export type PlanningSessionType = (typeof PLANNING_SESSION_TYPES)[number];
+
+export type PlanningTab = "timetable" | "exams" | "pfe";
+
+/**
+ * The three sub-navigation tabs of the operator Planification section. Each tab
+ * is defined by the `planning.session_type` values it shows, so the tab bar,
+ * the session counts and the branch grid can never disagree.
+ */
+export const PLANNING_TABS: readonly {
+  key: PlanningTab;
+  label: string;
+  sessionTypes: readonly PlanningSessionType[];
+}[] = [
+  {
+    key: "timetable",
+    label: "Emploi du temps",
+    sessionTypes: PLANNING_TIMETABLE_SESSION_TYPES,
+  },
+  {
+    key: "exams",
+    label: "Emploi des examens",
+    sessionTypes: PLANNING_EXAM_SESSION_TYPES,
+  },
+  {
+    key: "pfe",
+    label: "Planning PFE",
+    sessionTypes: PLANNING_PFE_SESSION_TYPES,
+  },
+];
+
+/** Session types belonging to a tab; every type when the tab is unknown. */
+export function planningSessionTypesForTab(
+  tab: PlanningTab,
+): readonly PlanningSessionType[] {
+  return (
+    PLANNING_TABS.find((option) => option.key === tab)?.sessionTypes ??
+    PLANNING_SESSION_TYPES
+  );
+}
 
 /**
  * Rooms a session can be scheduled in. Rooms are not a table in this app, so

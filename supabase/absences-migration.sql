@@ -11,13 +11,13 @@
 -- training, class_name) so old reads/queries keep working. `type` grows a
 -- third allowed value, `full_class`.
 --
--- The Add Absence modal also records a time window (time_from/time_to); the
--- legacy `time` column keeps the joined "08:00 - 10:00" display value.
+-- The Add Absence modal also records a time window: `time_from` / `time_to`
+-- hold the two clock values, the text `absence_time` column keeps the joined
+-- "08:00 - 10:00" window, and the legacy `time` column keeps the start time.
 --
 -- Idempotent: safe to paste into the Supabase SQL Editor more than once.
--- Until this runs the app's probe reports the columns as missing: individual
--- absences still save through the legacy columns, and full-class absences are
--- refused with a message pointing here.
+-- Until this runs the `type` check still allows only student/teacher, so
+-- full-class absences are refused with a message pointing here.
 
 alter table if exists public.attendance
   add column if not exists target_type text,
@@ -28,6 +28,35 @@ alter table if exists public.attendance
   add column if not exists absence_time text,
   add column if not exists time_from text,
   add column if not exists time_to text;
+
+-- `time`, `time_from` and `time_to` are text in schema.sql, but databases built
+-- by an earlier release carry them as `time`. A `time` column rejects the
+-- "08:00 - 10:00" window with 22009 and made the backfill below abort before
+-- the type check was rebuilt (which is why full_class stayed refused). Convert
+-- them once so the window and the backfill both work.
+do $$
+declare
+  col record;
+begin
+  if to_regclass('public.attendance') is null then
+    return;
+  end if;
+
+  for col in
+    select attname
+      from pg_attribute
+     where attrelid = 'public.attendance'::regclass
+       and attname in ('time', 'time_from', 'time_to')
+       and attnum > 0
+       and not attisdropped
+       and format_type(atttypid, atttypmod) <> 'text'
+  loop
+    execute format(
+      'alter table public.attendance alter column %I type text using %I::text',
+      col.attname, col.attname
+    );
+  end loop;
+end $$;
 
 -- Backfill the normalized columns from the legacy ones (only where empty, so
 -- re-running never rewrites a value the app has since stored).
@@ -40,15 +69,15 @@ begin
   update public.attendance set target_type = type where target_type is null;
   update public.attendance set absence_date = date where absence_date is null;
   update public.attendance
-     set absence_time = time
+     set absence_time = time::text
    where absence_time is null
      and time is not null;
 
-  -- The absence window: older rows carry one value in `time` ("08:00"), newer
-  -- ones a "08:00 - 10:00" text window. Seed Time From / Time To from it once.
+  -- The absence window: older rows carry one clock in `time` ("08:00"), some a
+  -- "08:00 - 10:00" text window. Seed Time From / Time To from it once.
   update public.attendance
-     set time_from = nullif(trim(split_part(time, ' - ', 1)), ''),
-         time_to = nullif(trim(split_part(time, ' - ', 2)), '')
+     set time_from = nullif(trim(split_part(time::text, ' - ', 1)), ''),
+         time_to = nullif(trim(split_part(time::text, ' - ', 2)), '')
    where time is not null
      and time_from is null;
 

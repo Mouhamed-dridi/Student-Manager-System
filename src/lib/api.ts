@@ -3,7 +3,12 @@ import { getRole } from "@/lib/session";
 import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
-import type { Payment } from "@/pages/pay/PaymentForm";
+import {
+  PLAN_LABELS,
+  formatPaymentMethod,
+  paymentPeriodLabel,
+  type Payment,
+} from "@/pages/pay/paymentTypes";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { CourseMaterial, TeacherCourseRecord } from "@/lib/trainings";
 import type { ExamRecord, GradeRecord } from "@/pages/teacher-portal/exams";
@@ -735,6 +740,11 @@ interface PaymentRow {
   plan_type: string;
   payment_date: string;
   status: string | null;
+  /** Optional: added by supabase/payments-plan-migration.sql. */
+  payment_method?: string | null;
+  semester?: string | null;
+  payment_month?: string | null;
+  student_program?: string | null;
   is_deleted: boolean | null;
   deleted_at: string | null;
   edit_history: unknown;
@@ -747,6 +757,10 @@ function paymentFromRow(row: PaymentRow): Payment {
     studentId: row.student_id,
     amount: Number(row.amount),
     planType: row.plan_type as Payment["planType"],
+    paymentMethod: (row.payment_method as Payment["paymentMethod"]) ?? undefined,
+    semester: row.semester ?? undefined,
+    paymentMonth: row.payment_month ?? undefined,
+    studentProgram: row.student_program ?? undefined,
     paymentDate: row.payment_date,
     status: row.status ?? undefined,
     isDeleted: row.is_deleted === true,
@@ -758,35 +772,89 @@ function paymentFromRow(row: PaymentRow): Payment {
 
 /**
  * Payment column support is detected at runtime: some deployments of the
- * payments table omit the trash (is_deleted / deleted_at) and history
- * (edit_history) columns. When a column is missing the app degrades instead
+ * payments table omit the trash (is_deleted / deleted_at), history
+ * (edit_history) and plan-detail (payment_method / semester / payment_month /
+ * student_program) columns. When a column is missing the app degrades instead
  * of querying it (which PostgREST rejects with "column does not exist"):
  *  - active filtering falls back to "every row is active"
  *  - trash is tracked in memory for the current session only
  *  - edits are appended to an in-memory history log instead of the DB column
+ *  - plan details are omitted from the payload; a write that needs them fails
+ *    with the migration to run instead of silently dropping the values
  */
 interface PaymentsCapabilities {
   supportsTrash: boolean;
   supportsHistory: boolean;
+  /** payment_method / semester / payment_month / student_program. */
+  supportsPlanDetails: boolean;
 }
+
+const PAYMENTS_PLAN_MISSING =
+  'The payments table has no plan-detail columns (payment_method, semester, payment_month, student_program). Run supabase/payments-plan-migration.sql in the Supabase SQL Editor, reload the page, then try again.';
 
 let paymentsCapabilitiesPromise: Promise<PaymentsCapabilities> | null = null;
 
 function detectPaymentsCapabilities(): Promise<PaymentsCapabilities> {
   if (!paymentsCapabilitiesPromise) {
     paymentsCapabilitiesPromise = (async () => {
-      const [hasIsDeleted, hasDeletedAt, hasEditHistory] = await Promise.all([
+      const [
+        hasIsDeleted,
+        hasDeletedAt,
+        hasEditHistory,
+        hasPaymentMethod,
+        hasSemester,
+        hasPaymentMonth,
+        hasStudentProgram,
+      ] = await Promise.all([
         hasColumn("payments", "is_deleted"),
         hasColumn("payments", "deleted_at"),
         hasColumn("payments", "edit_history"),
+        hasColumn("payments", "payment_method"),
+        hasColumn("payments", "semester"),
+        hasColumn("payments", "payment_month"),
+        hasColumn("payments", "student_program"),
       ]);
       return {
         supportsTrash: hasIsDeleted && hasDeletedAt,
         supportsHistory: hasEditHistory,
+        supportsPlanDetails:
+          hasPaymentMethod &&
+          hasSemester &&
+          hasPaymentMonth &&
+          hasStudentProgram,
       };
-    })().catch(() => ({ supportsTrash: false, supportsHistory: false }));
+    })().catch(() => ({
+      supportsTrash: false,
+      supportsHistory: false,
+      supportsPlanDetails: false,
+    }));
   }
   return paymentsCapabilitiesPromise;
+}
+
+/** True when every plan-detail column from the migration is present. */
+export async function paymentsSupportsPlanDetails(): Promise<boolean> {
+  return (await detectPaymentsCapabilities()).supportsPlanDetails;
+}
+
+/** Any value that only the plan-detail columns can store. */
+function hasPlanDetails(payment: Payment): boolean {
+  return Boolean(
+    payment.paymentMethod ||
+      payment.semester ||
+      payment.paymentMonth ||
+      payment.studentProgram,
+  );
+}
+
+/** The four optional columns, sent together so a plan switch clears the old period. */
+function planDetailPayload(payment: Payment) {
+  return {
+    payment_method: payment.paymentMethod ?? null,
+    semester: payment.semester ?? null,
+    payment_month: payment.paymentMonth ?? null,
+    student_program: payment.studentProgram ?? null,
+  };
 }
 
 /** True when the payments table actually has is_deleted/deleted_at columns. */
@@ -858,6 +926,10 @@ export async function listDeletedPayments(): Promise<Payment[]> {
 }
 
 export async function insertPayment(payment: Payment): Promise<Payment> {
+  const caps = await detectPaymentsCapabilities();
+  if (!caps.supportsPlanDetails && hasPlanDetails(payment)) {
+    throw new Error(PAYMENTS_PLAN_MISSING);
+  }
   const { data, error } = await withTimeout(
     supabase
       .from("payments")
@@ -867,7 +939,9 @@ export async function insertPayment(payment: Payment): Promise<Payment> {
         amount: payment.amount,
         plan_type: payment.planType,
         payment_date: payment.paymentDate,
-        status: payment.status ?? null,
+        // Payments are always recorded as paid; status is no longer chosen.
+        status: payment.status ?? "paid",
+        ...(caps.supportsPlanDetails ? planDetailPayload(payment) : {}),
       })
       .select()
       .single(),
@@ -878,6 +952,10 @@ export async function insertPayment(payment: Payment): Promise<Payment> {
 
 export async function insertPayments(payments: Payment[]): Promise<void> {
   if (payments.length === 0) return;
+  const caps = await detectPaymentsCapabilities();
+  if (!caps.supportsPlanDetails && payments.some(hasPlanDetails)) {
+    throw new Error(PAYMENTS_PLAN_MISSING);
+  }
   const { error } = await withTimeout(
     supabase
       .from("payments")
@@ -888,7 +966,8 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
           amount: p.amount,
           plan_type: p.planType,
           payment_date: p.paymentDate,
-          status: p.status ?? null,
+          status: p.status ?? "paid",
+          ...(caps.supportsPlanDetails ? planDetailPayload(p) : {}),
         })),
       ),
   );
@@ -916,19 +995,19 @@ export interface PaymentHistoryItem {
   entry: EditHistoryEntry;
 }
 
-const PLAN_LABELS: Record<string, string> = {
-  one_time: "One-Time",
-  semester: "Semester",
-  monthly: "Monthly",
-};
-
 const PAYMENT_FIELD_COMPARATORS: {
   label: string;
   value: (p: Payment) => string;
 }[] = [
   { label: "Student", value: (p) => p.studentName || "—" },
+  { label: "Specialty", value: (p) => p.studentProgram || "—" },
   { label: "Amount", value: (p) => p.amount.toFixed(2) },
   { label: "Plan Type", value: (p) => PLAN_LABELS[p.planType] ?? p.planType },
+  {
+    label: "Semester / Month",
+    value: (p) => paymentPeriodLabel(p),
+  },
+  { label: "Payment Method", value: (p) => formatPaymentMethod(p.paymentMethod) },
   { label: "Payment Date", value: (p) => p.paymentDate },
   {
     label: "Status",
@@ -959,19 +1038,23 @@ export async function updatePayment(
   after: Payment,
 ): Promise<void> {
   const changes = paymentDiffs(before, after);
+  const caps = await detectPaymentsCapabilities();
+  if (!caps.supportsPlanDetails && hasPlanDetails(after)) {
+    throw new Error(PAYMENTS_PLAN_MISSING);
+  }
   const payload: Record<string, unknown> = {
     student_id: after.studentId,
     amount: after.amount,
     plan_type: after.planType,
     payment_date: after.paymentDate,
-    status: after.status ?? null,
+    status: after.status ?? "paid",
+    ...(caps.supportsPlanDetails ? planDetailPayload(after) : {}),
   };
   const entry: EditHistoryEntry = {
     changedAt: new Date().toISOString(),
     changedBy: getRole() ?? "operator",
     changes,
   };
-  const caps = await detectPaymentsCapabilities();
   if (caps.supportsHistory) {
     const { data: current } = await withTimeout(
       supabase
@@ -1344,7 +1427,7 @@ export interface AttendanceRecord {
   program: string | null;
   training: string | null;
   date: string;
-  /** Display window ("08:00 - 10:00") kept for the log and old readers. */
+  /** Display window ("08:00 - 10:00"), rebuilt from time_from/time_to. */
   time: string | null;
   /** Absence window start/end (only once time_from/time_to exist). */
   timeFrom: string | null;
@@ -1437,6 +1520,11 @@ async function attendanceSelect(): Promise<string> {
 
 function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
   const targetType = (row.target_type ?? row.type) as AttendanceTargetType;
+  // time_from/time_to are `time` columns in the live database, so PostgREST
+  // returns "09:00:00"; normalize them and rebuild the display window.
+  const timeFrom = normalizeClock(row.time_from);
+  const timeTo = normalizeClock(row.time_to);
+  const window = attendanceTimeWindow(timeFrom, timeTo);
   return {
     id: row.id,
     type: row.type,
@@ -1445,15 +1533,15 @@ function attendanceFromRow(row: AttendanceRow): AttendanceRecord {
     program: row.program,
     training: row.training,
     date: row.date,
-    time: row.time,
-    timeFrom: row.time_from ?? null,
-    timeTo: row.time_to ?? null,
+    time: window ?? normalizeClock(row.time),
+    timeFrom,
+    timeTo,
     targetType,
     userId: row.user_id ?? null,
     programTier: row.program_tier ?? row.program ?? null,
     trainingId: row.training_id ?? null,
     absenceDate: row.absence_date ?? row.date ?? null,
-    absenceTime: row.absence_time ?? row.time ?? null,
+    absenceTime: row.absence_time ?? window ?? normalizeClock(row.time),
   };
 }
 
@@ -1653,6 +1741,28 @@ function attendanceTimeWindow(
   return parts.length > 0 ? parts.join(" - ") : null;
 }
 
+/** "09:00:00" / "9:00" -> "09:00"; anything unexpected is returned as typed. */
+function normalizeClock(value?: string | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const match = /^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/.exec(trimmed);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : trimmed;
+}
+
+/**
+ * Splits a stored/imported value into a window: a legacy "08:00 - 10:00"
+ * string (what `time` used to hold) or a single "08:00" clock value.
+ */
+function splitClockWindow(value?: string | null): {
+  from: string | null;
+  to: string | null;
+} {
+  const trimmed = value?.trim();
+  if (!trimmed) return { from: null, to: null };
+  const [from = "", to = ""] = trimmed.split(/\s*(?:-|\u2013|\u2014)\s*/);
+  return { from: normalizeClock(from), to: normalizeClock(to) };
+}
+
 async function attendanceToWriteRows(
   records: AttendanceInput[],
 ): Promise<AttendanceWriteRow[]> {
@@ -1661,6 +1771,9 @@ async function attendanceToWriteRows(
     const person = people.get(`${r.type}:${r.fullName.toLowerCase()}`);
     const program = r.program?.trim() || person?.program?.trim() || null;
     const training = r.training?.trim() || person?.training?.trim() || null;
+    const parsed = splitClockWindow(r.time);
+    const timeFrom = normalizeClock(r.timeFrom) ?? parsed.from;
+    const timeTo = normalizeClock(r.timeTo) ?? parsed.to;
     return {
       type: r.type,
       full_name: r.fullName,
@@ -1671,20 +1784,21 @@ async function attendanceToWriteRows(
       program,
       training,
       date: r.date || null,
-      // The legacy `time` column keeps the human-readable window ("08:00 -
-      // 10:00") so the log, export and student views need no extra joins.
-      time: r.time?.trim()
-        ? r.time.trim()
-        : attendanceTimeWindow(r.timeFrom, r.timeTo),
+      // `time` holds ONE clock value: it is a `time` column in the live table
+      // and rejects a "08:00 - 10:00" range with 22009. The window is carried
+      // by time_from/time_to and mirrored as text into absence_time.
+      time: timeFrom ?? timeTo,
+      time_from: timeFrom,
+      time_to: timeTo,
     };
   });
 }
 
 /**
  * Adds the normalized three-target and time-window columns. Every write sends
- * them unconditionally: the attendance table carries them in production, so a
- * full-class absence inserts straight through instead of waiting on a schema
- * probe and throwing when it comes back false.
+ * them unconditionally (no client-side schema probe). The clock values are
+ * single times because `time`/`time_from`/`time_to` are `time` columns in the
+ * live table, and only the text `absence_time` takes the joined window.
  */
 async function attendanceToWriteRowsWithTargets(
   records: AttendanceInput[],
@@ -1692,18 +1806,49 @@ async function attendanceToWriteRowsWithTargets(
   const rows = await attendanceToWriteRows(records);
   return rows.map((row, index) => {
     const input = records[index];
+    // An explicit null clears the bound; `undefined` inherits whatever the
+    // legacy `time` value parsed into above.
+    const timeFrom =
+      input.timeFrom === undefined
+        ? row.time_from ?? null
+        : normalizeClock(input.timeFrom);
+    const timeTo =
+      input.timeTo === undefined
+        ? row.time_to ?? null
+        : normalizeClock(input.timeTo);
     return {
       ...row,
       target_type: input.targetType ?? input.type,
       user_id: input.userId ?? null,
       program_tier: input.programTier ?? row.program,
       training_id: input.trainingId ?? null,
-      time_from: input.timeFrom?.trim() || null,
-      time_to: input.timeTo?.trim() || null,
+      time_from: timeFrom,
+      time_to: timeTo,
+      time: timeFrom ?? timeTo,
       absence_date: input.absenceDate ?? input.date ?? null,
-      absence_time: input.absenceTime ?? row.time,
+      // absence_time is text, so it keeps the human-readable window.
+      absence_time:
+        input.absenceTime === undefined
+          ? attendanceTimeWindow(timeFrom, timeTo) ?? row.time
+          : input.absenceTime?.trim() || null,
     };
   });
+}
+
+/**
+ * A check-constraint failure on `type` / `target_type` means a database still
+ * allows only student/teacher (the live constraint is named either
+ * attendance_type_check or attendance_target_type_check), so a full-class
+ * absence is refused until the patch in supabase/absences-migration.sql
+ * rebuilds it.
+ */
+function attendanceWriteError(message: string): Error {
+  if (/attendance_(target_)?type_check/.test(message)) {
+    return new Error(
+      'Full-class absences need the "full_class" target in the attendance type check — run supabase/absences-migration.sql in the Supabase SQL Editor.',
+    );
+  }
+  return new Error(message);
 }
 
 /** Writes attendance rows straight into the attendance table. */
@@ -1713,7 +1858,7 @@ export async function insertAttendanceRecords(
   if (records.length === 0) return;
   const rows = await attendanceToWriteRowsWithTargets(records);
   const { error } = await withTimeout(supabase.from("attendance").insert(rows));
-  if (error) throw new Error(error.message);
+  if (error) throw attendanceWriteError(error.message);
 }
 
 /** Updates an existing attendance row in place. */
@@ -1725,7 +1870,7 @@ export async function updateAttendanceRecord(
   const { error } = await withTimeout(
     supabase.from("attendance").update(row).eq("id", id),
   );
-  if (error) throw new Error(error.message);
+  if (error) throw attendanceWriteError(error.message);
 }
 
 /** One attendance row fixed by the reconciliation sync. */
@@ -3270,7 +3415,11 @@ export async function saveEvent(
 
   const query = id
     ? supabase.from("events").update(payload).eq("id", id).select("*").single()
-    : supabase.from("events").insert(payload).select("*").single();
+    : supabase
+        .from("events")
+        .insert({ ...payload, is_deleted: false })
+        .select("*")
+        .single();
   const { data, error } = await withTimeout(query);
   if (error) throw new Error(error.message);
   return eventFromRow(data as EventRow);
@@ -3757,7 +3906,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     planTotals[p.planType] = (planTotals[p.planType] ?? 0) + Number(p.amount);
   }
   const revenueByPlan = Object.entries(planTotals).map(([plan, value]) => ({
-    name: PLAN_LABELS[plan] ?? (plan || "Unknown"),
+    name: PLAN_LABELS[plan as Payment["planType"]] ?? (plan || "Unknown"),
     value: Math.round(value * 100) / 100,
   }));
 
