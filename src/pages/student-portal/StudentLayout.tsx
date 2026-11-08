@@ -11,6 +11,7 @@ import {
   Megaphone,
   Menu,
   Settings,
+  Ticket,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import StudentSettings from "./StudentSettings";
 import StudentPlanningPage from "./StudentPlanningPage";
 import StudentExamsPage from "./StudentExamsPage";
 import StudentExamScoresPage from "./StudentExamScoresPage";
+import StudentEventsView from "./StudentEventsView";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
@@ -45,6 +47,7 @@ type PageKey =
   | "dashboard"
   | "courses"
   | "planning"
+  | "events"
   | "exams-list"
   | "exam-scores"
   | "payments"
@@ -65,6 +68,7 @@ const menuItems: StudentMenuItem[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "courses", label: "Courses", icon: BookOpen },
   { key: "planning", label: "Planning", icon: CalendarDays },
+  { key: "events", label: "Events", icon: Ticket },
   // Read-only exam sections grouped under one collapsible parent, mirroring the
   // teacher portal. Sections are state, not routes, so the parent only opens
   // the submenu; it stays expanded while one of its children is active.
@@ -87,6 +91,7 @@ const pages: Record<PageKey, React.ReactNode> = {
   dashboard: <StudentDashboardPage />,
   courses: <CoursesPage />,
   planning: <StudentPlanningPage />,
+  events: <StudentEventsView />,
   "exams-list": <StudentExamsPage />,
   "exam-scores": <StudentExamScoresPage />,
   payments: <MyPaymentsPage />,

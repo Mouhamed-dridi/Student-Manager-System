@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, CalendarDays, CheckCircle2, ImagePlus, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  ImagePlus,
+  MapPin,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DataError, DataLoading } from "@/components/DataState";
@@ -188,6 +195,28 @@ export default function TeacherEventDetailPage({
               <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                 {event.description}
               </p>
+            </section>
+          )}
+
+          {event.location && (
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold">Location</h3>
+              {asLink(event.location) ? (
+                <a
+                  href={event.location}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Open in Google Maps
+                </a>
+              ) : (
+                <p className="flex items-start gap-1.5 text-sm text-muted-foreground">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                  {event.location}
+                </p>
+              )}
             </section>
           )}
 

@@ -1,2 +1,171 @@
-export { default } from "./AbsencePage";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Download, Plus, Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  errorMessage,
+  insertAttendanceRecords,
+  loadAttendanceRecords,
+  softDeleteAttendance,
+  type AttendanceRecord,
+} from "@/lib/api";
+import AttendanceLog from "./AttendanceLog";
+import AddAbsenceDialog from "./AddAbsenceDialog";
+import AbsenceBilletModal from "./AbsenceBilletModal";
+import { parseAttendanceFile } from "./importAttendance";
+import { exportAttendance } from "./exportAttendance";
 
+// Attendance Logs: the operator's absence record table. Student rows carry a
+// ticket action that generates (and archives) an absence billet; the archive
+// page under the same sidebar section lists every generated ticket.
+export default function AbsenceView() {
+  const [records, setRecords] = useState<AttendanceRecord[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<AttendanceRecord | null>(null);
+  // The attendance row a ticket is being generated for.
+  const [billetRecord, setBilletRecord] = useState<AttendanceRecord | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const rows = await loadAttendanceRecords();
+      setRecords(rows);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAttendanceRecords()
+      .then((rows) => {
+        setRecords(rows);
+        setError(null);
+      })
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
+
+  const handleAddSaved = () => {
+    setSummary(null);
+    setEditing(null);
+    void refresh();
+  };
+
+  const handleEdit = (record: AttendanceRecord) => {
+    setEditing(record);
+    setAddOpen(true);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      setError(null);
+      await softDeleteAttendance([id]);
+      await refresh();
+      setSummary("Attendance record moved to the Trash.");
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const result = await parseAttendanceFile(file);
+    if (result.records.length === 0) {
+      setSummary(
+        "No valid attendance rows found in the selected file. Expected columns: Type, Full Name, Date (Class Name and Time optional).",
+      );
+      return;
+    }
+
+    try {
+      setError(null);
+      await insertAttendanceRecords(result.records);
+      await refresh();
+      setSummary(
+        `Imported ${result.records.length} record${result.records.length === 1 ? "" : "s"}${result.skipped > 0 ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} with missing or invalid data` : ""}.`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+      setSummary(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-2xl font-semibold">Attendance Logs</h2>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Add Absence
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            Import Excel
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (records && records.length > 0) exportAttendance(records);
+            }}
+            disabled={!records || records.length === 0}
+          >
+            <Download className="h-4 w-4" />
+            Export Excel
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.csv"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        </div>
+      </div>
+
+      {summary && (
+        <p className="mt-4 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+          {summary}
+        </p>
+      )}
+
+      <div className="mt-4">
+        <AttendanceLog
+          records={records}
+          error={error}
+          loading={records === null && !error}
+          onEdit={handleEdit}
+          onDelete={handleDelete}
+          onTicket={setBilletRecord}
+        />
+      </div>
+
+      {addOpen && (
+        <AddAbsenceDialog
+          key={editing?.id ?? "new"}
+          initial={editing ?? undefined}
+          onSaved={handleAddSaved}
+          onClose={() => {
+            setAddOpen(false);
+            setEditing(null);
+          }}
+        />
+      )}
+
+      {billetRecord && (
+        <AbsenceBilletModal
+          key={billetRecord.id}
+          record={billetRecord}
+          onClose={() => setBilletRecord(null)}
+        />
+      )}
+    </div>
+  );
+}

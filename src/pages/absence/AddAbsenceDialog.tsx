@@ -37,6 +37,7 @@ import {
   listStudents,
   listTeachers,
   listTrainings,
+  teacherCourseAssignment,
   updateAttendanceRecord,
   type AttendanceInput,
   type AttendanceRecord,
@@ -181,15 +182,32 @@ export default function AddAbsenceDialog({
               detail: [s.program, s.training].filter(Boolean).join(" · "),
             })),
           )
-        : listTeachers().then((teachers) =>
-            teachers.map<PersonOption>((t) => ({
-              id: t.id,
-              name: t.fullName,
-              program: t.program ?? "",
-              training: t.training ?? t.specialty ?? "",
-              detail: t.specialty || t.jobTitle || t.training || "Teacher",
-            })),
-          );
+        : listTeachers().then(async (teachers) => {
+            const rows = await Promise.all(
+              teachers.map(async (t) => {
+                let program = t.program ?? "";
+                let training = t.training ?? "";
+                // If program or training are not on the teacher record, resolve from assignment/courses
+                if (!program || !training) {
+                  try {
+                    const assignment = await teacherCourseAssignment(t.id);
+                    if (!program && assignment.program) program = assignment.program;
+                    if (!training && assignment.training) training = assignment.training;
+                  } catch {
+                    // Ignore assignment lookup failure
+                  }
+                }
+                return {
+                  id: t.id,
+                  name: t.fullName,
+                  program,
+                  training: training || t.specialty || "",
+                  detail: [program, training].filter(Boolean).join(" · ") || t.specialty || "",
+                };
+              }),
+            );
+            return rows;
+          });
     load
       .then((rows) => {
         if (!cancelled) setPeopleState({ type, rows });
@@ -539,11 +557,9 @@ export default function AddAbsenceDialog({
                               {person.name}
                             </span>
                             <span className="shrink-0 text-xs text-muted-foreground">
-                              {type === "teacher"
-                                ? person.detail || person.training || person.program || "Teacher"
-                                : [person.program, person.training]
-                                    .filter(Boolean)
-                                    .join(" · ") || "—"}
+                              {[person.program, person.training]
+                                .filter(Boolean)
+                                .join(" · ") || person.detail || "—"}
                             </span>
                           </button>
                         ))
@@ -554,69 +570,39 @@ export default function AddAbsenceDialog({
                 {selected && (
                   <p className="text-xs text-muted-foreground">
                     {selected.name}
-                    {type === "teacher"
-                      ? selected.detail
-                        ? ` — ${selected.detail}`
-                        : ""
-                      : selected.program || selected.training
-                        ? ` — ${[selected.program, selected.training]
-                            .filter(Boolean)
-                            .join(" · ")}`
-                        : ""}
+                    {selected.program || selected.training
+                      ? ` — ${[selected.program, selected.training]
+                          .filter(Boolean)
+                          .join(" · ")}`
+                      : ""}
                   </p>
                 )}
               </div>
 
-              {type === "teacher" ? (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-specialty">Department / Specialty</Label>
-                    <Input
-                      id="absence-specialty"
-                      value={personTraining || personProgram || "—"}
-                      placeholder="—"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-target-role">Role</Label>
-                    <Input
-                      id="absence-target-role"
-                      value="Teacher"
-                      readOnly
-                      disabled
-                    />
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="absence-program">Program</Label>
+                  <Input
+                    id="absence-program"
+                    value={personProgram || "—"}
+                    placeholder="—"
+                    readOnly
+                    disabled
+                  />
                 </div>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-program">Program</Label>
-                    <Input
-                      id="absence-program"
-                      value={personProgram || "—"}
-                      placeholder="—"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-training">Training</Label>
-                    <Input
-                      id="absence-training"
-                      value={personTraining || "—"}
-                      placeholder="—"
-                      readOnly
-                      disabled
-                    />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="absence-training">Training</Label>
+                  <Input
+                    id="absence-training"
+                    value={personTraining || "—"}
+                    placeholder="—"
+                    readOnly
+                    disabled
+                  />
                 </div>
-              )}
+              </div>
               <p className="text-xs text-muted-foreground">
-                {type === "teacher"
-                  ? "Teacher details are filled from their profile."
-                  : "Program and training are filled from the student's profile and locked."}
+                Program and training are filled from the {type === "teacher" ? "teacher's" : "student's"} profile and locked.
               </p>
             </>
           )}

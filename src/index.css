@@ -163,6 +163,38 @@
     display: none !important;
     }
 
+  /* Absence billet: a single A5 sheet printed from the ticket dialog. Only the
+     sheet is visible; the modal adds `@page { size: A5 portrait }` at runtime
+     because @page cannot be scoped by a class. */
+  body.billet-printing * {
+    visibility: hidden;
+    }
+
+  body.billet-printing #billet-print-area,
+  body.billet-printing #billet-print-area * {
+    visibility: visible;
+    }
+
+  body.billet-printing #billet-print-area {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #171717;
+    box-shadow: none;
+    border: 0;
+    border-radius: 0;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    }
+
+  body.billet-printing .billet-no-print {
+    display: none !important;
+    }
+
   /* Weekly planning print / "Save as PDF" (the Print / PDF button on the branch
      timetable). The operator shell is pinned to the viewport with a scrolling
      <main>, so the shell is unpinned here — the timetable then flows across

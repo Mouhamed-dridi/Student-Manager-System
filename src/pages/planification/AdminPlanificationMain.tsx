@@ -18,8 +18,8 @@
 // The three sub-tabs (Emploi du temps / Emploi des examens / Planning PFE) are
 // defined in planning.ts by the `session_type` values they show. The active tab
 // filters the per-card counts here and is handed to the branch timetable, which
-// filters its grid the same way and asks for the specialised exam dialog when
-// the exam tab is active — so the tab bar and every grid can never disagree.
+// filters its grid the same way and asks for the specialised exam or PFE dialog
+// when that tab is active — so the tab bar and every grid can never disagree.
 //
 // Reads go through src/lib/api (no inline Supabase calls) and are joined in
 // the client: `planning.teacher_id` has no FK to `teachers`, so an embedded
@@ -287,6 +287,7 @@ export default function AdminPlanificationMain() {
           onReload={reload}
           sessionTypes={planningSessionTypesForTab(tab)}
           examMode={tab === "exams"}
+          pfeMode={tab === "pfe"}
         />
       );
     }

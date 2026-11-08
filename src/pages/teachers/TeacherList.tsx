@@ -19,6 +19,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import UserAvatar from "@/components/UserAvatar";
+import { useUserProfiles } from "@/lib/userProfile";
 import type { Teacher } from "./TeacherForm";
 
 interface TeacherListProps {
@@ -34,6 +36,10 @@ export default function TeacherList({
   onEdit,
   onDelete,
 }: TeacherListProps) {
+  // One request for the whole list; the photo lives in `user_profiles` and a
+  // teacher without one keeps the initials badge.
+  const profiles = useUserProfiles("teacher");
+
   if (teachers.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -63,16 +69,23 @@ export default function TeacherList({
             {/* The actions own their clicks: editing or deleting a row must
                 not also open the profile. */}
             <TableCell className="font-medium">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenProfile(t);
-                }}
-                className="cursor-pointer text-left hover:underline"
-              >
-                {t.fullName}
-              </button>
+              <div className="flex items-center gap-2.5">
+                <UserAvatar
+                  name={t.fullName}
+                  src={profiles.get(t.id)?.avatarUrl}
+                  fallback="T"
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenProfile(t);
+                  }}
+                  className="cursor-pointer text-left hover:underline"
+                >
+                  {t.fullName}
+                </button>
+              </div>
             </TableCell>
             <TableCell>{t.specialty || "—"}</TableCell>
             <TableCell>{t.phone}</TableCell>

@@ -20,6 +20,11 @@ import { cn } from "@/lib/utils";
 
 interface ProfilePageShellProps {
   name: string;
+  /**
+   * Public `profilePictuer` URL from `user_profiles.avatar_url`. Without one the
+   * avatar falls back to the person's initials.
+   */
+  avatarUrl?: string;
   /** Program/training, specialty or department — rendered as pill tags. */
   badges: Array<string | undefined | null>;
   /** Secondary line under the name (usually the primary email). */
@@ -37,6 +42,7 @@ interface ProfilePageShellProps {
 /** Back row + full-width hero card shared by every profile page. */
 export function ProfilePageShell({
   name,
+  avatarUrl,
   badges,
   subtitle,
   backLabel,
@@ -62,7 +68,11 @@ export function ProfilePageShell({
 
       <section className="mt-3 overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex flex-col gap-5 bg-gradient-to-br from-primary/10 via-muted/40 to-background px-6 py-7 sm:flex-row sm:items-center md:px-8">
-          <UserAvatar name={name} className="h-24 w-24 border-2 text-3xl" />
+          <UserAvatar
+            name={name}
+            src={avatarUrl}
+            className="h-24 w-24 border-2 text-3xl"
+          />
 
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-3xl font-semibold tracking-tight">

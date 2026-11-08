@@ -18,7 +18,8 @@ import TeachersPage from "@/pages/teachers/TeachersPage";
 import PayPage from "@/pages/pay/PayPage";
 import PaymentHistoryPage from "@/pages/pay/PaymentHistoryPage";
 import PaymentTrashPage from "@/pages/pay/PaymentTrashPage";
-import AbsencePage from "@/pages/absence/AbsencePage";
+import AbsenceView from "@/pages/absence/AbsenceView";
+import AbsenceBilletsView from "@/pages/absence/AbsenceBilletsView";
 import AdminPlanificationMain from "@/pages/planification/AdminPlanificationMain";
 import BranchesPage from "@/pages/branches/BranchesPage";
 import PublicationsPage from "@/pages/publications/PublicationsPage";
@@ -88,7 +89,8 @@ function LayoutShell() {
     pay: <PayPage />,
     "pay-history": <PaymentHistoryPage />,
     "pay-trash": <PaymentTrashPage />,
-    absence: <AbsencePage />,
+    absence: <AbsenceView />,
+    "absence-billets": <AbsenceBilletsView />,
     planification: <AdminPlanificationMain />,
     branches: <BranchesPage />,
     publications: <PublicationsPage />,

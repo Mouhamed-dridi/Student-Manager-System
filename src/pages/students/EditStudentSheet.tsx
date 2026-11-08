@@ -6,9 +6,15 @@
 // Program/training come from the `programs`/`trainings` tables — the same
 // source the Add Student form uses — because `updateStudentProfile` re-resolves
 // their ids on save. Training is filtered by the chosen program.
+//
+// The photo is the one field that saves immediately instead of waiting for
+// "Save changes": it lives in Storage + `user_profiles` (not on the students
+// row), and the profile header reads that row reactively, so the new picture
+// shows up the moment the upload finishes.
 
-import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ImagePlus, Loader2, Trash2 } from "lucide-react";
+import UserAvatar from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,13 +34,15 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  deleteProfilePicture,
   errorMessage,
   getUserProfile,
   listPrograms,
   listTrainings,
   updateStudentProfile,
+  uploadProfilePicture,
 } from "@/lib/api";
-import { saveUserProfile } from "@/lib/userProfile";
+import { saveUserProfile, useUserProfile } from "@/lib/userProfile";
 import type { Student } from "./StudentForm";
 import { EDUCATION_OPTIONS, ENGAGEMENT_OPTIONS } from "./studentOptions";
 
@@ -108,6 +116,14 @@ function EditStudentForm({
   const [github, setGithub] = useState(student.github ?? "");
   const [linkedin, setLinkedin] = useState(student.linkedin ?? "");
 
+  // The stored photo lives in `user_profiles`, which the profile header also
+  // subscribes to — one save updates the sheet preview and the banner together.
+  const userProfile = useUserProfile("student", student.id);
+  const avatar = userProfile?.avatarUrl;
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
   const [loadingOptions, setLoadingOptions] = useState(true);
@@ -162,6 +178,70 @@ function EditStudentForm({
   const handleProgramChange = (value: string | null) => {
     setProgram(value as Student["program"] | null);
     setTraining("");
+  };
+
+  /**
+   * The row as it must be written: the upsert replaces every column, so the
+   * current name and social links are carried over instead of being cleared.
+   */
+  const profileRow = (base: Awaited<ReturnType<typeof getUserProfile>>) => {
+    const [draftFirst, ...draftRest] = (fullName.trim() || student.fullName).split(
+      " ",
+    );
+    return {
+      userId: student.id,
+      role: "student" as const,
+      firstName: base?.firstName || draftFirst,
+      lastName: base?.lastName || draftRest.join(" "),
+      linkedinUrl: base?.linkedinUrl,
+      whatsappNumber: base?.whatsappNumber,
+      githubUrl: base?.githubUrl,
+    };
+  };
+
+  const handleAvatarFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    // Clear immediately so picking the same file again still fires change.
+    event.target.value = "";
+    if (!file) return;
+    setAvatarError(null);
+    setAvatarBusy(true);
+    let uploaded: string | undefined;
+    try {
+      // Storage first: the row only ever points at an object that exists.
+      uploaded = await uploadProfilePicture(student.id, file);
+      const base = userProfile ?? (await getUserProfile(student.id, "student"));
+      const previous = base?.avatarUrl;
+      await saveUserProfile({ ...profileRow(base), avatarUrl: uploaded });
+      // The replaced object is no longer referenced — drop it, but never let
+      // that failure surface (the new photo is already live).
+      if (previous && previous !== uploaded) {
+        void deleteProfilePicture(previous).catch(() => {});
+      }
+    } catch (err) {
+      // Do not leave an unreferenced object behind when the row write fails.
+      if (uploaded) void deleteProfilePicture(uploaded).catch(() => {});
+      setAvatarError(errorMessage(err));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null);
+    setAvatarBusy(true);
+    try {
+      const base = userProfile ?? (await getUserProfile(student.id, "student"));
+      const previous = base?.avatarUrl;
+      await saveUserProfile({ ...profileRow(base), avatarUrl: undefined });
+      if (previous) void deleteProfilePicture(previous).catch(() => {});
+    } catch (err) {
+      setAvatarError(errorMessage(err));
+    } finally {
+      setAvatarBusy(false);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -244,6 +324,61 @@ function EditStudentForm({
             Could not load programs and trainings: {optionsError}
           </p>
         )}
+
+        <div className="flex items-start gap-4 rounded-lg border bg-muted/30 p-4">
+          <UserAvatar
+            name={fullName.trim() || student.fullName}
+            src={avatar}
+            fallback="S"
+            className="h-20 w-20 border-2 text-xl"
+          />
+
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="text-sm font-medium">Profile photo</p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleAvatarFile}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarBusy}
+              >
+                <ImagePlus className="mr-2 h-4 w-4" />
+                {avatarBusy
+                  ? "Uploading…"
+                  : avatar
+                    ? "Replace photo"
+                    : "Upload photo"}
+              </Button>
+              {avatar && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveAvatar}
+                  disabled={avatarBusy}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Remove
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saved to the profilePictuer bucket right away, so the profile
+              header and the students list update immediately.
+            </p>
+            {avatarError && (
+              <p className="text-xs text-destructive">{avatarError}</p>
+            )}
+          </div>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">

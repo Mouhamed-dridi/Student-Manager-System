@@ -2109,6 +2109,132 @@ export async function hardDeleteAttendance(ids: string[]): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// --------------------------------------------------------- absence billets
+
+/**
+ * A generated student absence ticket ("billet d'absence").
+ *
+ * Every printed field is a snapshot copied out of the attendance row at
+ * generation time: the archive must keep showing the ticket that was handed to
+ * the student even after the log row is edited, trashed or purged.
+ */
+export interface AbsenceBillet {
+  id: string;
+  /** attendance.id the ticket was generated from, null for a manual one. */
+  attendanceId: string | null;
+  studentName: string;
+  className: string | null;
+  program: string | null;
+  training: string | null;
+  /** Course / subject printed on the ticket. */
+  course: string | null;
+  absenceDate: string | null;
+  /** Display window ("08:00 - 10:00"). */
+  absenceTime: string | null;
+  /** Unique verification code printed on the ticket. */
+  code: string;
+  createdAt: string;
+}
+
+interface AbsenceBilletRow {
+  id: string;
+  attendance_id: string | null;
+  student_name: string;
+  class_name: string | null;
+  program: string | null;
+  training: string | null;
+  course: string | null;
+  absence_date: string | null;
+  absence_time: string | null;
+  code: string;
+  created_at: string;
+}
+
+const ABSENCE_BILLET_SELECT =
+  "id, attendance_id, student_name, class_name, program, training, course, absence_date, absence_time, code, created_at";
+
+const ABSENCE_BILLETS_MISSING =
+  "The billet archive is not set up yet. Run supabase/absence-billets-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let absenceBilletsTable: boolean | null = null;
+
+/**
+ * Runtime probe for the absence_billets table (supabase/absence-billets-
+ * migration.sql). Reads degrade to an empty archive while it is missing; a
+ * generation fails with the migration message instead of losing the ticket.
+ */
+async function hasAbsenceBilletsTable(): Promise<boolean> {
+  if (absenceBilletsTable !== null) return absenceBilletsTable;
+  const { error } = await withTimeout(
+    supabase.from("absence_billets").select("id").limit(0),
+    8000,
+  );
+  absenceBilletsTable = !error;
+  return absenceBilletsTable;
+}
+
+function absenceBilletFromRow(row: AbsenceBilletRow): AbsenceBillet {
+  return {
+    id: row.id,
+    attendanceId: row.attendance_id ?? null,
+    studentName: row.student_name,
+    className: row.class_name ?? null,
+    program: row.program ?? null,
+    training: row.training ?? null,
+    course: row.course ?? null,
+    absenceDate: row.absence_date ?? null,
+    absenceTime: row.absence_time ?? null,
+    code: row.code,
+    createdAt: row.created_at,
+  };
+}
+
+/** Every generated billet, newest first. Empty until the migration is applied. */
+export async function listAbsenceBillets(): Promise<AbsenceBillet[]> {
+  if (!(await hasAbsenceBilletsTable())) return [];
+  const { data, error } = await withTimeout(
+    supabase
+      .from("absence_billets")
+      .select(ABSENCE_BILLET_SELECT)
+      .order("created_at", { ascending: false }),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as AbsenceBilletRow[]).map(
+    absenceBilletFromRow,
+  );
+}
+
+/** Fields the ticket dialog snapshots out of an attendance row. */
+export type AbsenceBilletInput = Omit<AbsenceBillet, "id" | "createdAt">;
+
+/** Stores one generated ticket and returns the saved row (with its id). */
+export async function saveAbsenceBillet(
+  input: AbsenceBilletInput,
+): Promise<AbsenceBillet> {
+  if (!(await hasAbsenceBilletsTable())) {
+    throw new Error(ABSENCE_BILLETS_MISSING);
+  }
+  const { data, error } = await withTimeout(
+    supabase
+      .from("absence_billets")
+      .insert({
+        attendance_id: input.attendanceId,
+        student_name: input.studentName,
+        class_name: input.className,
+        program: input.program,
+        training: input.training,
+        course: input.course,
+        absence_date: input.absenceDate,
+        absence_time: input.absenceTime,
+        code: input.code,
+      })
+      .select(ABSENCE_BILLET_SELECT)
+      .single(),
+  );
+  if (error) throw new Error(error.message);
+  return absenceBilletFromRow(data as unknown as AbsenceBilletRow);
+}
+
 // ---------------------------------------------------------------- courses
 
 interface CourseRow {
@@ -3306,6 +3432,7 @@ export interface AppEvent {
   endsOn: string;
   /** 24h "HH:mm" or "" when not set. */
   eventTime: string;
+  location?: string;
   partners: EventPartner[];
   giftsAwards: string;
   /** Teacher ids. Names are resolved by the page, never stored. */
@@ -3330,6 +3457,7 @@ interface EventRow {
   starts_on: string | null;
   ends_on: string | null;
   event_time: string | null;
+  location?: string | null;
   partners: unknown;
   gifts_awards: string | null;
   organizers: string[] | null;
@@ -3406,6 +3534,7 @@ function eventFromRow(row: EventRow): AppEvent {
     startsOn: row.starts_on ?? "",
     endsOn: row.ends_on ?? "",
     eventTime: row.event_time ?? "",
+    location: row.location ?? "",
     partners: toPartnerArray(row.partners),
     giftsAwards: row.gifts_awards ?? "",
     organizers: toStringArray(row.organizers),
@@ -3417,6 +3546,14 @@ function eventFromRow(row: EventRow): AppEvent {
 }
 
 let eventsTablePromise: Promise<boolean> | null = null;
+let eventsLocationPromise: Promise<boolean> | null = null;
+
+async function hasEventsLocationColumn(): Promise<boolean> {
+  if (!eventsLocationPromise) {
+    eventsLocationPromise = hasColumn("events", "location");
+  }
+  return eventsLocationPromise;
+}
 
 /** Probed once: a missing table is the common case until the SQL is applied. */
 async function hasEventsTable(): Promise<boolean> {
@@ -3459,7 +3596,8 @@ export async function saveEvent(
   id?: string,
 ): Promise<AppEvent> {
   if (!(await hasEventsTable())) throw new Error(EVENTS_MISSING);
-  const payload = {
+  const hasLocation = await hasEventsLocationColumn();
+  const payload: Record<string, unknown> = {
     title: values.title,
     type: values.type,
     description: values.description || null,
@@ -3472,6 +3610,9 @@ export async function saveEvent(
     members: values.members,
     cover_url: values.coverUrl || null,
   };
+  if (hasLocation) {
+    payload.location = values.location || null;
+  }
 
   const query = id
     ? supabase.from("events").update(payload).eq("id", id).select("*").single()
@@ -3608,6 +3749,8 @@ interface PlanningRow {
   program_id?: string | null;
   training_id?: string | null;
   notes?: string | null;
+  /** PFE/STAGE/Soutenance jury panel; absent on every other session kind. */
+  jury_teacher_ids?: string[] | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -3626,6 +3769,10 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
     trainingId: row.training_id ?? undefined,
     content: row.topic ?? "",
     notes: row.notes ?? undefined,
+    juryTeacherIds:
+      row.jury_teacher_ids && row.jury_teacher_ids.length > 0
+        ? row.jury_teacher_ids
+        : undefined,
   };
 }
 
@@ -3756,6 +3903,22 @@ function hasPlanningNotesColumn(): Promise<boolean> {
   return planningNotesColumnPromise;
 }
 
+// `jury_teacher_ids` is the Planning PFE panel (supervisor, president, examiner).
+// Same rule as notes: a database without the migration keeps saving ordinary
+// sessions, but a PFE save that carries a panel fails with the migration hint
+// instead of silently dropping the jury.
+const PLANNING_JURY_MISSING =
+  "The planning jury field is not set up yet. Run supabase/planning-jury-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningJuryColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningJuryTeacherIdsColumn(): Promise<boolean> {
+  if (!planningJuryColumnPromise) {
+    planningJuryColumnPromise = hasColumn("planning", "jury_teacher_ids");
+  }
+  return planningJuryColumnPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -3775,6 +3938,10 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
   const supportsNotes = await hasPlanningNotesColumn();
   if (!supportsNotes && record.notes !== undefined) {
     throw new Error(PLANNING_NOTES_MISSING);
+  }
+  const supportsJury = await hasPlanningJuryTeacherIdsColumn();
+  if (!supportsJury && (record.juryTeacherIds?.length ?? 0) > 0) {
+    throw new Error(PLANNING_JURY_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -3803,6 +3970,9 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
         : {}),
       ...(supportsRoom ? { room_name: record.roomName ?? null } : {}),
       ...(supportsNotes ? { notes: record.notes ?? null } : {}),
+      ...(supportsJury
+        ? { jury_teacher_ids: record.juryTeacherIds ?? null }
+        : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -3821,6 +3991,7 @@ export async function updatePlanning(
     | "trainingId"
     | "content"
     | "notes"
+    | "juryTeacherIds"
   > & {
     /** Operator editor only: reassign the session to another teacher. */
     teacherId?: string;
@@ -3846,6 +4017,10 @@ export async function updatePlanning(
   const supportsNotes = await hasPlanningNotesColumn();
   if (!supportsNotes && values.notes !== undefined) {
     throw new Error(PLANNING_NOTES_MISSING);
+  }
+  const supportsJury = await hasPlanningJuryTeacherIdsColumn();
+  if (!supportsJury && values.juryTeacherIds !== undefined) {
+    throw new Error(PLANNING_JURY_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -3874,6 +4049,11 @@ export async function updatePlanning(
         // room dropdown (which echoes the other fields) cannot wipe it.
         ...(supportsNotes && values.notes !== undefined
           ? { notes: values.notes || null }
+          : {}),
+        // Only written when the caller touches the jury, so an edit from the
+        // shared session form (which has no jury field) cannot clear a panel.
+        ...(supportsJury && values.juryTeacherIds !== undefined
+          ? { jury_teacher_ids: values.juryTeacherIds }
           : {}),
         // Only written when the caller moves the session, so a normal edit
         // never shifts its day.
@@ -4693,6 +4873,22 @@ export async function getUserProfile(
   );
   if (error) throw new Error(error.message);
   return data ? userProfileFromRow(data as UserProfileRow) : null;
+}
+
+/**
+ * Every profile row for one role in a single request, for the people tables
+ * (one avatar per row instead of one query per person). Returns an empty list
+ * when the table has not been created yet, like `getUserProfile`.
+ */
+export async function listUserProfiles(
+  role: UserProfileRole,
+): Promise<UserProfile[]> {
+  if (!(await hasUserProfilesTable())) return [];
+  const { data, error } = await withTimeout(
+    supabase.from("user_profiles").select(USER_PROFILE_SELECT).eq("role", role),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as UserProfileRow[]).map(userProfileFromRow);
 }
 
 /** Creates or replaces the (user_id, role) row. */

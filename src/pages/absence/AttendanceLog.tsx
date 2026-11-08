@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pencil, Search, Trash2 } from "lucide-react";
+import { Pencil, Search, Ticket, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -76,6 +76,8 @@ interface AttendanceLogProps {
   loading: boolean;
   onEdit: (record: AttendanceRecord) => void;
   onDelete: (id: string) => void;
+  /** Generates (and archives) the absence billet for a student row. */
+  onTicket: (record: AttendanceRecord) => void;
 }
 
 export default function AttendanceLog({
@@ -84,6 +86,7 @@ export default function AttendanceLog({
   loading,
   onEdit,
   onDelete,
+  onTicket,
 }: AttendanceLogProps) {
   const [search, setSearch] = useState("");
 
@@ -156,6 +159,19 @@ export default function AttendanceLog({
                 <TableCell>{timesForRow(r).to}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
+                    {/* Only people get an absence ticket: a full-class row is a
+                        whole branch, so there is no student to hand it to. */}
+                    {r.type === "student" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onTicket(r)}
+                        title="Generate absence billet"
+                        aria-label={`Generate absence billet for ${r.fullName}`}
+                      >
+                        <Ticket className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"

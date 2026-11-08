@@ -3,9 +3,10 @@
 // dynamic list and in the history table.
 
 /**
- * The gift categories offered by the event creator. Stored as the lowercase
- * value in `events.gifts_awards`; `formatGift` turns it back into a readable
- * label for the teacher detail page.
+ * The gift categories offered by the event creator. Several can be picked at
+ * once; they are stored in `events.gifts_awards` as a comma-separated list of
+ * the lowercase values ("money, gadget"). `formatGift` turns the stored text
+ * back into readable labels for the teacher detail page.
  */
 export const GIFT_OPTIONS = [
   { value: "money", label: "Money" },
@@ -14,13 +15,24 @@ export const GIFT_OPTIONS = [
   { value: "other", label: "Other" },
 ] as const;
 
-/** Readable label for a stored gift value; unknown/legacy text is shown as-is. */
+/** Splits the stored comma-separated `gifts_awards` text into trimmed values. */
+export function splitGifts(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Readable labels for the stored gift values; unknown/legacy text is shown as-is. */
 export function formatGift(value: string): string {
   if (!value) return "";
-  const match = GIFT_OPTIONS.find(
-    (option) => option.value === value.trim().toLowerCase(),
-  );
-  return match ? match.label : value;
+  return splitGifts(value)
+    .map(
+      (part) =>
+        GIFT_OPTIONS.find((option) => option.value === part.toLowerCase())
+          ?.label ?? part,
+    )
+    .join(", ");
 }
 
 /** A partner entry is a link; anything else is treated as plain text. */

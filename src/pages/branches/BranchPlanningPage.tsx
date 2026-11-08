@@ -12,9 +12,12 @@
 //
 // The Planification section opens this timetable under one of its three tabs
 // (Emploi du temps / Emploi des examens / Planning PFE): `sessionTypes` filters
-// the grid to that tab, and `examMode` sends the '+' to AddExamSessionModal,
-// whose field set is the exam one (no topic, no internal note). The Branches
-// page passes neither and keeps showing every session of the week.
+// the grid to that tab, `examMode` sends the '+' to AddExamSessionModal (the
+// exam field set: no topic, no internal note) and `pfeMode` sends both '+' and
+// a click on a PFE card to AddPFESessionModal (date, slot, class, room,
+// PFE/STAGE/Soutenance and a multi-teacher jury, no subject or topic). The
+// Branches page passes none of them and keeps showing every session of the
+// week.
 //
 // Reads and writes go through src/lib/api, like every other page.
 
@@ -29,6 +32,7 @@ import {
   Trash2,
   TriangleAlert,
   UserRound,
+  UsersRound,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -58,6 +62,7 @@ import {
 import { DataError } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
 import AddExamSessionModal from "@/pages/planification/AddExamSessionModal";
+import AddPFESessionModal from "@/pages/planification/AddPFESessionModal";
 import type { PlanningEntryDraft } from "@/components/PlanningEntryForm";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
@@ -122,6 +127,11 @@ interface BranchPlanningPageProps {
   sessionTypes?: readonly PlanningSessionType[];
   /** Exam tab: '+' opens the specialised exam dialog instead of the entry form. */
   examMode?: boolean;
+  /**
+   * PFE tab: '+' and a card click open the specialised PFE dialog (jury panel,
+   * PFE/STAGE/Soutenance kinds, no subject or topic) instead of the entry form.
+   */
+  pfeMode?: boolean;
 }
 
 const ALL_CLASSES = "__all";
@@ -153,6 +163,7 @@ export default function BranchPlanningPage({
   onReload,
   sessionTypes,
   examMode = false,
+  pfeMode = false,
 }: BranchPlanningPageProps) {
   const [cursor, setCursor] = useState(() =>
     startOfWeek(initialWeekStart ?? new Date()),
@@ -168,6 +179,12 @@ export default function BranchPlanningPage({
   const [examDialog, setExamDialog] = useState<{
     date: string;
     slot?: string;
+  } | null>(null);
+  // PFE tab: the same specialised-dialog path, plus editing an existing card.
+  const [pfeDialog, setPfeDialog] = useState<{
+    date: string;
+    slot?: string;
+    editingId?: string;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -308,17 +325,54 @@ export default function BranchPlanningPage({
       setExamDialog({ date, slot: slot ?? undefined });
       return;
     }
+    if (pfeMode) {
+      setPfeDialog({ date, slot: slot ?? undefined });
+      return;
+    }
     setDraft(null);
     setDialog({ date, slot });
   };
 
   const openEdit = (entry: PlanningRecord) => {
+    if (pfeMode) {
+      setPfeDialog({
+        date: entry.date?.slice(0, 10) ?? defaultDate,
+        editingId: entry.id,
+      });
+      return;
+    }
     setDraft(null);
     setDialog({
       date: entry.date?.slice(0, 10) ?? defaultDate,
       editingId: entry.id,
     });
   };
+
+  // The PFE dialog can re-scope a session to any class this branch already
+  // uses; the branch itself is the first option (and the default).
+  const pfeClassByLabel = new Map<string, PlanningClassOption>();
+  // `branchName` always has a value (it falls back to the training name), so
+  // the dialog's class select is never empty on a branch with no program code.
+  pfeClassByLabel.set(branchName, {
+    label: branchName,
+    programId: branch.programId || undefined,
+    trainingId: branch.id,
+  });
+  for (const entry of branchSessions) {
+    const label = entry.className?.trim();
+    if (label && !pfeClassByLabel.has(label)) {
+      pfeClassByLabel.set(label, {
+        label,
+        programId: entry.programId,
+        trainingId: entry.trainingId,
+      });
+    }
+  }
+  const pfeClassOptions = [...pfeClassByLabel.values()];
+  const pfeEntry = pfeDialog?.editingId
+    ? (branchSessions.find((entry) => entry.id === pfeDialog.editingId) ??
+      null)
+    : null;
 
   // Live clash check for the dialog: the draft comes from the shared form, so
   // the warning appears while the admin is still choosing.
@@ -413,7 +467,9 @@ export default function BranchPlanningPage({
       <p className="mt-1 text-sm text-muted-foreground">
         {examMode
           ? "Exam schedule — add or edit this branch’s exam sittings."
-          : "Weekly timetable — add, move or remove this branch’s sessions."}
+          : pfeMode
+            ? "PFE schedule — defences, internships and their jury panels."
+            : "Weekly timetable — add, move or remove this branch’s sessions."}
       </p>
       {/* The week navigator is screen-only, so the printed sheet names the
           week itself. */}
@@ -586,12 +642,17 @@ export default function BranchPlanningPage({
                       {cellSessions.map((entry) => {
                         const entryConflicts = conflictMap.get(entry.id) ?? [];
                         const tone = subjectTone(entry.course);
+                        // PFE cards show the whole panel; every other session
+                        // keeps its single assigned teacher.
+                        const juryNames = (entry.juryTeacherIds ?? [])
+                          .map((id) => teacherById.get(id))
+                          .filter((name): name is string => Boolean(name));
                         return (
                           <button
                             key={entry.id}
                             type="button"
                             onClick={() => openEdit(entry)}
-                            title={`Edit ${entry.course || "session"}`}
+                            title={`Edit ${entry.course || entry.sessionType}`}
                             className={cn(
                               "w-full rounded-md border border-l-4 p-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
                               tone.border,
@@ -600,7 +661,7 @@ export default function BranchPlanningPage({
                           >
                             <span className="flex items-start justify-between gap-1">
                               <span className="truncate text-[11px] font-semibold">
-                                {entry.course || "Session"}
+                                {entry.course || entry.sessionType}
                               </span>
                               {entryConflicts.length > 0 ? (
                                 <TriangleAlert
@@ -609,13 +670,25 @@ export default function BranchPlanningPage({
                                 />
                               ) : null}
                             </span>
-                            <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <UserRound className="h-3 w-3 shrink-0" />
-                              <span className="truncate">
-                                {teacherById.get(entry.teacherId) ??
-                                  "Unknown teacher"}
+                            {juryNames.length > 0 ? (
+                              <span className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground">
+                                <UsersRound className="mt-0.5 h-3 w-3 shrink-0" />
+                                <span
+                                  className="line-clamp-2"
+                                  title={juryNames.join(", ")}
+                                >
+                                  Jury: {juryNames.join(", ")}
+                                </span>
                               </span>
-                            </span>
+                            ) : (
+                              <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                                <UserRound className="h-3 w-3 shrink-0" />
+                                <span className="truncate">
+                                  {teacherById.get(entry.teacherId) ??
+                                    "Unknown teacher"}
+                                </span>
+                              </span>
+                            )}
                             {entry.className && entry.className !== branchLabel ? (
                               <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">
                                 {entry.className}
@@ -663,6 +736,29 @@ export default function BranchPlanningPage({
           teachers={teachers}
           onClose={() => setExamDialog(null)}
           onSaved={onReload}
+        />
+      ) : null}
+
+      {pfeDialog && (!pfeDialog.editingId || pfeEntry) ? (
+        <AddPFESessionModal
+          branchLabel={branchName}
+          branchProgramId={branch.programId || undefined}
+          branchTrainingId={branch.id}
+          classes={pfeClassOptions}
+          initialDate={pfeDialog.date}
+          initialSlot={pfeDialog.slot}
+          entry={pfeEntry}
+          teachers={teachers}
+          onClose={() => setPfeDialog(null)}
+          onSaved={onReload}
+          onDelete={
+            pfeEntry
+              ? () => {
+                  setDeleteTarget(pfeEntry);
+                  setPfeDialog(null);
+                }
+              : undefined
+          }
         />
       ) : null}
 

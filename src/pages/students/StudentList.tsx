@@ -10,6 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import UserAvatar from "@/components/UserAvatar";
+import { useUserProfiles } from "@/lib/userProfile";
 import type { Student } from "./StudentForm";
 
 interface StudentListProps {
@@ -31,6 +33,10 @@ export default function StudentList({
   onEdit,
   onDelete,
 }: StudentListProps) {
+  // One request for the whole list (`user_profiles` is the only home of the
+  // photo); a row whose person never uploaded one falls back to initials.
+  const profiles = useUserProfiles("student");
+
   if (students.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -78,16 +84,23 @@ export default function StudentList({
                 />
               </TableCell>
               <TableCell className="font-medium">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenProfile(s);
-                  }}
-                  className="cursor-pointer text-left hover:underline"
-                >
-                  {s.fullName}
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <UserAvatar
+                    name={s.fullName}
+                    src={profiles.get(s.id)?.avatarUrl}
+                    fallback="S"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenProfile(s);
+                    }}
+                    className="cursor-pointer text-left hover:underline"
+                  >
+                    {s.fullName}
+                  </button>
+                </div>
               </TableCell>
               <TableCell>{s.program}</TableCell>
               <TableCell>{s.training}</TableCell>

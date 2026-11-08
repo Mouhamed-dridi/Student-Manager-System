@@ -282,6 +282,34 @@ $$;
 
 grant execute on function public.reconcile_attendance_profiles() to anon, authenticated;
 
+-- ------------------------------------------------------- absence billets ---
+-- Printable absence tickets ("billets d'absence"). A billet is a snapshot of
+-- the attendance row it was generated from, so the archive keeps showing the
+-- ticket that was handed out after the log row changes. `code` is the unique
+-- verification code printed on the ticket. See
+-- supabase/absence-billets-migration.sql for the patch applied to databases
+-- created before this table existed.
+
+create table if not exists public.absence_billets (
+  id uuid primary key default gen_random_uuid(),
+  attendance_id uuid,
+  student_name text not null,
+  class_name text,
+  program text,
+  training text,
+  course text,
+  absence_date date,
+  absence_time text,
+  code text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists absence_billets_created_idx
+  on public.absence_billets (created_at desc);
+
+create index if not exists absence_billets_student_idx
+  on public.absence_billets (student_name);
+
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code
 -- (src/lib/trainings.ts), not here. Thumbnails and course materials are
@@ -443,6 +471,13 @@ end $$;
 alter table public.events
   add column if not exists attendees uuid[] not null default '{}';
 
+-- Optional venue / Google Maps link from the event creator's Location field.
+-- Free text (a maps.app.goo.gl URL or a plain room/address); existing rows stay
+-- NULL. The app probes the column (hasEventsLocationColumn()) and skips it on
+-- write when absent. Mirrored by supabase/events-location-migration.sql.
+alter table public.events
+  add column if not exists location text;
+
 -- ------------------------------------------ Storage: course media buckets ---
 -- Course media lives in Supabase Storage, not in the database, split by media
 -- type so each kind of file is served from its own bucket:
@@ -591,6 +626,10 @@ create table if not exists public.planning (
   training_id uuid references public.trainings(id),
   -- Optional internal note, shown only in the operator's session editor.
   notes text,
+  -- Jury committee of a PFE/STAGE/Soutenance session. teacher_id stays the
+  -- session's lead teacher; this array adds the panel (supervisor, president,
+  -- examiner). NULL on every other session kind.
+  jury_teacher_ids uuid[],
   created_at timestamptz not null default now()
 );
 
@@ -599,7 +638,8 @@ alter table if exists public.planning
   add column if not exists program_id uuid references public.programs(id),
   add column if not exists training_id uuid references public.trainings(id),
   add column if not exists room_name text,
-  add column if not exists notes text;
+  add column if not exists notes text,
+  add column if not exists jury_teacher_ids uuid[];
 
 -- An older planning table was constrained to the four original session types,
 -- which refuses the exam (DS, TP, TD, Principale, SYNTHESE) and PFE kinds.
@@ -612,7 +652,7 @@ alter table if exists public.planning
     session_type in (
       'In-class', 'Online',
       'DS', 'TP', 'TD', 'Principale', 'Exam', 'SYNTHESE',
-      'PFE', 'Soutenance'
+      'PFE', 'STAGE', 'Soutenance'
     )
   );
 
@@ -707,7 +747,8 @@ begin
   foreach t in array array[
     'students', 'teachers', 'payments', 'attendance', 'courses',
     'exams', 'grades', 'publications', 'planning', 'settings',
-    'course_reviews', 'events', 'quizzes', 'quiz_responses'
+    'course_reviews', 'events', 'quizzes', 'quiz_responses',
+    'absence_billets'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

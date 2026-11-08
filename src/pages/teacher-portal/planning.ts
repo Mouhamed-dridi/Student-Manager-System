@@ -11,8 +11,16 @@ export const PLANNING_EXAM_SESSION_TYPES = [
   "SYNTHESE",
 ] as const;
 
-/** Final-year projects — the "Planning PFE" tab. */
-export const PLANNING_PFE_SESSION_TYPES = ["PFE", "Soutenance"] as const;
+/**
+ * Final-year projects — the "Planning PFE" tab. `STAGE` is an internship
+ * preparation/feedback sitting, so it belongs with the defences rather than
+ * with the exam kinds.
+ */
+export const PLANNING_PFE_SESSION_TYPES = [
+  "PFE",
+  "STAGE",
+  "Soutenance",
+] as const;
 
 export const PLANNING_SESSION_TYPES = [
   ...PLANNING_TIMETABLE_SESSION_TYPES,
@@ -165,6 +173,12 @@ export interface PlanningRecord {
   content: string;
   /** Optional internal note for the operator; never shown to students. */
   notes?: string;
+  /**
+   * Jury committee of a PFE/STAGE/Soutenance session (`planning.jury_teacher_ids`).
+   * `teacherId` stays the session's lead teacher; this list adds the panel
+   * (supervisor, president, examiner). Absent on every other session kind.
+   */
+  juryTeacherIds?: string[];
 }
 
 /** One selectable class: the label shown in the form plus the FKs the entry stores. */
@@ -177,6 +191,8 @@ export interface PlanningClassOption {
 /** Everything the entry form produces, ready for insertPlanning/updatePlanning. */
 export interface PlanningEntryValues {
   course?: string;
+  /** PFE only: the jury panel, written when the caller provides it. */
+  juryTeacherIds?: string[];
   sessionType: PlanningSessionType;
   className?: string;
   programId?: string;

@@ -2,7 +2,7 @@
 --
 --   Emploi du temps   -> In-class, Online
 --   Emploi des examens -> DS, TP, TD, Principale, Exam, SYNTHESE
---   Planning PFE      -> PFE, Soutenance
+--   Planning PFE      -> PFE, STAGE, Soutenance
 --
 -- Existing rows receive the default ('In-class') when the column is added, and
 -- the check is rebuilt unconditionally so a database created with the original
@@ -21,6 +21,6 @@ alter table public.planning
     session_type in (
       'In-class', 'Online',
       'DS', 'TP', 'TD', 'Principale', 'Exam', 'SYNTHESE',
-      'PFE', 'Soutenance'
+      'PFE', 'STAGE', 'Soutenance'
     )
   );

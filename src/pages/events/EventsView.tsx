@@ -1,22 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft,
   Calendar,
   Check,
   ChevronDown,
   Clock,
-  Globe,
   ImagePlus,
   Loader2,
+  MapPin,
   Plus,
   Users,
   X,
 } from "lucide-react";
-import PeopleMultiSelect from "@/components/PeopleMultiSelect";
 import {
   errorMessage,
-  listStudents,
-  listTeachers,
   saveEvent,
   uploadEventCover,
   type AppEvent,
@@ -29,6 +25,7 @@ import {
   formatDay,
   formatTime,
   parseEventTime,
+  splitGifts,
 } from "./eventFormat";
 
 /** The four kinds of event the creator offers. Stored as free text. */
@@ -39,53 +36,7 @@ const EVENT_TYPE_OPTIONS = [
   { value: "talks", label: "Talks" },
 ] as const;
 
-/**
- * A short, practical timezone list. The browser's own zone is prepended at
- * render time, so the default is always present even when it is not listed.
- */
-const TIMEZONE_OPTIONS = [
-  "UTC",
-  "Africa/Casablanca",
-  "Africa/Algiers",
-  "Africa/Tunis",
-  "Africa/Cairo",
-  "Africa/Lagos",
-  "Africa/Johannesburg",
-  "Europe/London",
-  "Europe/Paris",
-  "Europe/Berlin",
-  "Europe/Madrid",
-  "Europe/Rome",
-  "Europe/Amsterdam",
-  "Europe/Istanbul",
-  "Europe/Moscow",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Toronto",
-  "America/Mexico_City",
-  "America/Sao_Paulo",
-  "Asia/Dubai",
-  "Asia/Riyadh",
-  "Asia/Karachi",
-  "Asia/Kolkata",
-  "Asia/Singapore",
-  "Asia/Shanghai",
-  "Asia/Tokyo",
-  "Australia/Sydney",
-  "Pacific/Auckland",
-];
-
 const COVER_MAX_WIDTH = 800;
-
-function browserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
 
 /**
  * Downscales a picked cover to a <=800px JPEG. Keeps the stored object small
@@ -156,19 +107,17 @@ export default function EventsView({
   const [endDate, setEndDate] = useState(initialEvent?.endsOn ?? "");
   const [startTime, setStartTime] = useState(initialTime.startTime);
   const [endTime, setEndTime] = useState(initialTime.endTime);
-  const [timezone, setTimezone] = useState(
-    initialTime.timezone || browserTimezone(),
+  const [location, setLocation] = useState(initialEvent?.location ?? "");
+  const [gifts, setGifts] = useState<string[]>(() =>
+    splitGifts(initialEvent?.giftsAwards ?? ""),
   );
-  const [gift, setGift] = useState(initialEvent?.giftsAwards ?? "");
   const [partners, setPartners] = useState<EventPartner[]>(
     initialEvent?.partners ?? [],
   );
-  const [organizers, setOrganizers] = useState<string[]>(
-    initialEvent?.organizers ?? [],
-  );
-  const [members, setMembers] = useState<string[]>(
-    initialEvent?.members ?? [],
-  );
+  // Organizers/members are not edited by this form; the stored ids pass
+  // through unchanged so saving an edit never silently clears them.
+  const organizers = initialEvent?.organizers ?? [];
+  const members = initialEvent?.members ?? [];
 
   const [coverBlob, setCoverBlob] = useState<Blob | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
@@ -180,73 +129,30 @@ export default function EventsView({
   const [partnerLink, setPartnerLink] = useState("");
   const [partnerError, setPartnerError] = useState<string | null>(null);
 
-  const [teachers, setTeachers] = useState<{ id: string; fullName: string }[]>(
-    [],
-  );
-  const [students, setStudents] = useState<{ id: string; fullName: string }[]>(
-    [],
-  );
-
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listTeachers()
-      .then((rows) =>
-        setTeachers(
-          rows
-            .map((t) => ({ id: t.id, fullName: t.fullName }))
-            .sort((a, b) => a.fullName.localeCompare(b.fullName)),
-        ),
-      )
-      .catch(() => setTeachers([]));
-    listStudents()
-      .then((rows) =>
-        setStudents(
-          rows
-            .map((s) => ({ id: s.id, fullName: s.fullName }))
-            .sort((a, b) => a.fullName.localeCompare(b.fullName)),
-        ),
-      )
-      .catch(() => setStudents([]));
-  }, []);
 
   useEffect(() => {
     if (!coverPreview) return;
     return () => URL.revokeObjectURL(coverPreview);
   }, [coverPreview]);
 
-  const teacherOptions = useMemo(
-    () => teachers.map((t) => ({ id: t.id, label: t.fullName })),
-    [teachers],
-  );
-  const studentOptions = useMemo(
-    () => students.map((s) => ({ id: s.id, label: s.fullName })),
-    [students],
-  );
-
-  const timezoneOptions = useMemo(() => {
-    const local = browserTimezone();
-    return TIMEZONE_OPTIONS.includes(local)
-      ? TIMEZONE_OPTIONS
-      : [local, ...TIMEZONE_OPTIONS];
-  }, []);
-
   const activeType =
     EVENT_TYPE_OPTIONS.find(
       (option) => option.value === type.trim().toLowerCase(),
     ) ?? null;
-  const activeGift =
-    GIFT_OPTIONS.find(
-      (option) => option.value === gift.trim().toLowerCase(),
-    ) ?? null;
+  // Stored values that are not one of the pills (legacy rows) are kept in the
+  // list so saving does not drop them; they are surfaced below the pills.
+  const unknownGifts = gifts.filter(
+    (gift) =>
+      !GIFT_OPTIONS.some((option) => option.value === gift.toLowerCase()),
+  );
 
   const previewImage = coverPreview ?? coverUrl;
   const previewType = activeType?.label ?? type ?? "Event";
   const previewDate = [
     startDate ? formatDay(startDate) : "Date to be announced",
     startTime ? formatTime(composeEventTime(startTime, endTime, "")) : "",
-    timezone,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -300,6 +206,14 @@ export default function EventsView({
     setPartners((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const toggleGift = (value: string) => {
+    setGifts((prev) =>
+      prev.some((gift) => gift.toLowerCase() === value)
+        ? prev.filter((gift) => gift.toLowerCase() !== value)
+        : [...prev, value],
+    );
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -330,9 +244,10 @@ export default function EventsView({
           description,
           startsOn: startDate,
           endsOn: endDate,
-          eventTime: composeEventTime(startTime, endTime, timezone),
+          eventTime: composeEventTime(startTime, endTime, ""),
+          location: location.trim(),
           partners,
-          giftsAwards: gift,
+          giftsAwards: gifts.join(", "),
           organizers,
           members,
           coverUrl: uploadedCover,
@@ -350,38 +265,26 @@ export default function EventsView({
   return (
     <div className="dark min-h-full w-full space-y-6 text-white">
       {/* ------------------------------------------------------ header */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Events
-            </button>
-          )}
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-emerald-400">
-            Event creator
-          </p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight text-white sm:text-3xl">
-            {initialEvent ? "Edit Event" : "Create Event"}
-          </h2>
-          <p className="mt-1 text-sm text-zinc-400">
-            Set the essentials now — you can refine the details later.
-          </p>
-        </div>
+      {/* The only title on the page: navigation lives in the portal top bar
+          (this view registers with useNestedView), so there is no second
+          "Back to Events" link competing with it. */}
+      <header>
+        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+          {initialEvent ? "Edit Event" : "Create New Event"}
+        </h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          Set the essentials now — you can refine the details later.
+        </p>
       </header>
 
       {/* ------------------------------------------------------ form container */}
-      <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl sm:p-8">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl sm:p-8">
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             {/* ------------------------------------------------ left column */}
             <div className="space-y-5">
               {/* title */}
-              <label className="block cursor-text rounded-2xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Event name
                 </span>
@@ -399,7 +302,7 @@ export default function EventsView({
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Starts
                 </p>
-                <div className="grid grid-cols-3 gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
@@ -409,7 +312,7 @@ export default function EventsView({
                       type="date"
                       value={startDate}
                       onChange={(event) => setStartDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                   <div className="min-w-0">
@@ -421,25 +324,8 @@ export default function EventsView({
                       type="time"
                       value={startTime}
                       onChange={(event) => setStartTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
                     />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                      <Globe className="h-3.5 w-3.5" />
-                      Timezone
-                    </span>
-                    <select
-                      value={timezone}
-                      onChange={(event) => setTimezone(event.target.value)}
-                      className="mt-1.5 w-full truncate rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
-                    >
-                      {timezoneOptions.map((zone) => (
-                        <option key={zone} value={zone}>
-                          {zone}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                 </div>
               </div>
@@ -449,7 +335,7 @@ export default function EventsView({
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Ends
                 </p>
-                <div className="grid grid-cols-3 gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
@@ -460,7 +346,7 @@ export default function EventsView({
                       value={endDate}
                       min={startDate || undefined}
                       onChange={(event) => setEndDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                   <div className="min-w-0">
@@ -472,28 +358,25 @@ export default function EventsView({
                       type="time"
                       value={endTime}
                       onChange={(event) => setEndTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
                     />
-                  </div>
-                  <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                      <Globe className="h-3.5 w-3.5" />
-                      Timezone
-                    </span>
-                    <select
-                      value={timezone}
-                      onChange={(event) => setTimezone(event.target.value)}
-                      className="mt-1.5 w-full truncate rounded-lg border border-zinc-800 bg-zinc-950/60 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500/60"
-                    >
-                      {timezoneOptions.map((zone) => (
-                        <option key={zone} value={zone}>
-                          {zone}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                 </div>
               </div>
+
+              {/* location */}
+              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+                  <MapPin className="h-3.5 w-3.5" />
+                  Location / Google Maps link
+                </span>
+                <input
+                  value={location}
+                  onChange={(event) => setLocation(event.target.value)}
+                  placeholder="https://maps.app.goo.gl/… or Room B-12"
+                  className="mt-1 w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-600"
+                />
+              </label>
 
               {/* type pills */}
               <div className="space-y-2">
@@ -512,7 +395,7 @@ export default function EventsView({
                         className={cn(
                           "rounded-full border px-4 py-2 text-sm transition-colors",
                           selected
-                            ? "border-emerald-500/50 bg-emerald-500/10 font-medium text-emerald-400 shadow-sm"
+                            ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
                             : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
                         )}
                       >
@@ -531,21 +414,26 @@ export default function EventsView({
               {/* gift pills */}
               <div className="space-y-2">
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Gift category
+                  Gift categories
+                  <span className="ml-2 normal-case tracking-normal text-zinc-600">
+                    Select all that apply
+                  </span>
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {GIFT_OPTIONS.map((option) => {
-                    const selected = activeGift?.value === option.value;
+                    const selected = gifts.some(
+                      (gift) => gift.toLowerCase() === option.value,
+                    );
                     return (
                       <button
                         key={option.value}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => setGift(option.value)}
+                        onClick={() => toggleGift(option.value)}
                         className={cn(
                           "rounded-full border px-4 py-2 text-sm transition-colors",
                           selected
-                            ? "border-emerald-500/50 bg-emerald-500/10 font-medium text-emerald-400 shadow-sm"
+                            ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
                             : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
                         )}
                       >
@@ -554,15 +442,15 @@ export default function EventsView({
                     );
                   })}
                 </div>
-                {gift.trim() && !activeGift && (
+                {unknownGifts.length > 0 && (
                   <p className="text-xs text-zinc-500">
-                    Keeping the existing value: {gift}
+                    Also keeping: {unknownGifts.join(", ")}
                   </p>
                 )}
               </div>
 
               {/* details */}
-              <label className="block cursor-text rounded-2xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Details
                 </span>
@@ -576,12 +464,12 @@ export default function EventsView({
               </label>
 
               {/* advanced */}
-              <details className="group rounded-2xl border border-zinc-800 bg-zinc-900/40">
+              <details className="group rounded-xl border border-zinc-800 bg-zinc-950">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm text-zinc-400 transition-colors hover:text-white">
                   <span className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Partners, organizers &amp; members
-                  </span>
+                      <Users className="h-4 w-4" />
+                      Partners
+                    </span>
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="space-y-4 border-t border-zinc-800 p-4">
@@ -603,7 +491,7 @@ export default function EventsView({
                           }
                         }}
                         placeholder="Partner name"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/60"
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500"
                       />
                       <input
                         value={partnerLink}
@@ -618,7 +506,7 @@ export default function EventsView({
                           }
                         }}
                         placeholder="https://…"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-950/60 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500/60"
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500"
                       />
                       <button
                         type="button"
@@ -638,7 +526,7 @@ export default function EventsView({
                         {partners.map((partner, index) => (
                           <li
                             key={`${partner.name}-${partner.link}-${index}`}
-                            className="flex items-center gap-3 bg-zinc-950/40 px-3 py-2 text-sm"
+                            className="flex items-center gap-3 bg-zinc-900 px-3 py-2 text-sm"
                           >
                             <span className="min-w-0 flex-1 truncate text-zinc-200">
                               {partner.name || partner.link}
@@ -662,28 +550,6 @@ export default function EventsView({
                     )}
                   </div>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <PeopleMultiSelect
-                      label="Organizers"
-                      options={teacherOptions}
-                      selected={organizers}
-                      onChange={setOrganizers}
-                      placeholder="Search teachers…"
-                      emptyText="No teacher matches that search."
-                      noOptionsText="No teachers available."
-                      popoverClassName="dark"
-                    />
-                    <PeopleMultiSelect
-                      label="Members"
-                      options={studentOptions}
-                      selected={members}
-                      onChange={setMembers}
-                      placeholder="Search students…"
-                      emptyText="No student matches that search."
-                      noOptionsText="No students available."
-                      popoverClassName="dark"
-                    />
-                  </div>
                 </div>
               </details>
             </div>
@@ -706,10 +572,10 @@ export default function EventsView({
                     void handlePickCover(event.dataTransfer.files?.[0]);
                   }}
                   className={cn(
-                    "relative aspect-square overflow-hidden rounded-2xl border-2 border-dashed transition-all",
+                    "relative aspect-square overflow-hidden rounded-xl border-2 border-dashed transition-all",
                     previewImage
-                      ? "border-zinc-800 bg-zinc-900"
-                      : "cursor-pointer border-zinc-800 bg-zinc-900/40 hover:border-emerald-500/50 hover:bg-zinc-900",
+                      ? "border-zinc-800 bg-zinc-950"
+                      : "cursor-pointer border-zinc-800 bg-zinc-950 hover:border-emerald-500/50 hover:bg-zinc-900",
                     dragging && "border-emerald-500/60 bg-zinc-900",
                   )}
                   onClick={previewImage ? undefined : pickCover}
@@ -771,7 +637,7 @@ export default function EventsView({
               </div>
 
               {/* live preview */}
-              <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
+              <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
                 <div className="relative aspect-[16/10] w-full bg-gradient-to-br from-emerald-500/20 via-zinc-900 to-zinc-950">
                   {previewImage && (
                     <img
@@ -791,11 +657,16 @@ export default function EventsView({
                     <p className="mt-0.5 truncate text-[11px] text-zinc-400">
                       {previewDate}
                     </p>
+                    {location.trim() && (
+                      <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                        {location.trim()}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/40 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500">
+              <div className="flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 The cover and details appear on the teacher portal as soon as
                 you save.

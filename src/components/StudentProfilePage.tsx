@@ -40,6 +40,7 @@ import {
 import { errorMessage, loadStudentAttendance } from "@/lib/api";
 import type { AttendanceRecord } from "@/lib/api";
 import EditStudentSheet from "@/pages/students/EditStudentSheet";
+import { useUserProfile } from "@/lib/userProfile";
 import type { Student } from "@/pages/students/StudentForm";
 
 interface StudentProfilePageProps {
@@ -130,6 +131,10 @@ export default function StudentProfilePage({
     setStudent(initialStudent);
   }, [initialStudent.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Avatar + preferred display name live in `user_profiles` (the `students`
+  // row has no photo column); initials are the fallback in ProfilePageShell.
+  const profile = useUserProfile("student", student.id);
+
   const fullName = student.fullName;
   // The load result is tagged with the student it belongs to, so switching
   // records can never flash the previous student's attendance. `null` until
@@ -185,6 +190,7 @@ export default function StudentProfilePage({
   return (
     <ProfilePageShell
       name={student.fullName}
+      avatarUrl={profile?.avatarUrl}
       badges={[student.program, student.training]}
       subtitle={email || undefined}
       backLabel={backLabel}

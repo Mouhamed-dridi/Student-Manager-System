@@ -24,6 +24,7 @@ export type MenuKey =
   | "pay-history"
   | "pay-trash"
   | "absence"
+  | "absence-billets"
   | "planification"
   | "branches"
   | "publications"
@@ -56,7 +57,15 @@ export const menuItems: MenuItem[] = [
       { key: "pay-trash", label: "Trash" },
     ],
   },
-  { key: "absence", label: "Absence", icon: CalendarX },
+  {
+    key: "absence",
+    label: "Absence",
+    icon: CalendarX,
+    children: [
+      { key: "absence", label: "Attendance Logs" },
+      { key: "absence-billets", label: "Billets / Tickets" },
+    ],
+  },
   { key: "planification", label: "Planification", icon: CalendarRange },
   { key: "branches", label: "Branches", icon: Building2 },
   { key: "publications", label: "Publications", icon: BookOpen },
@@ -78,8 +87,9 @@ export const menuItems: MenuItem[] = [
 
 /**
  * True when `active` is one of a collapsible parent's children. A parentless
- * item is never "in a section", so it returns false. Pay and Events list their
- * own key as the first child, so the parent page itself still highlights.
+ * item is never "in a section", so it returns false. Pay, Absence and Events
+ * list their own key as the first child, so the parent page itself still
+ * highlights.
  */
 export function isSectionActive(item: MenuItem, active: MenuKey): boolean {
   return item.children?.some((child) => child.key === active) ?? false;

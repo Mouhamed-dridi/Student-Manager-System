@@ -41,6 +41,7 @@ import {
   listPublications,
 } from "@/lib/api";
 import EditTeacherSheet from "@/pages/teachers/EditTeacherSheet";
+import { useUserProfile } from "@/lib/userProfile";
 import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import { NOTIFICATION_TYPE_LABELS } from "@/pages/publications/publicationTypes";
@@ -147,6 +148,8 @@ export default function TeacherProfilePage({
 }: TeacherProfilePageProps) {
   // Local copy so a sheet save reflects immediately without a page reload.
   const [teacher, setTeacher] = useState<Teacher>(initialTeacher);
+  // Photo from `user_profiles` (the teachers row has none); initials otherwise.
+  const profile = useUserProfile("teacher", teacher.id);
   const [editOpen, setEditOpen] = useState(initialEditOpen);
 
   useEffect(() => {
@@ -260,6 +263,7 @@ export default function TeacherProfilePage({
   return (
     <ProfilePageShell
       name={teacher.fullName}
+      avatarUrl={profile?.avatarUrl}
       badges={[teacher.specialty, teacher.program, teacher.training]}
       subtitle={email || undefined}
       backLabel={backLabel}

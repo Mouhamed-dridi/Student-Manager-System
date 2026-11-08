@@ -11,10 +11,16 @@
 // `useSyncExternalStore` needs a stable snapshot, so the cache holds whole
 // UserProfile objects and never mutates them in place.
 
-import { useCallback, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import {
   getUserProfile,
   hasUserProfilesTable,
+  listUserProfiles,
   upsertUserProfile,
   type UserProfile,
   type UserProfileRole,
@@ -24,6 +30,13 @@ const PROFILE_EVENT = "ssm-user-profile-changed";
 
 const cache = new Map<string, UserProfile | null>();
 const pending = new Map<string, Promise<UserProfile | null>>();
+
+// One extra cache: all rows of a role, fetched once for the people tables so a
+// list of 200 students still costs one request. Kept in step with the per-person
+// cache below, so an upload in Settings also updates the table.
+const roleCache = new Map<UserProfileRole, UserProfile[]>();
+const rolePending = new Map<UserProfileRole, Promise<UserProfile[]>>();
+const EMPTY_ROLE_PROFILES: UserProfile[] = [];
 
 export function userProfileCacheKey(
   role: UserProfileRole,
@@ -98,7 +111,39 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   }
   const key = userProfileCacheKey(profile.role, profile.userId);
   cache.set(key, profile);
+  const rows = roleCache.get(profile.role);
+  if (rows) {
+    roleCache.set(profile.role, [
+      ...rows.filter((row) => row.userId !== profile.userId),
+      profile,
+    ]);
+  }
   emit(key);
+}
+
+/**
+ * Fetches every row of a role once (concurrent callers share the request).
+ * Failures are not cached, so the next mount retries.
+ */
+export async function loadAllUserProfiles(
+  role: UserProfileRole,
+): Promise<UserProfile[]> {
+  const cached = roleCache.get(role);
+  if (cached) return cached;
+  const inFlight = rolePending.get(role);
+  if (inFlight) return inFlight;
+
+  const request = listUserProfiles(role)
+    .then((rows) => {
+      roleCache.set(role, rows);
+      emit(`all:${role}`);
+      return rows;
+    })
+    .finally(() => {
+      rolePending.delete(role);
+    });
+  rolePending.set(role, request);
+  return request;
 }
 
 /** Drops a cached row (used when the signed-in person changes). */
@@ -108,6 +153,42 @@ export function forgetUserProfile(
 ): void {
   if (!userId) return;
   cache.delete(userProfileCacheKey(role, userId));
+}
+
+/**
+ * Reactive `user_id -> profile` map for one role: the avatar/name lookup the
+ * operator's Students and Teachers tables read per row. The initial load is
+ * started here, and any profile save refreshes every mounted consumer through
+ * the same event the portal headers listen to.
+ */
+export function useUserProfiles(
+  role: UserProfileRole | undefined,
+): Map<string, UserProfile> {
+  const subscribe = useCallback((onChange: () => void) => {
+    window.addEventListener(PROFILE_EVENT, onChange);
+    return () => window.removeEventListener(PROFILE_EVENT, onChange);
+  }, []);
+
+  const getSnapshot = useCallback(
+    () => (role ? (roleCache.get(role) ?? EMPTY_ROLE_PROFILES) : EMPTY_ROLE_PROFILES),
+    [role],
+  );
+
+  const rows = useSyncExternalStore(subscribe, getSnapshot, () =>
+    EMPTY_ROLE_PROFILES,
+  );
+
+  // Loading writes into the module cache and emits, which re-reads the
+  // snapshot above; nothing is set from here.
+  useEffect(() => {
+    if (!role) return;
+    void loadAllUserProfiles(role).catch(() => null);
+  }, [role]);
+
+  return useMemo(
+    () => new Map(rows.map((row) => [row.userId, row])),
+    [rows],
+  );
 }
 
 /** Reactive profile row for one person; null while unknown or absent. */
