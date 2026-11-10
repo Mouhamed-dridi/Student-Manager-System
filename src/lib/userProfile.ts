@@ -136,6 +136,14 @@ export async function loadAllUserProfiles(
   const request = listUserProfiles(role)
     .then((rows) => {
       roleCache.set(role, rows);
+      // Seed the per-person cache as well: `useUserProfile` reads it directly,
+      // and a profile page opened from a people table (which only fetched the
+      // role list) would otherwise show initials until its own request lands.
+      for (const row of rows) {
+        const key = userProfileCacheKey(role, row.userId);
+        if (!cache.get(key)) cache.set(key, row);
+        emit(key);
+      }
       emit(`all:${role}`);
       return rows;
     })
@@ -211,10 +219,25 @@ export function useUserProfile(
     [key],
   );
 
-  const getSnapshot = useCallback(
-    () => (key ? (cache.get(key) ?? null) : null),
-    [key],
-  );
+  const getSnapshot = useCallback(() => {
+    if (!key || !role || !userId) return null;
+    const direct = cache.get(key);
+    if (direct) return direct;
+    // Fall back to the role-wide list: the people tables fetch every profile in
+    // one request, so a profile page opened from them can show the stored photo
+    // before this person's own request settles (instead of flashing initials).
+    return roleCache.get(role)?.find((row) => row.userId === userId) ?? null;
+  }, [key, role, userId]);
+
+  // Portal headers and settings pages fetch the signed-in person's row
+  // themselves, but a profile page opened by the operator never did — so the
+  // cache stayed empty and `avatar_url` was never loaded. Fetching here makes
+  // the hook self-sufficient; `loadUserProfile` de-duplicates requests and
+  // caches "no row yet", so this costs one request per person at most.
+  useEffect(() => {
+    if (!role || !userId) return;
+    void loadUserProfile(role, userId).catch(() => null);
+  }, [role, userId]);
 
   return useSyncExternalStore(subscribe, getSnapshot, () => null);
 }
