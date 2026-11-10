@@ -154,7 +154,7 @@ export default function StudentListView({
               />
               <div className="absolute right-0 top-full z-50 mt-2 w-64 space-y-3 rounded-lg border bg-popover p-4 shadow-md">
                 <div className="space-y-1.5">
-                  <Label>Program</Label>
+                  <Label>Branch</Label>
                   <Select
                     value={program}
                     onValueChange={(value) => {
@@ -177,7 +177,7 @@ export default function StudentListView({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Training</Label>
+                  <Label>Program</Label>
                   <Select
                     value={training}
                     onValueChange={(value) => setTraining(value ?? "all")}

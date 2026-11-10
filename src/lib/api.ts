@@ -131,7 +131,7 @@ interface StudentRow {
   program_id: string | null;
   training_id: string | null;
   programs: { code: string } | null;
-  trainings: { name: string } | null;
+  trainings: { name: string; program_id: string } | null;
   phone: string;
   email: string;
   location: string | null;
@@ -199,7 +199,7 @@ async function studentToRow(student: Student) {
   };
 }
 
-const STUDENT_SELECT = "*, programs(code), trainings(name)";
+const STUDENT_SELECT = "*, programs(code), trainings(name, program_id)";
 
 export async function listStudents(): Promise<Student[]> {
   const capabilities = await generalTrashCapabilities();
