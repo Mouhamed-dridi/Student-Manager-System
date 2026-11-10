@@ -59,8 +59,8 @@ export default function StudentList({
               />
             </TableHead>
             <TableHead>Full Name</TableHead>
+            <TableHead>Branch</TableHead>
             <TableHead>Program</TableHead>
-            <TableHead>Training</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Email</TableHead>
             <TableHead className="w-24">Actions</TableHead>
