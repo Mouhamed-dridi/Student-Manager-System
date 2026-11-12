@@ -20,6 +20,18 @@ import {
 } from "@/lib/api";
 import AbsenceBilletModal from "./AbsenceBilletModal";
 
+/** `2026-11-08` → `8 Nov 2026`; invalid values are shown as stored. */
+function formatAbsenceDate(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 // Archive of every generated student absence ticket. The rows are read-only
 // snapshots: opening one only shows (and reprints) the stored ticket, it never
 // archives a second copy.
@@ -60,7 +72,8 @@ export default function AbsenceBilletsView() {
             query === "" ||
             billet.studentName.toLowerCase().includes(query) ||
             (billet.className ?? "").toLowerCase().includes(query) ||
-            (billet.course ?? "").toLowerCase().includes(query) ||
+            (billet.subject ?? "").toLowerCase().includes(query) ||
+            (billet.teacherName ?? "").toLowerCase().includes(query) ||
             (billet.absenceDate ?? "").includes(query) ||
             billet.code.toLowerCase().includes(query),
         );
@@ -84,7 +97,7 @@ export default function AbsenceBilletsView() {
       <div className="relative mt-4 w-full max-w-xs">
         <Search className="absolute top-1/2 left-2.5 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search by student, class or code..."
+          placeholder="Search by student, class, subject, teacher or code..."
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           className="pl-8"
@@ -119,31 +132,39 @@ export default function AbsenceBilletsView() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-44">Verification Code</TableHead>
                 <TableHead>Student</TableHead>
                 <TableHead>Class / Branch</TableHead>
-                <TableHead>Course / Subject</TableHead>
-                <TableHead className="w-36">Absence Date</TableHead>
+                <TableHead>Subject</TableHead>
+                <TableHead>Teacher</TableHead>
+                <TableHead className="w-40">Absence Date</TableHead>
                 <TableHead className="w-28">Time</TableHead>
-                <TableHead className="w-44">Code</TableHead>
-                <TableHead className="w-40">Issued</TableHead>
                 <TableHead className="w-32">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((billet) => (
                 <TableRow key={billet.id}>
+                  <TableCell className="font-mono text-xs font-medium">
+                    {billet.code}
+                  </TableCell>
                   <TableCell className="font-medium">
                     {billet.studentName}
                   </TableCell>
-                  <TableCell>{billet.className || "—"}</TableCell>
-                  <TableCell>{billet.course || "—"}</TableCell>
-                  <TableCell>{billet.absenceDate || "—"}</TableCell>
-                  <TableCell>{billet.absenceTime || "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {billet.code}
+                  <TableCell className="whitespace-normal">
+                    {billet.className || "—"}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {new Date(billet.createdAt).toLocaleString()}
+                  <TableCell className="whitespace-normal">
+                    {billet.subject || "—"}
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
+                    {billet.teacherName || "—"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {formatAbsenceDate(billet.absenceDate)}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {billet.timeSlot || "—"}
                   </TableCell>
                   <TableCell>
                     <Button

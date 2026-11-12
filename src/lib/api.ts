@@ -123,6 +123,204 @@ async function resolveProgramTrainingIds(
   };
 }
 
+// ---------------------------------------------------------------- branches
+//
+// A branch is the class record behind one training: `branches` holds the level
+// (CAP/BTP/BTS), the display name and the mirrored training id, while
+// `branch_materials` is that class's module list with ONE teacher per material
+// — which is how a class is staffed by several teachers at once.
+//
+// Both tables are optional schema (supabase/branches-materials-migration.sql):
+// reads degrade to empty lists before it is applied, and writes throw the
+// actionable message below instead of a raw PostgREST error.
+
+export type BranchLevel = "CAP" | "BTP" | "BTS";
+
+export interface BranchRecord {
+  id: string;
+  /** The training this class mirrors: planning and students scope by it. */
+  trainingId: string;
+  name: string;
+  level: BranchLevel | "";
+  programId: string;
+  programCode: string;
+}
+
+export interface BranchMaterialRecord {
+  id: string;
+  branchId: string;
+  name: string;
+  description: string;
+  teacherId: string | null;
+  teacherName: string;
+}
+
+export interface BranchMaterialInput {
+  /** Omitted when the material is new. */
+  id?: string;
+  branchId: string;
+  name: string;
+  description: string;
+  teacherId: string | null;
+}
+
+const BRANCHES_MISSING =
+  "The branches tables are missing. Run supabase/branches-materials-migration.sql in the Supabase SQL Editor, then reload.";
+
+interface BranchRow {
+  id: string;
+  level: string | null;
+  name: string;
+  training_id: string | null;
+  trainings: {
+    id: string;
+    name: string;
+    program_id: string | null;
+    programs: { code: string } | null;
+  } | null;
+}
+
+interface BranchMaterialRow {
+  id: string;
+  branch_id: string;
+  name: string;
+  description: string | null;
+  teacher_id: string | null;
+  teachers: { id: string; full_name: string } | null;
+}
+
+const BRANCH_SELECT =
+  "id,level,name,training_id,trainings(id,name,program_id,programs(code))";
+const BRANCH_MATERIAL_SELECT =
+  "id,branch_id,name,description,teacher_id,teachers(id,full_name)";
+
+function branchLevelOf(
+  raw: string | null | undefined,
+  fallback = "",
+): BranchLevel | "" {
+  const value = (raw || fallback).trim().toUpperCase();
+  return value === "CAP" || value === "BTP" || value === "BTS" ? value : "";
+}
+
+function branchFromRow(row: BranchRow): BranchRecord {
+  const programCode = row.trainings?.programs?.code ?? "";
+  const level = branchLevelOf(row.level, programCode);
+  return {
+    id: row.id,
+    trainingId: row.training_id ?? "",
+    name: row.name,
+    level,
+    programId: row.trainings?.program_id ?? "",
+    programCode: programCode || level,
+  };
+}
+
+function branchMaterialFromRow(row: BranchMaterialRow): BranchMaterialRecord {
+  return {
+    id: row.id,
+    branchId: row.branch_id,
+    name: row.name,
+    description: row.description ?? "",
+    teacherId: row.teacher_id ?? null,
+    teacherName: row.teachers?.full_name ?? "",
+  };
+}
+
+let branchesSchemaPromise: Promise<boolean> | null = null;
+
+/**
+ * True when the live database has both branches tables. Probed once per app
+ * load; module-private on purpose (see AGENTS.md) so components go through the
+ * guarded functions below instead of checking the flag themselves.
+ */
+async function hasBranchesSchema(): Promise<boolean> {
+  if (!branchesSchemaPromise) {
+    branchesSchemaPromise = Promise.all([
+      hasColumn("branches", "id"),
+      hasColumn("branch_materials", "id"),
+    ])
+      .then((flags) => flags.every(Boolean))
+      .catch(() => false);
+  }
+  return branchesSchemaPromise;
+}
+
+/** Every branch, alphabetically by class name. Empty before the migration. */
+export async function listBranches(): Promise<BranchRecord[]> {
+  if (!(await hasBranchesSchema())) return [];
+  const { data, error } = await withTimeout(
+    supabase.from("branches").select(BRANCH_SELECT).order("name"),
+  );
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as BranchRow[]).map(branchFromRow);
+}
+
+/** The module list of one branch (all branches when `branchId` is omitted). */
+export async function listBranchMaterials(
+  branchId?: string,
+): Promise<BranchMaterialRecord[]> {
+  if (!(await hasBranchesSchema())) return [];
+  let builder = supabase.from("branch_materials").select(BRANCH_MATERIAL_SELECT);
+  if (branchId) builder = builder.eq("branch_id", branchId);
+  const { data, error } = await withTimeout(builder.order("name"));
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as BranchMaterialRow[]).map(
+    branchMaterialFromRow,
+  );
+}
+
+/** Inserts a material, or updates the one named by `input.id`. */
+export async function saveBranchMaterial(
+  input: BranchMaterialInput,
+): Promise<BranchMaterialRecord> {
+  if (!(await hasBranchesSchema())) throw new Error(BRANCHES_MISSING);
+  const fields = {
+    name: input.name.trim(),
+    description: input.description.trim() || null,
+    teacher_id: input.teacherId,
+  };
+  const { data, error } = await withTimeout(
+    input.id
+      ? supabase
+          .from("branch_materials")
+          .update(fields)
+          .eq("id", input.id)
+          .select(BRANCH_MATERIAL_SELECT)
+          .single()
+      : supabase
+          .from("branch_materials")
+          .insert({ ...fields, branch_id: input.branchId })
+          .select(BRANCH_MATERIAL_SELECT)
+          .single(),
+  );
+  if (error) throw new Error(error.message);
+  return branchMaterialFromRow(data as unknown as BranchMaterialRow);
+}
+
+/**
+ * Assigns (or clears, with `null`) the teacher of one material. Writes only
+ * `teacher_id`, so an inline change can never clobber a concurrent name or
+ * description edit.
+ */
+export async function assignBranchMaterialTeacher(
+  id: string,
+  teacherId: string | null,
+): Promise<void> {
+  if (!(await hasBranchesSchema())) throw new Error(BRANCHES_MISSING);
+  const { error } = await withTimeout(
+    supabase.from("branch_materials").update({ teacher_id: teacherId }).eq("id", id),
+  );
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteBranchMaterial(id: string): Promise<void> {
+  if (!(await hasBranchesSchema())) throw new Error(BRANCHES_MISSING);
+  const { error } = await withTimeout(
+    supabase.from("branch_materials").delete().eq("id", id),
+  );
+  if (error) throw new Error(error.message);
+}
+
 // ---------------------------------------------------------------- students
 
 interface StudentRow {
@@ -2117,20 +2315,25 @@ export async function hardDeleteAttendance(ids: string[]): Promise<void> {
  * Every printed field is a snapshot copied out of the attendance row at
  * generation time: the archive must keep showing the ticket that was handed to
  * the student even after the log row is edited, trashed or purged.
+ *
+ * The column names follow the live `absence_billets` table, which carries BOTH
+ * a required unique `billet_code` and the printable `verification_code` — the
+ * app writes the same code into both.
  */
 export interface AbsenceBillet {
   id: string;
   /** attendance.id the ticket was generated from, null for a manual one. */
   attendanceId: string | null;
+  /** students.id, when the attendance row recorded an individual target. */
+  studentId: string | null;
   studentName: string;
   className: string | null;
-  program: string | null;
-  training: string | null;
   /** Course / subject printed on the ticket. */
-  course: string | null;
+  subject: string | null;
+  teacherName: string | null;
   absenceDate: string | null;
   /** Display window ("08:00 - 10:00"). */
-  absenceTime: string | null;
+  timeSlot: string | null;
   /** Unique verification code printed on the ticket. */
   code: string;
   createdAt: string;
@@ -2139,19 +2342,21 @@ export interface AbsenceBillet {
 interface AbsenceBilletRow {
   id: string;
   attendance_id: string | null;
+  student_id: string | null;
   student_name: string;
   class_name: string | null;
-  program: string | null;
-  training: string | null;
-  course: string | null;
+  subject: string | null;
+  teacher_name: string | null;
   absence_date: string | null;
+  time_slot: string | null;
   absence_time: string | null;
-  code: string;
+  verification_code: string | null;
+  billet_code: string | null;
   created_at: string;
 }
 
 const ABSENCE_BILLET_SELECT =
-  "id, attendance_id, student_name, class_name, program, training, course, absence_date, absence_time, code, created_at";
+  "id, attendance_id, student_id, student_name, class_name, subject, teacher_name, absence_date, time_slot, absence_time, verification_code, billet_code, created_at";
 
 const ABSENCE_BILLETS_MISSING =
   "The billet archive is not set up yet. Run supabase/absence-billets-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
@@ -2162,11 +2367,16 @@ let absenceBilletsTable: boolean | null = null;
  * Runtime probe for the absence_billets table (supabase/absence-billets-
  * migration.sql). Reads degrade to an empty archive while it is missing; a
  * generation fails with the migration message instead of losing the ticket.
+ *
+ * The probe selects every column the archive reads, not just `id`: a database
+ * that ran the pre-`subject` revision of the migration has the table but not
+ * these columns, and PostgREST would reject the whole query (42703) instead of
+ * showing the actionable message.
  */
 async function hasAbsenceBilletsTable(): Promise<boolean> {
   if (absenceBilletsTable !== null) return absenceBilletsTable;
   const { error } = await withTimeout(
-    supabase.from("absence_billets").select("id").limit(0),
+    supabase.from("absence_billets").select(ABSENCE_BILLET_SELECT).limit(0),
     8000,
   );
   absenceBilletsTable = !error;
@@ -2177,14 +2387,14 @@ function absenceBilletFromRow(row: AbsenceBilletRow): AbsenceBillet {
   return {
     id: row.id,
     attendanceId: row.attendance_id ?? null,
+    studentId: row.student_id ?? null,
     studentName: row.student_name,
     className: row.class_name ?? null,
-    program: row.program ?? null,
-    training: row.training ?? null,
-    course: row.course ?? null,
+    subject: row.subject ?? null,
+    teacherName: row.teacher_name ?? null,
     absenceDate: row.absence_date ?? null,
-    absenceTime: row.absence_time ?? null,
-    code: row.code,
+    timeSlot: row.time_slot || row.absence_time || null,
+    code: row.verification_code || row.billet_code || "",
     createdAt: row.created_at,
   };
 }
@@ -2207,7 +2417,13 @@ export async function listAbsenceBillets(): Promise<AbsenceBillet[]> {
 /** Fields the ticket dialog snapshots out of an attendance row. */
 export type AbsenceBilletInput = Omit<AbsenceBillet, "id" | "createdAt">;
 
-/** Stores one generated ticket and returns the saved row (with its id). */
+/**
+ * Stores one generated ticket and returns the saved row (with its id).
+ *
+ * `billet_code` is the table's NOT NULL + UNIQUE column and
+ * `verification_code` is the printed one; both receive the same generated
+ * code so the archive can be read by either name.
+ */
 export async function saveAbsenceBillet(
   input: AbsenceBilletInput,
 ): Promise<AbsenceBillet> {
@@ -2219,20 +2435,90 @@ export async function saveAbsenceBillet(
       .from("absence_billets")
       .insert({
         attendance_id: input.attendanceId,
+        student_id: input.studentId,
         student_name: input.studentName,
         class_name: input.className,
-        program: input.program,
-        training: input.training,
-        course: input.course,
+        subject: input.subject,
+        teacher_name: input.teacherName,
         absence_date: input.absenceDate,
-        absence_time: input.absenceTime,
-        code: input.code,
+        time_slot: input.timeSlot,
+        verification_code: input.code,
+        billet_code: input.code,
       })
       .select(ABSENCE_BILLET_SELECT)
       .single(),
   );
   if (error) throw new Error(error.message);
   return absenceBilletFromRow(data as unknown as AbsenceBilletRow);
+}
+
+export interface BilletSessionContext {
+  subject: string | null;
+  teacherName: string | null;
+}
+
+/**
+ * Class labels come from two places that punctuate differently — the branch
+ * list writes "BTS · Contrôle qualité", the attendance/branch snapshot may say
+ * "BTS - Contrôle qualité" — so separators collapse before comparing.
+ */
+function normalizeBilletLabel(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLocaleLowerCase()
+    .replace(/[·•\-–—]/g, " ")
+    .replace(/['’`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Subject and teacher for a generated ticket.
+ *
+ * `attendance` carries neither, so the class's planning is read for that day
+ * and the answer is used only when exactly one session matches the class. A
+ * blank teacher is preferred over printing a wrong name on a signed document,
+ * so an ambiguous or empty day falls back to `null`.
+ */
+export async function resolveBilletContext(
+  className: string | null,
+  date: string | null,
+): Promise<BilletSessionContext> {
+  const label = normalizeBilletLabel(className);
+  const day = date?.slice(0, 10) ?? "";
+  if (!label || !day) return { subject: null, teacherName: null };
+
+  const { data, error } = await withTimeout(
+    supabase
+      .from("planning")
+      .select("course, teacher_id, class_name")
+      .eq("date", day),
+  );
+  if (error) throw new Error(error.message);
+
+  const matches = ((data ?? []) as {
+    course: string | null;
+    teacher_id: string | null;
+    class_name: string | null;
+  }[]).filter((row) => normalizeBilletLabel(row.class_name) === label);
+
+  if (matches.length !== 1) return { subject: null, teacherName: null };
+  const [session] = matches;
+
+  let teacherName: string | null = null;
+  if (session.teacher_id) {
+    const { data: teacher, error: teacherError } = await withTimeout(
+      supabase
+        .from("teachers")
+        .select("full_name")
+        .eq("id", session.teacher_id)
+        .maybeSingle(),
+    );
+    if (teacherError) throw new Error(teacherError.message);
+    teacherName =
+      (teacher as { full_name: string } | null)?.full_name ?? null;
+  }
+
+  return { subject: session.course?.trim() || null, teacherName };
 }
 
 // ---------------------------------------------------------------- courses

@@ -284,31 +284,57 @@ grant execute on function public.reconcile_attendance_profiles() to anon, authen
 
 -- ------------------------------------------------------- absence billets ---
 -- Printable absence tickets ("billets d'absence"). A billet is a snapshot of
--- the attendance row it was generated from, so the archive keeps showing the
--- ticket that was handed out after the log row changes. `code` is the unique
--- verification code printed on the ticket. See
--- supabase/absence-billets-migration.sql for the patch applied to databases
--- created before this table existed.
+-- the attendance row it was generated from (student, class/branch, subject,
+-- teacher, date and time), so the archive keeps showing the ticket that was
+-- handed out after the log row changes. `billet_code` is the required unique
+-- ticket identifier and `verification_code` is the code printed on the sheet;
+-- the app writes the same value into both. Column names mirror the live table
+-- and the patch in supabase/absence-billets-migration.sql, which additionally
+-- backfills the older `code` / `program` / `training` / `course` revision.
 
 create table if not exists public.absence_billets (
   id uuid primary key default gen_random_uuid(),
+  -- No FK: the log row may be purged while the ticket is still archived.
   attendance_id uuid,
+  -- students.id for an individual target, null for a class-wide absence.
+  student_id uuid,
   student_name text not null,
   class_name text,
-  program text,
-  training text,
-  course text,
-  absence_date date,
+  -- Legacy display columns kept for older rows; the app does not write them.
+  class_branch text,
+  course_name text,
+  subject text,
+  teacher_name text,
+  absence_date date not null,
+  -- Display window ("08:00 - 10:00"); `absence_time` is the legacy twin.
+  time_slot text,
   absence_time text,
-  code text not null unique,
+  verification_code text,
+  billet_code text not null unique,
   created_at timestamptz not null default now()
 );
+
+-- Databases created before these columns existed skip the create above, so add
+-- them explicitly (same drift rule as the other tables in this file).
+alter table if exists public.absence_billets
+  add column if not exists student_id uuid,
+  add column if not exists class_branch text,
+  add column if not exists course_name text,
+  add column if not exists subject text,
+  add column if not exists teacher_name text,
+  add column if not exists absence_date date,
+  add column if not exists time_slot text,
+  add column if not exists verification_code text,
+  add column if not exists billet_code text;
 
 create index if not exists absence_billets_created_idx
   on public.absence_billets (created_at desc);
 
 create index if not exists absence_billets_student_idx
   on public.absence_billets (student_name);
+
+create unique index if not exists absence_billets_billet_code_key
+  on public.absence_billets (billet_code);
 
 -- ---------------------------------------------------------------- courses --
 -- Teacher-created schedule entries. Seeded demo courses live in the app code

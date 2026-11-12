@@ -11,9 +11,11 @@ import {
 import { useBranding } from "@/lib/branding";
 import {
   errorMessage,
+  resolveBilletContext,
   saveAbsenceBillet,
   type AbsenceBillet,
   type AttendanceRecord,
+  type BilletSessionContext,
 } from "@/lib/api";
 
 // Printable student absence ticket ("billet d'absence").
@@ -51,15 +53,16 @@ function classLabel(record: AttendanceRecord): string {
 /**
  * Course / subject line. The attendance log does not carry a subject, so the
  * ticket uses the training (or program when the class label already includes
- * it) instead of printing the class twice.
+ * it) instead of printing the class twice. `resolveBilletContext()` upgrades
+ * this to the scheduled session's subject when the match is unambiguous.
  */
-function courseLabel(record: AttendanceRecord): string {
+function subjectLabel(record: AttendanceRecord): string {
   const className = record.className?.trim();
   const training = record.training?.trim();
   const program = record.program?.trim();
   if (training && training !== className) return training;
   if (program && program !== className) return program;
-  return training || program || "—";
+  return training || program || "";
 }
 
 function formatBilletDate(value?: string | null): string {
@@ -84,16 +87,26 @@ function makeBilletCode(date?: string | null): string {
 }
 
 /** Snapshots one attendance row into a new archive ticket. */
-function archiveBillet(record: AttendanceRecord, code: string) {
+function archiveBillet(
+  record: AttendanceRecord,
+  code: string,
+  context: BilletSessionContext | null,
+) {
   return saveAbsenceBillet({
     attendanceId: record.id,
+    // students.id, only when the row recorded an individual student target.
+    studentId: record.targetType === "student" ? record.userId : null,
     studentName: record.fullName,
     className: classLabel(record),
-    program: record.program ?? null,
-    training: record.training ?? null,
-    course: courseLabel(record),
-    absenceDate: record.date?.slice(0, 10) || null,
-    absenceTime: record.time ?? record.absenceTime ?? null,
+    // The scheduled session wins; otherwise keep the class label as subject.
+    // Never store the "—" placeholder: a blank column is honest, a dash is not.
+    subject: context?.subject || subjectLabel(record) || null,
+    teacherName: context?.teacherName ?? null,
+    // `absence_date` is NOT NULL in the live table; a row without one falls
+    // back to today rather than failing the archive and losing the ticket.
+    absenceDate:
+      record.date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+    timeSlot: record.time ?? record.absenceTime ?? null,
     code,
   });
 }
@@ -155,7 +168,11 @@ export default function AbsenceBilletModal({
     setSaving(true);
     setError(null);
     try {
-      const saved = await archiveBillet(record, code);
+      const context = await resolveBilletContext(
+        record.className,
+        record.date,
+      ).catch(() => null);
+      const saved = await archiveBillet(record, code, context);
       setBillet(saved);
       onSaved?.(saved);
     } catch (err) {
@@ -171,7 +188,15 @@ export default function AbsenceBilletModal({
   useEffect(() => {
     if (!record || archivedRef.current) return;
     archivedRef.current = true;
-    archiveBillet(record, code)
+    (async () => {
+      // Subject/teacher need one planning lookup; failing it must not cost the
+      // ticket, so the context degrades to the class label and a blank teacher.
+      const context = await resolveBilletContext(
+        record.className,
+        record.date,
+      ).catch(() => null);
+      return archiveBillet(record, code, context);
+    })()
       .then((saved) => {
         setBillet(saved);
         setSaving(false);
@@ -185,9 +210,11 @@ export default function AbsenceBilletModal({
 
   const studentName = billet?.studentName ?? record?.fullName ?? "—";
   const className = billet?.className || (record ? classLabel(record) : "—");
-  const course = billet?.course || (record ? courseLabel(record) : "—");
+  const subject =
+    billet?.subject || (record ? subjectLabel(record) : "") || "—";
+  const teacherName = billet?.teacherName || null;
   const absenceDate = billet?.absenceDate ?? record?.date ?? null;
-  const absenceTime = billet?.absenceTime ?? record?.time ?? null;
+  const timeSlot = billet?.timeSlot ?? record?.time ?? null;
   const issuedAt = billet
     ? new Date(billet.createdAt).toLocaleString()
     : new Date().toLocaleString();
@@ -252,9 +279,10 @@ export default function AbsenceBilletModal({
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               <Field label="Student" value={studentName} wide />
               <Field label="Class / Branch" value={className} />
-              <Field label="Course / Subject" value={course} />
+              <Field label="Course / Subject" value={subject} />
+              <Field label="Teacher" value={teacherName || "—"} />
               <Field label="Date of absence" value={formatBilletDate(absenceDate)} />
-              <Field label="Time" value={absenceTime?.trim() || "—"} />
+              <Field label="Time" value={timeSlot?.trim() || "—"} />
             </div>
 
             <div className="flex items-center justify-between gap-3 rounded border border-dashed border-neutral-300 px-3 py-2">

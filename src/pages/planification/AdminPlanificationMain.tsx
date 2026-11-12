@@ -274,7 +274,11 @@ export default function AdminPlanificationMain() {
           key={training.id}
           branch={{
             id: training.id,
+            trainingId: training.id,
             name: training.name,
+            // The Planification tabs open a training, not a stored branch row;
+            // the badge level still comes from its program code.
+            level: tierCodeOf(programById.get(training.program_id)?.code),
             programId: training.program_id ?? "",
             programCode: programById.get(training.program_id)?.code ?? "",
           }}

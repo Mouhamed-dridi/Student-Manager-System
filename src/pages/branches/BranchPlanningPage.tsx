@@ -217,7 +217,9 @@ export default function BranchPlanningPage({
   const branchName = branchLabel || branch.name;
 
   const branchSessions = planning
-    .filter((entry) => sessionInTraining(entry, branch))
+    .filter((entry) =>
+      sessionInTraining(entry, { id: branch.trainingId, name: branch.name }),
+    )
     // The Planification tab decides which session kinds this grid draws, so
     // lessons, exam sittings and PFE defences never mix in one week.
     .filter((entry) => !sessionTypes || sessionTypes.includes(entry.sessionType))
@@ -295,7 +297,7 @@ export default function BranchPlanningPage({
         {
           label: branchLabel,
           programId: branch.programId || undefined,
-          trainingId: branch.id,
+          trainingId: branch.trainingId,
         },
       ]
     : [];
@@ -356,7 +358,7 @@ export default function BranchPlanningPage({
   pfeClassByLabel.set(branchName, {
     label: branchName,
     programId: branch.programId || undefined,
-    trainingId: branch.id,
+    trainingId: branch.trainingId,
   });
   for (const entry of branchSessions) {
     const label = entry.className?.trim();
@@ -730,7 +732,7 @@ export default function BranchPlanningPage({
         <AddExamSessionModal
           branchLabel={branchName}
           branchProgramId={branch.programId || undefined}
-          branchTrainingId={branch.id}
+          branchTrainingId={branch.trainingId}
           initialDate={examDialog.date}
           initialSlot={examDialog.slot}
           teachers={teachers}
@@ -743,7 +745,7 @@ export default function BranchPlanningPage({
         <AddPFESessionModal
           branchLabel={branchName}
           branchProgramId={branch.programId || undefined}
-          branchTrainingId={branch.id}
+          branchTrainingId={branch.trainingId}
           classes={pfeClassOptions}
           initialDate={pfeDialog.date}
           initialSlot={pfeDialog.slot}
@@ -824,7 +826,7 @@ export default function BranchPlanningPage({
                 qualifiedTeacherIds(subject, {
                   courses,
                   teachers,
-                  trainingId: branch.id,
+                  trainingId: branch.trainingId,
                 })
               }
               // The branch is the class: the modal cannot re-scope a session to

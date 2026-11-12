@@ -1,72 +1,81 @@
-// Operator "Branches" — the timetable entry point.
+// Operator "Branches" — the class file entry point.
 //
-// A branch is a training of a track ("BTS · Réseaux et sécurité
-// informatique"), which is exactly how the rest of the app already scopes a
-// class, so no new table is needed. The page lists every branch as a card with
-// its assigned teachers and how much planning it already has; opening one swaps
-// in the weekly timetable for that branch (BranchPlanningPage).
+// A branch is the class record of one training (`public.branches`): level
+// (CAP/BTP/BTS), display name and the training id the rest of the app already
+// scopes by, plus its own module list in `public.branch_materials` where each
+// material carries one teacher. The grid card opens the full-page class file
+// (BranchDetailPage) — materials, per-material teacher assignment and the
+// roster — and the timetable editor (BranchPlanningPage) is one button away.
 //
-// Sections are state, not routes (see AGENTS.md), so the timetable is a nested
-// view on the shared history stack rather than a /branches/:id URL.
+// Sections are state, not routes (see AGENTS.md), so both are nested views on
+// the shared history stack rather than /branches/:id URLs.
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, CalendarDays, UserRound } from "lucide-react";
+import { ArrowRight, BookOpen, UserRound, Users } from "lucide-react";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
+  listBranchMaterials,
+  listBranches,
   listPlanning,
-  listPrograms,
+  listStudents,
   listTeacherCourses,
   listTeachers,
-  listTrainings,
+  type BranchMaterialRecord,
+  type BranchRecord,
 } from "@/lib/api";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { subjectTone } from "@/lib/subjectColors";
 import type { TeacherCourseRecord } from "@/lib/trainings";
 import type { PlanningRecord } from "@/pages/teacher-portal/planning";
+import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
-import {
-  sessionInTraining,
-  teacherIdsForTraining,
-  tierCodeOf,
-} from "@/pages/planification/tracks";
+import BranchDetailPage from "./BranchDetailPage";
+import BranchLevelBadge from "./BranchLevelBadge";
 import BranchPlanningPage from "./BranchPlanningPage";
 
-export interface Branch {
-  id: string;
-  name: string;
-  programId: string;
-  programCode: string;
-}
+/** Kept as the name BranchPlanningPage imports; the shape lives in the API. */
+export type Branch = BranchRecord;
 
 interface BranchesData {
+  branches: BranchRecord[];
+  materials: BranchMaterialRecord[];
   planning: PlanningRecord[];
   teachers: Teacher[];
   courses: TeacherCourseRecord[];
-  branches: Branch[];
+  students: Student[];
 }
 
-function branchSessionsCount(
-  branch: Branch,
-  planning: PlanningRecord[],
-): number {
-  return planning.filter((entry) => sessionInTraining(entry, branch)).length;
+function teacherNamesOf(
+  branch: BranchRecord,
+  materials: BranchMaterialRecord[],
+  teacherById: Map<string, Teacher>,
+): string[] {
+  const names = new Set<string>();
+  for (const material of materials) {
+    if (material.branchId !== branch.id || !material.teacherId) continue;
+    const name = teacherById.get(material.teacherId)?.fullName;
+    if (name) names.add(name);
+  }
+  return [...names];
 }
 
 function BranchCard({
   branch,
   teacherNames,
-  sessionCount,
+  materialCount,
+  studentCount,
   onOpen,
 }: {
-  branch: Branch;
+  branch: BranchRecord;
   teacherNames: string[];
-  sessionCount: number;
+  materialCount: number;
+  studentCount: number;
   onOpen: () => void;
 }) {
-  const tier = tierCodeOf(branch.programCode);
-  // A branch's colour follows its track, so the overview reads as groups even
+  // The colour follows the track, so the grid reads as three groups even
   // before the admin opens a card.
-  const tone = subjectTone(tier || branch.programCode || branch.name);
+  const tone = subjectTone(branch.level || branch.programCode || branch.name);
 
   return (
     <button
@@ -76,10 +85,8 @@ function BranchCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <span className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
-            {branch.programCode || "Branch"}
-          </span>
-          <h3 className="mt-0.5 line-clamp-2 text-sm font-semibold">
+          <BranchLevelBadge level={branch.level} />
+          <h3 className="mt-1.5 line-clamp-2 text-sm font-semibold">
             {branch.name}
           </h3>
         </div>
@@ -98,12 +105,18 @@ function BranchCard({
       </div>
 
       <div className="mt-auto flex items-center justify-between gap-2 border-t pt-2 text-xs">
-        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-          <CalendarDays className="h-3.5 w-3.5" />
-          {sessionCount} {sessionCount === 1 ? "session" : "sessions"}
+        <span className="inline-flex items-center gap-3 text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <BookOpen className="h-3.5 w-3.5" />
+            {materialCount} {materialCount === 1 ? "material" : "materials"}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5" />
+            {studentCount} {studentCount === 1 ? "student" : "students"}
+          </span>
         </span>
         <span className="inline-flex items-center gap-1 font-medium">
-          Open timetable
+          Open class
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
@@ -114,34 +127,20 @@ function BranchCard({
 export default function BranchesPage() {
   const [data, setData] = useState<BranchesData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Branch | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [timetableOpen, setTimetableOpen] = useState(false);
 
   const load = useCallback(async (): Promise<BranchesData> => {
-    const [planning, teachers, courses, programs, trainings] =
+    const [branches, materials, planning, teachers, courses, students] =
       await Promise.all([
+        listBranches(),
+        listBranchMaterials(),
         listPlanning(),
         listTeachers(),
         listTeacherCourses(),
-        listPrograms(),
-        listTrainings(),
+        listStudents(),
       ]);
-    const programById = new Map(programs.map((program) => [program.id, program]));
-    const branches: Branch[] = trainings
-      .map((training) => {
-        const program = programById.get(training.program_id);
-        return {
-          id: training.id,
-          name: training.name,
-          programId: training.program_id ?? "",
-          programCode: program?.code ?? "",
-        };
-      })
-      .sort(
-        (a, b) =>
-          a.programCode.localeCompare(b.programCode) ||
-          a.name.localeCompare(b.name),
-      );
-    return { planning, teachers, courses, branches };
+    return { branches, materials, planning, teachers, courses, students };
   }, []);
 
   useEffect(() => {
@@ -169,6 +168,10 @@ export default function BranchesPage() {
     }
   }, [load]);
 
+  // Branches and their materials are not in the realtime publication, so a
+  // quiet refetch on focus keeps the grid in step with other tabs.
+  useRefetchOnFocus(reload);
+
   if (!data) {
     return (
       <div>
@@ -184,7 +187,10 @@ export default function BranchesPage() {
     );
   }
 
-  if (selected) {
+  const selected =
+    data.branches.find((branch) => branch.id === selectedId) ?? null;
+
+  if (selected && timetableOpen) {
     return (
       <BranchPlanningPage
         key={selected.id}
@@ -192,20 +198,55 @@ export default function BranchesPage() {
         planning={data.planning}
         teachers={data.teachers}
         courses={data.courses}
-        onBack={() => setSelected(null)}
+        onBack={() => setTimetableOpen(false)}
         onReload={reload}
       />
     );
   }
 
-  const teacherById = new Map(data.teachers.map((teacher) => [teacher.id, teacher]));
+  if (selected) {
+    return (
+      <BranchDetailPage
+        key={selected.id}
+        branch={selected}
+        materials={data.materials}
+        teachers={data.teachers}
+        enrolledStudents={data.students}
+        onBack={() => {
+          setSelectedId(null);
+          setTimetableOpen(false);
+        }}
+        onOpenTimetable={() => setTimetableOpen(true)}
+        onReload={reload}
+      />
+    );
+  }
+
+  const teacherById = new Map(
+    data.teachers.map((teacher) => [teacher.id, teacher]),
+  );
+  const materialCountByBranch = new Map<string, number>();
+  for (const material of data.materials) {
+    materialCountByBranch.set(
+      material.branchId,
+      (materialCountByBranch.get(material.branchId) ?? 0) + 1,
+    );
+  }
+  const studentCountByTraining = new Map<string, number>();
+  for (const student of data.students) {
+    if (!student.trainingId) continue;
+    studentCountByTraining.set(
+      student.trainingId,
+      (studentCountByTraining.get(student.trainingId) ?? 0) + 1,
+    );
+  }
 
   return (
     <div>
       <h2 className="text-2xl font-semibold">Branches</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Every branch in the center. Open one to build or edit its weekly
-        timetable.
+        Every class in the center. Open one to see its materials, the teacher of
+        each material, and its students.
       </p>
 
       {error && (
@@ -225,26 +266,30 @@ export default function BranchesPage() {
         <div className="mt-4 rounded-lg border border-dashed p-8 text-center">
           <p className="text-sm font-medium">No branches yet.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Branches come from the trainings table — add a program and its
-            trainings first, then their timetables appear here.
+            Branches live in the branches table. If this database predates it,
+            run supabase/branches-materials-migration.sql in the Supabase SQL
+            Editor, then reload.
           </p>
         </div>
       ) : (
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.branches.map((branch) => {
-            const teacherNames = teacherIdsForTraining(branch, data)
-              .map((id) => teacherById.get(id)?.fullName)
-              .filter((name): name is string => Boolean(name));
-            return (
-              <BranchCard
-                key={branch.id}
-                branch={branch}
-                teacherNames={teacherNames}
-                sessionCount={branchSessionsCount(branch, data.planning)}
-                onOpen={() => setSelected(branch)}
-              />
-            );
-          })}
+          {data.branches.map((branch) => (
+            <BranchCard
+              key={branch.id}
+              branch={branch}
+              teacherNames={teacherNamesOf(branch, data.materials, teacherById)}
+              materialCount={materialCountByBranch.get(branch.id) ?? 0}
+              studentCount={
+                branch.trainingId
+                  ? (studentCountByTraining.get(branch.trainingId) ?? 0)
+                  : 0
+              }
+              onOpen={() => {
+                setSelectedId(branch.id);
+                setTimetableOpen(false);
+              }}
+            />
+          ))}
         </div>
       )}
     </div>
