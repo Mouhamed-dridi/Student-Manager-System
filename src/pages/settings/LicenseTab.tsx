@@ -1,13 +1,5 @@
-import { useEffect, useState } from "react";
-import {
-  Check,
-  CheckCircle2,
-  Copy,
-  Mail,
-  Phone,
-  RefreshCw,
-  XCircle,
-} from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, KeyRound, Mail, Phone, ShieldCheck, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,17 +12,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { APP_NAME, APP_SHORT_NAME } from "@/lib/appInfo";
+import { APP_SHORT_NAME } from "@/lib/appInfo";
 import {
-  DEFAULT_LICENSE_TOKEN,
   LICENSE_TERM_MONTHS,
   SUPPORT_EMAIL,
   SUPPORT_PHONE,
   formatLicenseDate,
-  licenseDaysRemaining,
-  licenseExpiry,
-  licenseStatus,
-  licenseTermStart,
 } from "@/lib/license";
 
 interface SupportChannel {
@@ -56,6 +43,27 @@ const SUPPORT_CHANNELS: SupportChannel[] = [
   },
 ];
 
+/** Trims a key down to its ends so a full token is never shown on screen. */
+function maskLicenseKey(key: string): string {
+  const trimmed = key.trim();
+  if (!trimmed) return "—";
+  if (trimmed.length <= 8) return `${trimmed.slice(0, 2)}••••••`;
+  return `${trimmed.slice(0, 4)}••••••${trimmed.slice(-4)}`;
+}
+
+function StatusPill({ active, label }: { active: boolean; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+      {active ? (
+        <CheckCircle2 className="h-3.5 w-3.5" />
+      ) : (
+        <XCircle className="h-3.5 w-3.5" />
+      )}
+      {label}
+    </span>
+  );
+}
+
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
@@ -66,140 +74,156 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 interface LicenseTabProps {
-  activatedAt?: string;
-  /** The token currently activated; falls back to the default pool entry. */
-  token?: string;
-  saving: boolean;
-  renewing: boolean;
-  onSave: () => void;
-  /** Opens the license-token dialog owned by the settings page. */
-  onRenew: () => void;
+  plan: string;
+  status: string;
+  licenseKey: string;
+  /** ISO timestamp of `license_expires_at`. */
+  expiresAt: string;
+  /** True while a save/activation is in flight. */
+  activating: boolean;
+  /** Rejected-key message shown above the activation action. */
+  error: string | null;
+  /** Resolves true once the key was saved, so the input can clear itself. */
+  onActivate: (key: string) => Promise<boolean>;
 }
 
+/**
+ * Read-only view of the license columns on `center_settings` row id = 1, plus
+ * the one write this tab owns: activating a new key (which also restarts the
+ * term and is saved by the parent page).
+ */
 export function LicenseTab({
-  activatedAt,
-  token,
-  saving,
-  renewing,
-  onSave,
-  onRenew,
+  plan,
+  status,
+  licenseKey,
+  expiresAt,
+  activating,
+  error,
+  onActivate,
 }: LicenseTabProps) {
-  const activeToken = token ?? DEFAULT_LICENSE_TOKEN;
-  const isActive = licenseStatus(activatedAt) === "active";
-  const daysRemaining = licenseDaysRemaining(activatedAt);
-  const [copied, setCopied] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  // Captured once so the status computation below stays pure during render.
+  const [now] = useState(() => Date.now());
 
-  // The token is also shown as text, so a blocked clipboard (insecure origin or
-  // a denied permission) is not fatal — the operator can select it manually.
-  const handleCopyToken = async () => {
-    try {
-      await navigator.clipboard.writeText(activeToken);
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
+  const submitKey = async () => {
+    const key = newKey.trim();
+    if (!key || activating) return;
+    if (await onActivate(key)) setNewKey("");
   };
 
-  useEffect(() => {
-    if (!copied) return;
-    const timeout = window.setTimeout(() => setCopied(false), 2000);
-    return () => window.clearTimeout(timeout);
-  }, [copied]);
-
-  const remainingLabel = !isActive
-    ? "Renew to continue"
-    : daysRemaining === 1
-      ? "1 day remaining"
-      : `${daysRemaining} days remaining`;
+  const expiresDate = expiresAt ? new Date(expiresAt) : null;
+  const validExpiry =
+    expiresDate && !Number.isNaN(expiresDate.getTime()) ? expiresDate : null;
+  const storedStatus = status.trim().toLowerCase();
+  const effectiveStatus =
+    storedStatus ||
+    (validExpiry
+      ? validExpiry.getTime() > now
+        ? "active"
+        : "expired"
+      : "inactive");
+  const isActive = effectiveStatus === "active";
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>License</CardTitle>
-        <CardDescription>
-          Subscription status for this {APP_SHORT_NAME} deployment.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm text-muted-foreground">SaaS Status</p>
-            <span
-              className={
-                isActive
-                  ? "mt-1 inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-sm font-medium text-green-700 dark:text-green-400"
-                  : "mt-1 inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-destructive/10 px-2.5 py-1 text-sm font-medium text-destructive"
-              }
-            >
-              {isActive ? (
-                <CheckCircle2 className="h-4 w-4" />
-              ) : (
-                <XCircle className="h-4 w-4" />
-              )}
-              {isActive ? "Active" : "Expired"}
-            </span>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" />
+            License
+          </CardTitle>
+          <CardDescription>
+            Subscription status for this {APP_SHORT_NAME} deployment.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Plan
+                </p>
+                <p className="text-lg font-semibold">
+                  {plan.trim() || "Standard"}
+                </p>
+              </div>
+              <StatusPill
+                active={isActive}
+                label={
+                  isActive
+                    ? "Active"
+                    : effectiveStatus === "expired"
+                      ? "Expired"
+                      : "Inactive"
+                }
+              />
+            </div>
+
+            <Separator className="my-4" />
+
+            <div className="space-y-3">
+              <InfoRow
+                label="License key"
+                value={maskLicenseKey(licenseKey)}
+              />
+              <InfoRow
+                label="Expiration date"
+                value={
+                  validExpiry ? formatLicenseDate(validExpiry) : "Not activated"
+                }
+              />
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {APP_NAME} · {LICENSE_TERM_MONTHS}-month term
-          </p>
-        </div>
-
-        <Separator />
-
-        <div className="space-y-3">
-          <InfoRow
-            label="Term started"
-            value={formatLicenseDate(licenseTermStart(activatedAt))}
-          />
-          <InfoRow
-            label="Expiration date"
-            value={formatLicenseDate(licenseExpiry(activatedAt))}
-          />
-          <InfoRow label="Remaining" value={remainingLabel} />
-
-          <Separator />
 
           <div className="space-y-2">
-            <Label htmlFor="active-license-token">License Token</Label>
-            <div className="flex items-center gap-2">
+            <Label htmlFor="new-license-key">Activate a new key</Label>
+            <div className="flex flex-wrap items-center gap-2">
               <Input
-                id="active-license-token"
-                readOnly
-                value={activeToken}
-                className="font-mono"
-                onFocus={(e) => e.currentTarget.select()}
+                id="new-license-key"
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="Paste your license key here…"
+                className="min-w-0 flex-1 font-mono"
+                spellCheck={false}
+                autoComplete="off"
+                disabled={activating}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  void submitKey();
+                }}
               />
               <Button
                 type="button"
-                variant="outline"
-                onClick={handleCopyToken}
-                className="shrink-0"
+                disabled={activating || newKey.trim() === ""}
+                onClick={() => void submitKey()}
               >
-                {copied ? (
-                  <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-                {copied ? "Copied" : "Copy"}
+                <KeyRound className="h-4 w-4" />
+                {activating ? "Activating…" : "Activate"}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              The key currently activated on this deployment. Quote it when
-              contacting {APP_SHORT_NAME} support.
+              Activating restarts the {LICENSE_TERM_MONTHS}-month term from today
+              and updates the plan, status and expiration date on this center.
             </p>
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <Separator />
-
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium">Support Channels</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Reach the {APP_SHORT_NAME} team for billing, renewal or
-              installation questions.
-            </p>
-          </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Support Channels</CardTitle>
+          <CardDescription>
+            Reach the {APP_SHORT_NAME} team for billing, renewal or installation
+            questions.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
           <div className="grid gap-3 sm:grid-cols-2">
             {SUPPORT_CHANNELS.map((channel) => (
               <a
@@ -221,37 +245,8 @@ export function LicenseTab({
               </a>
             ))}
           </div>
-        </div>
-
-        <Separator />
-
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <p className="mr-auto text-xs text-muted-foreground">
-            Renewing restarts the {LICENSE_TERM_MONTHS}-month term from today.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            disabled={saving || renewing}
-            onClick={onSave}
-          >
-            {saving ? "Saving…" : "Save Settings"}
-          </Button>
-          <Button
-            type="button"
-            size="lg"
-            disabled={renewing}
-            onClick={onRenew}
-            className="bg-green-600 text-white hover:bg-green-700 focus-visible:ring-green-600/50 dark:hover:bg-green-500"
-          >
-            <RefreshCw
-              className={renewing ? "h-4 w-4 animate-spin" : "h-4 w-4"}
-            />
-            {renewing ? "Renewing…" : "Renew License"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

@@ -72,7 +72,7 @@ export default function TeacherList({
               <div className="flex items-center gap-2.5">
                 <UserAvatar
                   name={t.fullName}
-                  src={profiles.get(t.id)?.avatarUrl}
+                  src={profiles.get(t.id)?.avatarUrl ?? t.avatarUrl}
                   fallback="T"
                 />
                 <button

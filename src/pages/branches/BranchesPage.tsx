@@ -171,16 +171,17 @@ export default function BranchesPage() {
   }, [load]);
 
   // Strict specialty matching applies to stored rows too, not just the
-  // dropdowns: once per visit, clear an assignment whose teacher belongs to a
-  // different family and auto-assign a material that has exactly one
-  // specialist. Unrecognised material names are left alone (nothing to match).
+  // dropdowns: once per visit, clear an assignment whose teacher does not match
+  // the material name and auto-assign a material that has exactly one strict
+  // specialist. Materials nobody matches are left untouched (there is no
+  // specialty set to validate the stored assignment against).
   const realignedRef = useRef(false);
   useEffect(() => {
     if (!data || realignedRef.current || data.teachers.length === 0) return;
     const fixes: { id: string; teacherId: string | null }[] = [];
     for (const material of data.materials) {
       const match = matchingTeachersForMaterial(material.name, data.teachers);
-      if (match.unmatched) continue;
+      if (match.teachers.length === 0) continue;
       const valid = material.teacherId
         ? match.teachers.some((teacher) => teacher.id === material.teacherId)
         : false;

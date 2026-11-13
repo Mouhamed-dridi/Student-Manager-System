@@ -14,9 +14,10 @@ const INVALID_MESSAGE = "Incorrect name or password.";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  // Settings are fetched once at bootstrap in main.tsx and published here, so
-  // the logo costs no extra request and is already cached-first.
-  const { logoUrl } = useBranding();
+  // Settings are fetched once at bootstrap in main.tsx (center_settings row 1)
+  // and published here, so the branding costs no extra request and survives
+  // every Save through the reactive store.
+  const { systemName, universityName, logoUrl } = useBranding();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -87,7 +88,14 @@ export default function LoginPage() {
               className="mx-auto mb-4 h-16 w-auto max-w-[12rem] object-contain"
             />
           )}
-          <CardTitle className="text-2xl font-semibold">SSM Login</CardTitle>
+          <CardTitle className="text-2xl font-semibold">
+            {systemName} Login
+          </CardTitle>
+          {universityName && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {universityName}
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

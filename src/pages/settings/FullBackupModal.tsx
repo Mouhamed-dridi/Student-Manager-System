@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { errorMessage } from "@/lib/api";
+import { errorMessage, markCenterBackupDone } from "@/lib/api";
 import {
   BACKUP_SOURCES,
   FULL_BACKUP_FILE_NAME,
@@ -86,6 +86,8 @@ export default function FullBackupModal({ open, onClose }: FullBackupModalProps)
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+        // Stamp the backup on center_settings before reporting success.
+        await markCenterBackupDone();
         setPhase("done");
       } catch (err) {
         setError(errorMessage(err));

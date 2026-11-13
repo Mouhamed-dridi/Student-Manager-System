@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+  CalendarClock,
   CheckCircle2,
   DatabaseBackup,
   Download,
+  FileJson,
+  FileSpreadsheet,
   FileText,
   Loader2,
   ShieldAlert,
@@ -16,7 +19,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { errorMessage, type BackupTableName } from "@/lib/api";
+import {
+  CENTER_EXPORT_TABLES,
+  errorMessage,
+  getSettings,
+  markCenterBackupDone,
+  type BackupTableName,
+} from "@/lib/api";
 import { getRole } from "@/lib/session";
 import FullBackupModal from "./FullBackupModal";
 import RestoreDataModal from "./RestoreDataModal";
@@ -27,6 +36,7 @@ import {
   generateSqlDocument,
   sourceRowCount,
 } from "./backupFormat";
+import { runCenterExport, type CenterExportFormat } from "./centerExport";
 
 function downloadText(fileName: string, content: string): void {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -40,15 +50,51 @@ function downloadText(fileName: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function BackupExportPage() {
+interface BackupExportPageProps {
+  /** `last_backup_at` already loaded by the Settings page, when nested there. */
+  lastBackupAt?: string;
+  /** Lets the Settings page show the new stamp without a refetch. */
+  onBackupDone?: (at: string) => void;
+}
+
+export function BackupExportPage({
+  lastBackupAt,
+  onBackupDone,
+}: BackupExportPageProps = {}) {
   const [counts, setCounts] = useState<Partial<Record<string, number>>>({});
   const [loadingSource, setLoadingSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fullBackupOpen, setFullBackupOpen] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
+  const [exporting, setExporting] = useState<CenterExportFormat | null>(null);
+  const [fetchedBackupAt, setFetchedBackupAt] = useState("");
+  const [exportedBackupAt, setExportedBackupAt] = useState("");
 
   const isAdmin = getRole() === "operator";
+
+  // Nested in Settings the stamp arrives as a prop; standalone (sidebar
+  // section) it is read from the settings row once, and after an export the
+  // local stamp wins so the label updates without a refetch.
+  const lastBackup =
+    lastBackupAt !== undefined
+      ? lastBackupAt
+      : exportedBackupAt || fetchedBackupAt;
+
+  useEffect(() => {
+    if (!isAdmin || lastBackupAt !== undefined) return;
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (!cancelled) setFetchedBackupAt(settings.lastBackupAt ?? "");
+      })
+      .catch(() => {
+        // Optional schema / offline: the label stays "no backup recorded".
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, lastBackupAt]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -90,6 +136,35 @@ export function BackupExportPage() {
     );
   }
 
+  const handleCenterExport = async (format: CenterExportFormat) => {
+    setExporting(format);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const result = await runCenterExport(format);
+      setExportedBackupAt(result.at);
+      onBackupDone?.(result.at);
+      const skipped = result.skipped.length
+        ? ` Skipped: ${result.skipped.map((entry) => entry.table).join(", ")}.`
+        : "";
+      setSuccessMessage(
+        `Full database exported as ${format.toUpperCase()} (${result.rows} rows).${skipped}`,
+      );
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  /** Records the download on `center_settings.last_backup_at`. */
+  const stampBackup = async () => {
+    const at = new Date().toISOString();
+    setExportedBackupAt(at);
+    onBackupDone?.(at);
+    await markCenterBackupDone(at);
+  };
+
   const handleExportSql = async (sourceKey: string) => {
     const source = BACKUP_SOURCES.find((entry) => entry.key === sourceKey);
     if (!source) return;
@@ -103,6 +178,7 @@ export function BackupExportPage() {
         backupFileName(sourceKey, "sql"),
         generateSqlDocument(source.label, sections),
       );
+      await stampBackup();
       setSuccessMessage(`${source.label} exported as SQL (${rows} rows).`);
     } catch (err) {
       setError(errorMessage(err));
@@ -134,6 +210,7 @@ export function BackupExportPage() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      await stampBackup();
       setSuccessMessage(`${source.label} exported as Excel (${rows} rows).`);
     } catch (err) {
       setError(errorMessage(err));
@@ -176,6 +253,52 @@ export function BackupExportPage() {
           {successMessage}
         </div>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Full database</CardTitle>
+          <CardDescription>
+            Download the center's core tables (
+            {CENTER_EXPORT_TABLES.join(", ")}) as one JSON document or one
+            CSV file. The export also stamps <code>last_backup_at</code> on the
+            settings row.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => handleCenterExport("json")}
+              disabled={exporting !== null}
+            >
+              {exporting === "json" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileJson className="h-4 w-4" />
+              )}
+              Export Full Database (JSON)
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handleCenterExport("csv")}
+              disabled={exporting !== null}
+            >
+              {exporting === "csv" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4" />
+              )}
+              Export CSV
+            </Button>
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarClock className="h-3.5 w-3.5" />
+            {lastBackup
+              ? `Last backup: ${new Date(lastBackup).toLocaleString()}`
+              : "No backup recorded yet."}
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         {BACKUP_SOURCES.map((source) => (

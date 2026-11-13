@@ -691,6 +691,8 @@ interface TeacherRow {
   training: string | null;
   password: string | null;
   blocked: boolean | null;
+  /** Optional mirror of `user_profiles.avatar_url` (teacher-avatar migration). */
+  avatar_url?: string | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
 }
@@ -710,6 +712,7 @@ function teacherFromRow(row: TeacherRow): Teacher {
     education: row.education ?? undefined,
     password: row.password ?? undefined,
     blocked: row.blocked === true ? true : undefined,
+    avatarUrl: row.avatar_url ?? undefined,
   };
 }
 
@@ -3699,8 +3702,8 @@ export type EventType = (typeof EVENT_TYPES)[number];
 /** The Storage bucket that holds event cover images. */
 const EVENT_COVERS_BUCKET = "event-covers";
 
-/** The Storage bucket that holds the university logo. */
-const UNIVERSITY_LOGO_BUCKET = "university-logo";
+/** The Storage bucket that holds the center logo (id is case-sensitive). */
+const CENTER_LOGO_BUCKET = "Logo";
 
 /** A partner on an event: a readable label and the page it links to. */
 export interface EventPartner {
@@ -3999,13 +4002,15 @@ export async function setEventAttendance(
 }
 
 /**
- * Uploads the university logo to the 'university-logo' bucket and returns its
- * public URL, which the Settings page stores under the 'logo_url' key.
+ * Uploads the center logo to the 'Logo' bucket and returns its public URL, which
+ * the Settings page stores in `center_settings.logo_url`.
  *
  * Each upload gets a fresh UUID path and `upsert: false`, so replacing the logo
  * never overwrites the object the previous settings rows point at. Orphaned
  * objects are left in the bucket rather than deleted: there is no Supabase Auth
  * here, so a delete policy is not granted, and a stale logo file is harmless.
+ * Rows saved before the 'Logo' bucket keep working through the absolute URL
+ * they already store (the legacy 'university-logo' bucket stays readable).
  *
  * The blob must be a PNG - logos rely on transparency, which a JPEG re-encode
  * would flatten onto an opaque background.
@@ -4013,7 +4018,7 @@ export async function setEventAttendance(
 export async function uploadUniversityLogo(logo: Blob): Promise<string> {
   const filePath = `logo/${crypto.randomUUID()}.png`;
   return uploadToCourseBucket(
-    UNIVERSITY_LOGO_BUCKET,
+    CENTER_LOGO_BUCKET,
     filePath,
     logo,
     "image/png",
@@ -4467,18 +4472,24 @@ export interface AppSettings {
   logoUrl?: string;
   language?: string;
   darkMode?: boolean;
-  /**
-   * ISO timestamp of when the current license term started; the expiry shown in
-   * Settings > License is derived from it. Absent on a fresh install, which
-   * reads as "activated today" (see src/lib/license.ts).
-   */
-  licenseActivatedAt?: string;
-  /**
-   * The token currently activated on this deployment, shown in Settings >
-   * License. Absent until a renewal succeeds, where the default pool entry is
-   * displayed instead.
-   */
-  licenseToken?: string;
+  /** Academic year label, e.g. "2026-2027". */
+  academicYear?: string;
+  /** IANA zone, e.g. "Africa/Tunis". */
+  timezone?: string;
+  /** ISO 4217 currency code, e.g. "TND". */
+  currency?: string;
+  /** Idle timeout in minutes; 0 disables it. */
+  sessionTimeoutMinutes?: number;
+  /** The license key currently activated on this deployment. */
+  licenseKey?: string;
+  /** Plan label, e.g. "Standard". */
+  licensePlan?: string;
+  /** "active" | "expired" | "inactive", as stored on the row. */
+  licenseStatus?: string;
+  /** ISO timestamp the license expires at. */
+  licenseExpiresAt?: string;
+  /** ISO timestamp of the last full-database export. */
+  lastBackupAt?: string;
 }
 
 type SettingsStore = Record<string, unknown>;
@@ -4486,11 +4497,12 @@ type SettingsStore = Record<string, unknown>;
 const SETTINGS_LOCAL_KEY = "ssm-settings";
 
 /**
- * Settings are key/value rows in the `settings` table. When that table is
- * missing (or any read/write fails) the app degrades to a localStorage cache
- * instead of erroring, so the Settings page always renders. The cache is
- * written on every save, so dark mode can also be applied synchronously at
- * bootstrap (src/main.tsx) before Supabase responds.
+ * Settings live in the single-row `center_settings` table (id = 1). This cache
+ * mirrors the legacy key shape so it can be read synchronously at bootstrap
+ * (src/main.tsx) before Supabase responds, and so `theme.ts` / `i18n.ts` can
+ * keep reading `dark_mode` / `language` from it. On a database that has not run
+ * supabase/center-settings-migration.sql yet, reads fall back to the legacy
+ * key/value `settings` rows (also cached here).
  */
 function readLocalSettingsStore(): SettingsStore {
   try {
@@ -4527,15 +4539,135 @@ function settingsFromStore(store: SettingsStore): AppSettings {
     language:
       typeof store.language === "string" ? (store.language as string) : undefined,
     darkMode: typeof store.dark_mode === "boolean" ? store.dark_mode : undefined,
-    licenseActivatedAt:
-      typeof store.license_activated_at === "string"
-        ? (store.license_activated_at as string)
+    academicYear: textOrUndefined(store.academic_year),
+    timezone: textOrUndefined(store.timezone),
+    currency: textOrUndefined(store.currency),
+    sessionTimeoutMinutes:
+      typeof store.session_timeout_minutes === "number"
+        ? store.session_timeout_minutes
         : undefined,
-    licenseToken:
-      typeof store.license_token === "string"
-        ? (store.license_token as string)
-        : undefined,
+    licenseKey: textOrUndefined(store.license_key),
+    licensePlan: textOrUndefined(store.license_plan),
+    licenseStatus: textOrUndefined(store.license_status),
+    licenseExpiresAt: textOrUndefined(store.license_expires_at),
+    lastBackupAt: textOrUndefined(store.last_backup_at),
   };
+}
+
+/** Non-blank string or undefined, so blank columns read as "not set". */
+function textOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
+}
+
+/**
+ * The single `center_settings` row as PostgREST returns it. Every business
+ * column is nullable, so a fresh row still maps cleanly onto AppSettings.
+ */
+interface CenterSettingsRow {
+  id: number;
+  system_name: string | null;
+  university_name: string | null;
+  logo_url: string | null;
+  language: string | null;
+  dark_mode: boolean | null;
+  academic_year: string | null;
+  timezone: string | null;
+  currency: string | null;
+  session_timeout_minutes: number | null;
+  license_key: string | null;
+  license_plan: string | null;
+  license_status: string | null;
+  license_expires_at: string | null;
+  last_backup_at: string | null;
+  updated_at?: string;
+}
+
+/** The row id every read and write targets; the table CHECK pins it to 1. */
+const CENTER_SETTINGS_ID = 1;
+const CENTER_SETTINGS_MIGRATION = "supabase/center-settings-migration.sql";
+
+function settingsFromCenterRow(row: Partial<CenterSettingsRow>): AppSettings {
+  return {
+    systemName: textOrUndefined(row.system_name),
+    universityName: textOrUndefined(row.university_name),
+    logoUrl: textOrUndefined(row.logo_url),
+    language: textOrUndefined(row.language),
+    darkMode: typeof row.dark_mode === "boolean" ? row.dark_mode : undefined,
+    academicYear: textOrUndefined(row.academic_year),
+    timezone: textOrUndefined(row.timezone),
+    currency: textOrUndefined(row.currency),
+    sessionTimeoutMinutes:
+      typeof row.session_timeout_minutes === "number"
+        ? row.session_timeout_minutes
+        : undefined,
+    licenseKey: textOrUndefined(row.license_key),
+    licensePlan: textOrUndefined(row.license_plan),
+    licenseStatus: textOrUndefined(row.license_status),
+    licenseExpiresAt: textOrUndefined(row.license_expires_at),
+    lastBackupAt: textOrUndefined(row.last_backup_at),
+  };
+}
+
+/** AppSettings -> the localStorage cache shape (legacy snake_case keys). */
+function settingsToStore(settings: AppSettings): SettingsStore {
+  return {
+    system_name: settings.systemName ?? null,
+    university_name: settings.universityName ?? null,
+    logo_url: settings.logoUrl ?? null,
+    language: settings.language ?? null,
+    dark_mode: settings.darkMode ?? null,
+    academic_year: settings.academicYear ?? null,
+    timezone: settings.timezone ?? null,
+    currency: settings.currency ?? null,
+    session_timeout_minutes: settings.sessionTimeoutMinutes ?? null,
+    license_key: settings.licenseKey ?? null,
+    license_plan: settings.licensePlan ?? null,
+    license_status: settings.licenseStatus ?? null,
+    license_expires_at: settings.licenseExpiresAt ?? null,
+    last_backup_at: settings.lastBackupAt ?? null,
+  };
+}
+
+/** AppSettings -> the writable `center_settings` row (id = 1). */
+function centerRowFromSettings(settings: AppSettings): Record<string, unknown> {
+  return {
+    id: CENTER_SETTINGS_ID,
+    system_name: settings.systemName?.trim() || null,
+    university_name: settings.universityName?.trim() || null,
+    logo_url: settings.logoUrl ?? null,
+    language: settings.language === "fr" ? "fr" : "en",
+    dark_mode: settings.darkMode === true,
+    academic_year: settings.academicYear?.trim() || null,
+    timezone: settings.timezone?.trim() || null,
+    currency: settings.currency?.trim() || null,
+    session_timeout_minutes:
+      typeof settings.sessionTimeoutMinutes === "number" &&
+      Number.isFinite(settings.sessionTimeoutMinutes)
+        ? Math.max(0, Math.round(settings.sessionTimeoutMinutes))
+        : null,
+    license_key: settings.licenseKey?.trim() || null,
+    license_plan: settings.licensePlan?.trim() || null,
+    license_status: settings.licenseStatus?.trim() || null,
+    license_expires_at: settings.licenseExpiresAt ?? null,
+    last_backup_at: settings.lastBackupAt ?? null,
+  };
+}
+
+/**
+ * `center_settings` is optional schema: PostgREST answers a missing table (or a
+ * dropped column) with a schema-cache error, which is turned into an actionable
+ * "run the migration" message. Postgres validation errors pass through as-is.
+ */
+function centerSettingsError(error: {
+  message: string;
+  code?: string;
+}): Error {
+  const missing = /does not exist|schema cache|PGRST20[45]|42P01|42703/i.test(
+    `${error.code ?? ""} ${error.message}`,
+  );
+  return new Error(
+    missing ? `${error.message} Run ${CENTER_SETTINGS_MIGRATION}.` : error.message,
+  );
 }
 
 /** Synchronous localStorage-only lookup; used at bootstrap by main.tsx. */
@@ -4559,47 +4691,71 @@ async function loadSettingsStore(): Promise<SettingsStore> {
   return store;
 }
 
-/** Reads settings, falling back to the localStorage cache when the table is missing. */
+/**
+ * Reads the app-wide settings row (id = 1). The row is the single source of
+ * truth for branding, language, theme, deployment parameters and the license;
+ * `src/main.tsx` calls this before the first render so the login card already
+ * shows the saved name and logo. Databases without the table degrade to the
+ * legacy key/value rows, then to the localStorage cache.
+ */
 export async function getSettings(): Promise<AppSettings> {
+  const { data, error } = await withTimeout(
+    supabase
+      .from("center_settings")
+      .select("*")
+      .eq("id", CENTER_SETTINGS_ID)
+      .maybeSingle(),
+  );
+  if (!error && data) {
+    const settings = settingsFromCenterRow(data as CenterSettingsRow);
+    // Mirror into the boot cache so the next paint is instant and offline-safe.
+    writeLocalSettingsStore(settingsToStore(settings));
+    return settings;
+  }
+  // Row 1 is missing but the table exists: the cache is the best answer left.
+  if (!error) return getCachedSettings();
   return settingsFromStore(await loadSettingsStore());
 }
 
-/** Persists settings; the localStorage cache is always kept, DB failures fall back to it. */
+/**
+ * Persists every setting as one `upsert` on `center_settings` row id = 1 and
+ * stamps `updated_at`. The localStorage cache is written first so branding and
+ * dark mode survive a reload even when the DB write is rejected (the caller then
+ * gets an actionable error naming the migration file).
+ */
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  const store: SettingsStore = {
-    system_name: settings.systemName ?? null,
-    university_name: settings.universityName ?? null,
-    logo_url: settings.logoUrl ?? null,
-    language: settings.language ?? null,
-    dark_mode: settings.darkMode ?? null,
-    license_activated_at: settings.licenseActivatedAt ?? null,
-    license_token: settings.licenseToken ?? null,
-  };
-  writeLocalSettingsStore(store);
-  const now = new Date().toISOString();
-  const rows = [
-    { key: "system_name", value: store.system_name, updated_at: now },
-    { key: "university_name", value: store.university_name, updated_at: now },
-    { key: "logo_url", value: store.logo_url, updated_at: now },
-    { key: "language", value: store.language, updated_at: now },
-    { key: "dark_mode", value: store.dark_mode, updated_at: now },
-    {
-      key: "license_activated_at",
-      value: store.license_activated_at,
-      updated_at: now,
-    },
-    { key: "license_token", value: store.license_token, updated_at: now },
-  ];
+  writeLocalSettingsStore(settingsToStore(settings));
+  const { error } = await withTimeout(
+    supabase.from("center_settings").upsert(
+      {
+        ...centerRowFromSettings(settings),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    ),
+  );
+  if (error) throw centerSettingsError(error);
+}
+
+/**
+ * Stamps `last_backup_at` after a Backup & Export download. Best effort: a
+ * failed stamp must never block the file the operator asked for, so the error is
+ * swallowed and only the localStorage cache is updated.
+ */
+export async function markCenterBackupDone(
+  at: string = new Date().toISOString(),
+): Promise<void> {
+  writeLocalSettingsStore({ ...readLocalSettingsStore(), last_backup_at: at });
   try {
     const { error } = await withTimeout(
       supabase
-        .from("settings")
-        .upsert(rows as Record<string, unknown>[], { onConflict: "key" }),
+        .from("center_settings")
+        .update({ last_backup_at: at, updated_at: at })
+        .eq("id", CENTER_SETTINGS_ID),
     );
-    if (error) throw new Error(error.message);
+    if (error) return;
   } catch {
-    // Table missing — the localStorage cache already holds the values, so
-    // the Settings page still works without a database round trip.
+    // Optional schema / offline: the download itself already succeeded.
   }
 }
 
@@ -5273,6 +5429,35 @@ export async function deleteProfilePicture(publicUrl?: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+let teacherAvatarColumnPromise: Promise<boolean> | null = null;
+
+/** Probed once: `teachers.avatar_url` is newer than most live databases. */
+function hasTeacherAvatarColumn(): Promise<boolean> {
+  if (!teacherAvatarColumnPromise) {
+    teacherAvatarColumnPromise = hasColumn("teachers", "avatar_url");
+  }
+  return teacherAvatarColumnPromise;
+}
+
+/**
+ * Mirrors a teacher's photo URL onto `teachers.avatar_url`. The source of truth
+ * stays `user_profiles.avatar_url` (that is what the portal headers render);
+ * this copy exists so anything that only read the teachers row still sees the
+ * photo. Databases that have not run supabase/teacher-avatar-migration.sql skip
+ * the write silently (returns false) instead of failing the upload.
+ */
+export async function updateTeacherAvatar(
+  teacherId: string,
+  avatarUrl: string | null,
+): Promise<boolean> {
+  if (!(await hasTeacherAvatarColumn())) return false;
+  const { error } = await withTimeout(
+    supabase.from("teachers").update({ avatar_url: avatarUrl }).eq("id", teacherId),
+  );
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 // ------------------------------------------------------------------ backup
 
 export type BackupTableName =
@@ -5283,7 +5468,10 @@ export type BackupTableName =
   | "publications"
   | "attendance"
   | "settings"
-  | "planning";
+  | "planning"
+  | "branches"
+  | "branch_materials"
+  | "absence_billets";
 
 /**
  * Raw rows for the admin Backup & Export page. Deliberately unfiltered: a
@@ -5296,6 +5484,45 @@ export async function listBackupRows(
   const { data, error } = await withTimeout(supabase.from(table).select("*"));
   if (error) throw new Error(error.message);
   return (data ?? []) as Record<string, unknown>[];
+}
+
+/** Tables the operator's full-database JSON / CSV export downloads. */
+export const CENTER_EXPORT_TABLES: BackupTableName[] = [
+  "students",
+  "teachers",
+  "branches",
+  "branch_materials",
+  "absence_billets",
+];
+
+export interface CenterExportSnapshot {
+  generatedAt: string;
+  tables: { table: BackupTableName; rows: Record<string, unknown>[] }[];
+  /** Tables this database does not have yet (optional migrations). */
+  skipped: { table: BackupTableName; message: string }[];
+}
+
+/**
+ * Fetches every table of the full-database export in one pass. A table that does
+ * not exist yet (branches / branch_materials / absence_billets are optional
+ * migrations) is reported in `skipped` instead of failing the whole backup.
+ */
+export async function fetchCenterExportSnapshot(): Promise<CenterExportSnapshot> {
+  const results = await Promise.allSettled(
+    CENTER_EXPORT_TABLES.map((table) => listBackupRows(table)),
+  );
+  const tables: CenterExportSnapshot["tables"] = [];
+  const skipped: CenterExportSnapshot["skipped"] = [];
+  results.forEach((result, index) => {
+    const table = CENTER_EXPORT_TABLES[index];
+    if (result.status === "fulfilled") {
+      tables.push({ table, rows: result.value });
+    } else {
+      const reason = result.reason as unknown;
+      skipped.push({ table, message: errorMessage(reason) });
+    }
+  });
+  return { generatedAt: new Date().toISOString(), tables, skipped };
 }
 
 /** Exact row count for a backup card, read without transferring any rows. */

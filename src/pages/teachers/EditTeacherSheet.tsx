@@ -11,8 +11,9 @@
 // - there is no status/lifecycle column, only `blocked`, which is what stops a
 //   teacher from signing in, so status reads Active/Blocked.
 
-import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ImagePlus, Loader2, Trash2 } from "lucide-react";
+import UserAvatar from "@/components/UserAvatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,13 +33,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  deleteProfilePicture,
   errorMessage,
   getUserProfile,
   listPrograms,
   listTrainings,
+  updateTeacherAvatar,
   updateTeacherProfile,
+  uploadProfilePicture,
 } from "@/lib/api";
-import { saveUserProfile } from "@/lib/userProfile";
+import { saveUserProfile, useUserProfile } from "@/lib/userProfile";
 import type { Teacher } from "./TeacherForm";
 
 interface EditTeacherSheetProps {
@@ -107,7 +111,15 @@ function EditTeacherForm({
   const [linkedin, setLinkedin] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
   const [github, setGithub] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+
+  // The photo itself is stored in `user_profiles` (read reactively, so the
+  // sheet preview and the profile header update together) and mirrored onto
+  // `teachers.avatar_url` for readers that only have the teacher row.
+  const userProfile = useUserProfile("teacher", teacher.id);
+  const avatar = userProfile?.avatarUrl ?? teacher.avatarUrl;
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const [programOptions, setProgramOptions] = useState<ProgramOption[]>([]);
   const [allTrainings, setAllTrainings] = useState<TrainingOption[]>([]);
@@ -132,7 +144,6 @@ function EditTeacherForm({
         setLinkedin(profile?.linkedinUrl ?? "");
         setWhatsapp(profile?.whatsappNumber ?? "");
         setGithub(profile?.githubUrl ?? "");
-        setAvatarUrl(profile?.avatarUrl);
       })
       .catch((err: unknown) => {
         // The links and options are optional extras: a failure here must not
@@ -167,6 +178,73 @@ function EditTeacherForm({
   const handleProgramChange = (value: string | null) => {
     setProgram(value);
     setTraining("");
+  };
+
+  /**
+   * The row as it must be written: the upsert replaces every column, so the
+   * current name and social links are carried over instead of being cleared.
+   */
+  const profileRow = (base: Awaited<ReturnType<typeof getUserProfile>>) => {
+    const [draftFirst, ...draftRest] = (fullName.trim() || teacher.fullName).split(
+      " ",
+    );
+    return {
+      userId: teacher.id,
+      role: "teacher" as const,
+      firstName: base?.firstName || draftFirst,
+      lastName: base?.lastName || draftRest.join(" "),
+      linkedinUrl: linkedin.trim() || undefined,
+      whatsappNumber: whatsapp.trim() || undefined,
+      githubUrl: github.trim() || undefined,
+    };
+  };
+
+  const handleAvatarFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+    // Clear immediately so picking the same file again still fires change.
+    event.target.value = "";
+    if (!file) return;
+    setAvatarError(null);
+    setAvatarBusy(true);
+    let uploaded: string | undefined;
+    try {
+      // Storage first: the row only ever points at an object that exists.
+      uploaded = await uploadProfilePicture(teacher.id, file);
+      const base = userProfile ?? (await getUserProfile(teacher.id, "teacher"));
+      const previous = base?.avatarUrl;
+      await saveUserProfile({ ...profileRow(base), avatarUrl: uploaded });
+      // Row mirror; databases without the migration simply skip it.
+      void updateTeacherAvatar(teacher.id, uploaded).catch(() => {});
+      // The replaced object is no longer referenced — drop it, but never let
+      // that failure surface (the new photo is already live).
+      if (previous && previous !== uploaded) {
+        void deleteProfilePicture(previous).catch(() => {});
+      }
+    } catch (err) {
+      // Do not leave an unreferenced object behind when the row write fails.
+      if (uploaded) void deleteProfilePicture(uploaded).catch(() => {});
+      setAvatarError(errorMessage(err));
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarError(null);
+    setAvatarBusy(true);
+    try {
+      const base = userProfile ?? (await getUserProfile(teacher.id, "teacher"));
+      const previous = base?.avatarUrl ?? teacher.avatarUrl;
+      await saveUserProfile({ ...profileRow(base), avatarUrl: undefined });
+      void updateTeacherAvatar(teacher.id, null).catch(() => {});
+      if (previous) void deleteProfilePicture(previous).catch(() => {});
+    } catch (err) {
+      setAvatarError(errorMessage(err));
+    } finally {
+      setAvatarBusy(false);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -211,13 +289,17 @@ function EditTeacherForm({
         role: "teacher",
         firstName,
         lastName: rest.join(" "),
-        avatarUrl,
+        avatarUrl: userProfile?.avatarUrl ?? teacher.avatarUrl,
         linkedinUrl: linkedin.trim() || undefined,
         whatsappNumber: whatsapp.trim() || undefined,
         githubUrl: github.trim() || undefined,
       });
 
-      onSaved({ ...teacher, ...profile });
+      onSaved({
+        ...teacher,
+        ...profile,
+        avatarUrl: userProfile?.avatarUrl ?? teacher.avatarUrl,
+      });
       onClose();
     } catch (err) {
       setError(errorMessage(err));
@@ -241,6 +323,61 @@ function EditTeacherForm({
             Could not load programs, trainings and social links: {optionsError}
           </p>
         )}
+
+        <div className="flex items-start gap-4 rounded-lg border bg-muted/30 p-4">
+          <UserAvatar
+            name={fullName.trim() || teacher.fullName}
+            src={avatar}
+            fallback="T"
+            className="h-20 w-20 border-2 text-xl"
+          />
+
+          <div className="min-w-0 flex-1 space-y-2">
+            <p className="text-sm font-medium">Profile photo</p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleAvatarFile}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={avatarBusy}
+              >
+                <ImagePlus className="mr-2 h-4 w-4" />
+                {avatarBusy
+                  ? "Uploading…"
+                  : avatar
+                    ? "Replace photo"
+                    : "Upload photo"}
+              </Button>
+              {avatar && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRemoveAvatar}
+                  disabled={avatarBusy}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Remove
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saves to the profilePictuer bucket right away, so the profile
+              header, this sheet and the teachers list update immediately.
+            </p>
+            {avatarError && (
+              <p className="text-xs text-destructive">{avatarError}</p>
+            )}
+          </div>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">

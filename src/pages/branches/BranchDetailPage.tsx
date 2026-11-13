@@ -70,7 +70,7 @@ import { useUserProfiles } from "@/lib/userProfile";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import BranchLevelBadge from "./BranchLevelBadge";
-import { MATERIAL_CATEGORY_LABELS, matchingTeachersForMaterial } from "./materialSpecialty";
+import { matchingTeachersForMaterial } from "./materialSpecialty";
 
 /** Select sentinel: a material nobody has been assigned to yet. */
 const UNASSIGNED = "__unassigned";
@@ -138,7 +138,7 @@ function LockedTeacherBadge({
   );
 }
 
-/** Shown when a recognised material has no teacher in its specialty family. */
+/** Shown when no teacher's specialty names this material's discipline. */
 function NoSpecialistBadge() {
   return (
     <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-dashed border-zinc-300 px-2 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
@@ -400,9 +400,9 @@ export default function BranchDetailPage({
               </thead>
               <tbody>
                 {branchMaterials.map((material) => {
-                  // Strict specialty filter: only this material family's
-                  // teachers are allowed, so the dropdown never offers an
-                  // unrelated specialty.
+                  // Strict specialty filter: only teachers whose specialty
+                  // names this exact discipline are allowed, so the dropdown
+                  // never offers an unrelated specialty.
                   const match = matchingTeachersForMaterial(
                     material.name,
                     teachers,
@@ -417,9 +417,7 @@ export default function BranchDetailPage({
                       ? teacherById.get(material.teacherId)
                       : undefined;
                   const lockedTeacher =
-                    match.category && match.teachers.length === 1
-                      ? match.teachers[0]
-                      : undefined;
+                    match.teachers.length === 1 ? match.teachers[0] : undefined;
                   const selectedTeacher = assignedTeacher ?? lockedTeacher;
                   const profile = selectedTeacher
                     ? teacherProfiles.get(selectedTeacher.id)
@@ -432,11 +430,6 @@ export default function BranchDetailPage({
                     >
                       <td className="py-3 pr-3 font-medium text-zinc-900 dark:text-white">
                         {material.name}
-                        {match.category ? (
-                          <span className="mt-1 block text-[10px] font-normal tracking-wide text-zinc-500 uppercase">
-                            {MATERIAL_CATEGORY_LABELS[match.category]}
-                          </span>
-                        ) : null}
                       </td>
                       <td className="max-w-md py-3 pr-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                         {material.description || "—"}
@@ -451,9 +444,9 @@ export default function BranchDetailPage({
                           <>
                             <NoSpecialistBadge />
                             <p className="mt-1 text-[10px] text-zinc-500">
-                              {match.category
-                                ? `No ${scopeLabel} teacher in the roster.`
-                                : "No teachers in the roster yet."}
+                              {teachers.length === 0
+                                ? "No teachers in the roster yet."
+                                : `No teacher's specialty matches “${scopeLabel}”.`}
                             </p>
                           </>
                         ) : (
@@ -493,7 +486,7 @@ export default function BranchDetailPage({
                             </SelectContent>
                           </Select>
                         )}
-                        {!lockedTeacher && match.category && match.teachers.length > 1 ? (
+                        {!lockedTeacher && match.teachers.length > 1 ? (
                           <p className="mt-1 text-[10px] text-zinc-500">
                             {match.teachers.length} {scopeLabel} specialists
                             available.
@@ -627,8 +620,9 @@ export default function BranchDetailPage({
           <DialogHeader>
             <DialogTitle>Add material</DialogTitle>
             <DialogDescription>
-              {branch.name} · the teacher list follows the material's specialty
-              family, and a single specialist is locked in automatically.
+              {branch.name} · the teacher list only offers teachers whose
+              specialty matches the material name, and a single specialist is
+              locked in automatically.
             </DialogDescription>
           </DialogHeader>
 
@@ -655,33 +649,11 @@ export default function BranchDetailPage({
             </div>
             <div className="space-y-1.5">
               <Label>Assigned teacher</Label>
-              {draftMatch.category === null ? (
-                <>
-                  <Select
-                    value={draftValue}
-                    onValueChange={(value) =>
-                      setDraftTeacherId(value ?? UNASSIGNED)
-                    }
-                    items={selectItemsFor(teachers)}
-                    itemToStringLabel={(value) => teacherLabel(value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Unassigned" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                      {teachers.map((teacher) => (
-                        <SelectItem key={teacher.id} value={teacher.id}>
-                          {teacher.fullName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Type a material name to match a specialty family (languages,
-                    IT, management).
-                  </p>
-                </>
+              {draftMatch.scopeLabel === "" ? (
+                <p className="text-xs text-muted-foreground">
+                  Type the material name to see the teachers whose specialty
+                  matches it.
+                </p>
               ) : draftMatch.teachers.length === 1 ? (
                 <>
                   <LockedTeacherBadge
@@ -699,9 +671,8 @@ export default function BranchDetailPage({
                 <>
                   <NoSpecialistBadge />
                   <p className="text-xs text-muted-foreground">
-                    No teacher lists{" "}
-                    {draftMatch.scopeLabel} yet. The material will be saved
-                    unassigned.
+                    No teacher's specialty matches “{draftMatch.scopeLabel}”
+                    yet. The material will be saved unassigned.
                   </p>
                 </>
               ) : (

@@ -26,6 +26,8 @@ export interface Teacher {
   education?: string;
   password?: string;
   blocked?: boolean;
+  /** Photo URL; `user_profiles.avatar_url` wins, this is the teachers-row mirror. */
+  avatarUrl?: string;
 }
 
 interface TeacherFormProps {

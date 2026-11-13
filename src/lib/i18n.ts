@@ -157,7 +157,6 @@ const FRENCH: Record<string, string> = {
   "No materials yet.": "Aucune matière pour le moment.",
   "Add the first module to this branch and assign its teacher.":
     "Ajoutez le premier module à cette filière et assignez son enseignant.",
-  "Assigned teacher": "Enseignant assigné",
   Unassigned: "Non assigné",
   "No specialist": "Aucun spécialiste",
   "Add material": "Ajouter une matière",
@@ -237,6 +236,38 @@ const FRENCH: Record<string, string> = {
   "Notification Type": "Type de notification",
   Recipients: "Destinataires",
   "Publish Announcement": "Publier l'annonce",
+  "Create a publication to send to teachers and/or students. Messages are recorded but not actually delivered.":
+    "Créez une publication destinée aux enseignants et/ou aux étudiants. Les messages sont enregistrés mais ne sont pas réellement envoyés.",
+  "Publish an update to the people who need it.":
+    "Publiez une actualité pour les personnes concernées.",
+  "Enter announcement title": "Saisissez le titre de l'annonce",
+  "Enter your message": "Saisissez votre message",
+  "Please fill in the title and message.":
+    "Veuillez renseigner le titre et le message.",
+  "Select at least one recipient.": "Sélectionnez au moins un destinataire.",
+  "Announcement published to {recipients}.":
+    "Annonce publiée pour {recipients}.",
+  "Publishing…": "Publication…",
+  Urgent: "Urgent",
+  Warning: "Avertissement",
+  "Info / News": "Info / Actualités",
+  All: "Tous",
+  "Published announcements": "Annonces publiées",
+  "Loading announcements…": "Chargement des annonces…",
+  "{count} announcements": "{count} annonces",
+  "Search announcements…": "Rechercher une annonce…",
+  "All types": "Tous les types",
+  "No announcements yet": "Aucune annonce pour le moment",
+  "No announcements match your search.":
+    "Aucune annonce ne correspond à votre recherche.",
+  "Announcements you publish will appear here.":
+    "Les annonces que vous publiez apparaîtront ici.",
+  "Try a different search or filter.":
+    "Essayez une autre recherche ou un autre filtre.",
+  "Delete publication": "Supprimer l'annonce",
+  "Delete publication?": "Supprimer l'annonce ?",
+  '"{title}" will be moved to the Trash. You can restore it later or permanently delete from there.':
+    '"{title}" sera déplacé vers la corbeille. Vous pourrez le restaurer plus tard ou le supprimer définitivement depuis celle-ci.',
 
   // ---------------------------------------------------------------- dashboard
   "Revenue by Plan": "Revenus par forfait",
@@ -264,8 +295,25 @@ const FRENCH: Record<string, string> = {
   "Settings saved.": "Paramètres enregistrés.",
   "Logo uploaded. Press Save to store it.":
     "Logo téléversé. Appuyez sur Enregistrer pour le stocker.",
-  "PNG or JPEG; downscaled to {width}px wide and uploaded to the university-logo bucket. Only the public URL is stored in settings, then shown on the login card.":
-    "PNG ou JPEG ; redimensionné à {width} px de large et téléversé dans le bucket university-logo. Seule l'URL publique est enregistrée dans les paramètres, puis affichée sur la page de connexion.",
+  "PNG or JPEG; downscaled to {width}px wide and uploaded to the Logo bucket. Only the public URL is stored, then shown on the login card.":
+    "PNG ou JPEG ; redimensionné à {width} px de large et téléversé dans le bucket Logo. Seule l'URL publique est enregistrée, puis affichée sur la page de connexion.",
+  "Academic year": "Année académique",
+  Timezone: "Fuseau horaire",
+  "IANA zone name used for timetables and dates.":
+    "Nom de zone IANA utilisé pour les emplois du temps et les dates.",
+  Currency: "Devise",
+  "Session timeout (minutes)": "Délai de session (minutes)",
+  "Idle minutes before the session expires; 0 disables it.":
+    "Minutes d'inactivité avant expiration de la session ; 0 le désactive.",
+  "Version & build": "Version et compilation",
+  Build: "Compilation",
+  "Compiled client details for this deployment.":
+    "Détails du client compilé pour ce déploiement.",
+  "Center information": "Informations du centre",
+  "Values saved on this center's settings row.":
+    "Valeurs enregistrées sur la ligne de paramètres de ce centre.",
+  "Last backup": "Dernière sauvegarde",
+  "License activated.": "Licence activée.",
   "Personal display preferences for this account.":
     "Préférences d'affichage personnelles pour ce compte.",
   Language: "Langue",

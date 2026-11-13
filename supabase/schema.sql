@@ -69,7 +69,8 @@ alter table if exists public.teachers
   add column if not exists location text,
   add column if not exists education text,
   add column if not exists program text,
-  add column if not exists training text;
+  add column if not exists training text,
+  add column if not exists avatar_url text;
 
 -- -------------------------------------------------------------- payments ---
 -- One row per recorded payment. Student details are not snapshotted here;
@@ -123,13 +124,41 @@ alter table if exists public.publications
   add column if not exists deleted_at timestamptz;
 
 -- ---------------------------------------------------------------- settings -
--- Operator-level SaaS settings as a simple key/value store.
+-- Legacy operator settings: a key/value store kept read-only for databases
+-- upgraded from an older build (it seeds center_settings on migration).
+-- New writes all go to the single-row center_settings table below.
 
 create table if not exists public.settings (
   key text primary key,
   value jsonb,
   updated_at timestamptz not null default now()
 );
+
+-- Single-row app configuration (id = 1): branding, language/theme, deployment
+-- parameters, license and the last-backup stamp. Read at boot by main.tsx and
+-- upserted as one row by Settings > Save. Mirrored for existing databases by
+-- supabase/center-settings-migration.sql.
+
+create table if not exists public.center_settings (
+  id integer primary key default 1 check (id = 1),
+  system_name text,
+  university_name text,
+  logo_url text,
+  language text default 'en' check (language in ('en', 'fr')),
+  dark_mode boolean not null default false,
+  academic_year text,
+  timezone text default 'Africa/Tunis',
+  currency text default 'TND',
+  session_timeout_minutes integer default 60,
+  license_key text,
+  license_plan text,
+  license_status text default 'inactive',
+  license_expires_at timestamptz,
+  last_backup_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.center_settings (id) values (1) on conflict (id) do nothing;
 
 -- ------------------------------------------------------------- attendance --
 -- Unified attendance log: one row per recorded presence. Each row is fully
@@ -512,9 +541,11 @@ alter table public.events
 --   cours-PDF    -> PDF course materials
 --   cours-videos -> video course materials
 --   event-covers -> event / publication cover images (admin Events page)
---   university-logo -> the university logo uploaded in Settings > General and
---                       rendered on the login card; only the public URL is
---                       stored in the settings table (key 'logo_url').
+--   university-logo -> legacy university logo bucket; older absolute URLs keep
+--                       working.
+--   Logo             -> the center logo uploaded in Settings > General (bucket
+--                       ids are case-sensitive); only the public URL is stored
+--                       in center_settings.logo_url.
 --   exam         -> PDF attachments for exams (teacher Exams & Notes page);
 --                       exams.attachment_url stores the public URL.
 --
@@ -539,6 +570,7 @@ values
   ('cours-videos', 'cours-videos', true),
   ('event-covers', 'event-covers', true),
   ('university-logo', 'university-logo', true),
+  ('Logo', 'Logo', true),
   ('exam', 'exam', true)
 on conflict (id) do update set public = excluded.public;
 
@@ -548,7 +580,7 @@ do $$
 declare
   b text;
 begin
-  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers', 'university-logo', 'exam'] loop
+  foreach b in array array['cours', 'cours-covers', 'cours-PDF', 'cours-videos', 'event-covers', 'university-logo', 'Logo', 'exam'] loop
     execute format('drop policy if exists %I on storage.objects', b || ' read anon');
     execute format(
       'create policy %I on storage.objects for select to anon using (bucket_id = %L)',
@@ -774,7 +806,7 @@ begin
     'students', 'teachers', 'payments', 'attendance', 'courses',
     'exams', 'grades', 'publications', 'planning', 'settings',
     'course_reviews', 'events', 'quizzes', 'quiz_responses',
-    'absence_billets'
+    'absence_billets', 'center_settings'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

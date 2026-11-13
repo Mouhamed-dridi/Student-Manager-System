@@ -263,7 +263,7 @@ export default function TeacherProfilePage({
   return (
     <ProfilePageShell
       name={teacher.fullName}
-      avatarUrl={profile?.avatarUrl}
+      avatarUrl={profile?.avatarUrl ?? teacher.avatarUrl}
       badges={[teacher.specialty, teacher.program, teacher.training]}
       subtitle={email || undefined}
       backLabel={backLabel}

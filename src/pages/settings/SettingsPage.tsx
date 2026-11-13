@@ -50,9 +50,9 @@ import { useI18n } from "@/lib/i18n";
 import {
   INVALID_TOKEN_MESSAGE,
   isValidLicenseToken,
+  licenseExpiry,
 } from "@/lib/license";
 import { LicenseTab } from "./LicenseTab";
-import LicenseRenewDialog from "./LicenseRenewDialog";
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
 import { BackupExportPage } from "./BackupExportPage";
 
@@ -70,6 +70,9 @@ type TabKey = (typeof TABS)[number]["key"];
 // The stored asset is capped at this width; the login card shows it at h-16
 // (64px), so 512 keeps it crisp on high-DPI screens without bloating the bucket.
 const LOGO_MAX_WIDTH = 512;
+
+const DEFAULT_TIMEZONE = "Africa/Tunis";
+const DEFAULT_CURRENCY = "TND";
 
 /**
  * Downscales a picked logo and returns it as a PNG blob ready for Storage.
@@ -114,54 +117,117 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * Every editable column of `public.center_settings` (row id = 1) as string
+ * drafts, so one state object backs all four form tabs and Save writes them
+ * back in a single upsert.
+ */
+interface SettingsDraft {
+  systemName: string;
+  universityName: string;
+  logoUrl: string;
+  language: "en" | "fr";
+  darkMode: boolean;
+  academicYear: string;
+  timezone: string;
+  currency: string;
+  sessionTimeoutMinutes: string;
+  licenseKey: string;
+  licensePlan: string;
+  licenseStatus: string;
+  licenseExpiresAt: string;
+  lastBackupAt: string;
+}
+
+function draftFromSettings(settings: AppSettings): SettingsDraft {
+  return {
+    systemName: settings.systemName ?? "",
+    universityName: settings.universityName ?? "",
+    logoUrl: settings.logoUrl ?? "",
+    language: settings.language === "fr" ? "fr" : "en",
+    darkMode: settings.darkMode === true,
+    academicYear: settings.academicYear ?? "",
+    // The row defaults are the center's operating values, so an empty column
+    // shows them as a starting point instead of a blank field.
+    timezone: settings.timezone ?? DEFAULT_TIMEZONE,
+    currency: settings.currency ?? DEFAULT_CURRENCY,
+    sessionTimeoutMinutes:
+      typeof settings.sessionTimeoutMinutes === "number"
+        ? String(settings.sessionTimeoutMinutes)
+        : "",
+    licenseKey: settings.licenseKey ?? "",
+    licensePlan: settings.licensePlan ?? "",
+    licenseStatus: settings.licenseStatus ?? "",
+    licenseExpiresAt: settings.licenseExpiresAt ?? "",
+    lastBackupAt: settings.lastBackupAt ?? "",
+  };
+}
+
+function settingsFromDraft(draft: SettingsDraft): AppSettings {
+  const timeout = Number(draft.sessionTimeoutMinutes);
+  return {
+    systemName: draft.systemName.trim() || undefined,
+    universityName: draft.universityName.trim() || undefined,
+    logoUrl: draft.logoUrl.trim() || undefined,
+    language: draft.language,
+    darkMode: draft.darkMode,
+    academicYear: draft.academicYear.trim() || undefined,
+    timezone: draft.timezone.trim() || undefined,
+    currency: draft.currency.trim() || undefined,
+    sessionTimeoutMinutes:
+      draft.sessionTimeoutMinutes.trim() !== "" && Number.isFinite(timeout)
+        ? timeout
+        : undefined,
+    licenseKey: draft.licenseKey.trim() || undefined,
+    licensePlan: draft.licensePlan.trim() || undefined,
+    licenseStatus: draft.licenseStatus.trim() || undefined,
+    licenseExpiresAt: draft.licenseExpiresAt || undefined,
+    lastBackupAt: draft.lastBackupAt || undefined,
+  };
+}
+
 export default function SettingsPage() {
   const { t, setLanguage: setAppLanguage } = useI18n();
   const [tab, setTab] = useState<TabKey>("general");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [licenseError, setLicenseError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [systemName, setSystemName] = useState("");
-  const [universityName, setUniversityName] = useState("");
-  const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
-  const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [language, setLanguageDraft] = useState<string | undefined>(undefined);
+  const [draft, setDraft] = useState<SettingsDraft>(() =>
+    draftFromSettings({}),
+  );
   // Global store, not a local copy: the header/top bar and the other settings
   // pages switch at the same time as this switch.
   const theme = useTheme();
-  const darkMode = theme === "dark";
-  const [licenseActivatedAt, setLicenseActivatedAt] = useState<
-    string | undefined
-  >(undefined);
-  const [renewing, setRenewing] = useState(false);
-  const [renewOpen, setRenewOpen] = useState(false);
-  const [renewError, setRenewError] = useState<string | null>(null);
-  const [licenseToken, setLicenseToken] = useState<string | undefined>(
-    undefined,
-  );
 
   const [updateChecking, setUpdateChecking] = useState(false);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
 
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<AttendanceSyncSummary | null>(null);
+  const [syncResult, setSyncResult] = useState<AttendanceSyncSummary | null>(
+    null,
+  );
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const logoInputRef = useRef<HTMLInputElement | null>(null);
+
+  const update = <K extends keyof SettingsDraft>(
+    key: K,
+    value: SettingsDraft[K],
+  ) => setDraft((current) => ({ ...current, [key]: value }));
 
   useEffect(() => {
     let cancelled = false;
     getSettings()
       .then((settings) => {
         if (cancelled) return;
-        setSystemName(settings.systemName ?? "");
-        setUniversityName(settings.universityName ?? "");
-        setLogoUrl(settings.logoUrl);
-        setLanguageDraft(settings.language === "fr" ? "fr" : "en");
-        setTheme(settings.darkMode === true ? "dark" : "light");
-        setLicenseActivatedAt(settings.licenseActivatedAt);
-        setLicenseToken(settings.licenseToken);
+        const next = draftFromSettings(settings);
+        setDraft(next);
+        // The row is the durable copy of the theme; the store was already
+        // primed from the localStorage cache at boot.
+        setTheme(next.darkMode ? "dark" : "light");
       })
       .catch((err) => {
         if (!cancelled) setError(errorMessage(err));
@@ -181,95 +247,90 @@ export default function SettingsPage() {
   }, [successMessage]);
 
   /**
-   * Snapshots the whole form so the Save button and the License tab's renew
-   * action persist the same row set; `overrides` covers the one field a single
-   * action changes without waiting for the form state to catch up.
+   * The single write path: merges `patch` into the current draft, upserts row
+   * id = 1, then immediately pushes the branding, language and theme stores so
+   * the sidebar, header and login card re-render without a reload.
    */
-  const collectSettings = (
-    overrides: Partial<AppSettings> = {},
-  ): AppSettings => ({
-    systemName: systemName.trim() || undefined,
-    universityName: universityName.trim() || undefined,
-    logoUrl,
-    language,
-    darkMode,
-    licenseActivatedAt,
-    licenseToken,
-    ...overrides,
-  });
-
-  const handleSave = async () => {
-    const settings = collectSettings();
+  const persist = async (
+    patch: Partial<AppSettings>,
+    message: string,
+    nextDraft?: SettingsDraft,
+  ): Promise<boolean> => {
+    const base = nextDraft ?? draft;
+    const settings: AppSettings = { ...settingsFromDraft(base), ...patch };
     try {
       setSaving(true);
       setError(null);
       await saveSettings(settings);
       setBrandingFromSettings(settings);
-      // Apply the language immediately: every subscribed layout/page re-renders
-      // in the chosen language without a reload. The DB row remains the durable
-      // copy for the next visit, and the store mirrors the localStorage cache.
       setAppLanguage(settings.language === "fr" ? "fr" : "en");
-      setSuccessMessage("Settings saved.");
+      setTheme(settings.darkMode === true ? "dark" : "light");
+      setSuccessMessage(message);
+      return true;
     } catch (err) {
       setError(errorMessage(err));
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
-  /**
-   * Restarts the license term from today once the pasted token is in the valid
-   * pool. A rejected token never reaches the database: the dialog stays open and
-   * shows the reason. Saves the full settings row set (not just the license
-   * fields) because saveSettings upserts every known key.
-   */
-  const handleRenew = async (token: string) => {
-    setRenewError(null);
-    if (!isValidLicenseToken(token)) {
-      setRenewError(INVALID_TOKEN_MESSAGE);
-      return;
-    }
-    const activatedAt = new Date().toISOString();
-    try {
-      setRenewing(true);
-      setError(null);
-      await saveSettings(
-        collectSettings({
-          licenseActivatedAt: activatedAt,
-          licenseToken: token.trim(),
-        }),
-      );
-      setLicenseActivatedAt(activatedAt);
-      setLicenseToken(token.trim());
-      setRenewOpen(false);
-      setSuccessMessage("License renewed successfully!");
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setRenewing(false);
-    }
+  const handleSave = () => {
+    // `theme` is the live global store, so what the switch shows is what the row
+    // gets even if another settings page changed it meanwhile.
+    void persist({ darkMode: theme === "dark" }, "Settings saved.");
   };
 
   /**
-   * Uploads the picked logo to the 'university-logo' bucket straight away and
-   * keeps only the returned public URL in state. The row itself is written when
-   * the admin presses Save, like every other field on this form.
+   * Validates the pasted key against the issued token pool and restarts the
+   * license term from today. The three license columns are persisted right away
+   * (they are the tab's own action), and the rest of the form is saved with them.
+   */
+  const handleActivateLicense = async (key: string): Promise<boolean> => {
+    setLicenseError(null);
+    if (!isValidLicenseToken(key)) {
+      setLicenseError(INVALID_TOKEN_MESSAGE);
+      return false;
+    }
+    const expiresAt = licenseExpiry(new Date().toISOString()).toISOString();
+    const nextDraft: SettingsDraft = {
+      ...draft,
+      licenseKey: key,
+      licenseStatus: "active",
+      licenseExpiresAt: expiresAt,
+    };
+    setDraft(nextDraft);
+    return persist(
+      {
+        licenseKey: key,
+        licenseStatus: "active",
+        licenseExpiresAt: expiresAt,
+      },
+      "License activated.",
+      nextDraft,
+    );
+  };
+
+  /**
+   * Uploads the picked logo to the 'Logo' bucket straight away and keeps only
+   * the returned public URL in state. The row itself is written when the admin
+   * presses Save, like every other field on this form.
    */
   const handleLogoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setUploadingLogo(true);
+    setSaving(true);
     setError(null);
     try {
       const blob = await fileToLogoBlob(file);
       const publicUrl = await uploadUniversityLogo(blob);
-      setLogoUrl(publicUrl);
+      update("logoUrl", publicUrl);
       setSuccessMessage("Logo uploaded. Press Save to store it.");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
-      setUploadingLogo(false);
+      setSaving(false);
     }
   };
 
@@ -340,8 +401,8 @@ export default function SettingsPage() {
                 <Input
                   id="system-name"
                   placeholder="Student Manager System"
-                  value={systemName}
-                  onChange={(e) => setSystemName(e.target.value)}
+                  value={draft.systemName}
+                  onChange={(e) => update("systemName", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
@@ -349,17 +410,17 @@ export default function SettingsPage() {
                 <Input
                   id="university-name"
                   placeholder={t("Center / university name")}
-                  value={universityName}
-                  onChange={(e) => setUniversityName(e.target.value)}
+                  value={draft.universityName}
+                  onChange={(e) => update("universityName", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
                 <Label>{t("University logo")}</Label>
                 <div className="flex flex-wrap items-center gap-4">
-                  {logoUrl ? (
+                  {draft.logoUrl ? (
                     <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
                       <img
-                        src={logoUrl}
+                        src={draft.logoUrl}
                         alt="University logo"
                         className="h-full w-full object-contain"
                       />
@@ -374,18 +435,18 @@ export default function SettingsPage() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={uploadingLogo}
+                      disabled={saving}
                       onClick={() => logoInputRef.current?.click()}
                     >
                       <ImagePlus className="h-4 w-4" />
-                      {uploadingLogo ? t("Uploading…") : t("Upload logo")}
+                      {saving ? t("Uploading…") : t("Upload logo")}
                     </Button>
-                    {logoUrl && (
+                    {draft.logoUrl && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => setLogoUrl(undefined)}
+                        onClick={() => update("logoUrl", "")}
                       >
                         <Trash2 className="h-4 w-4" />
                         {t("Remove")}
@@ -402,7 +463,7 @@ export default function SettingsPage() {
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {t(
-                    "PNG or JPEG; downscaled to {width}px wide and uploaded to the university-logo bucket. Only the public URL is stored in settings, then shown on the login card.",
+                    "PNG or JPEG; downscaled to {width}px wide and uploaded to the Logo bucket. Only the public URL is stored, then shown on the login card.",
                     { width: LOGO_MAX_WIDTH },
                   )}
                 </p>
@@ -431,9 +492,9 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Label>{t("Language")}</Label>
                 <Select
-                  value={language ?? ""}
+                  value={draft.language}
                   onValueChange={(value) =>
-                    setLanguageDraft(value ?? undefined)
+                    update("language", value === "fr" ? "fr" : "en")
                   }
                 >
                   <SelectTrigger className="w-full">
@@ -459,10 +520,12 @@ export default function SettingsPage() {
                   </p>
                 </div>
                 <Switch
-                  checked={darkMode}
-                  onCheckedChange={(checked) =>
-                    setTheme(checked ? "dark" : "light")
-                  }
+                  checked={theme === "dark"}
+                  onCheckedChange={(checked) => {
+                    // Preview instantly; Save persists `dark_mode` on row 1.
+                    update("darkMode", checked);
+                    setTheme(checked ? "dark" : "light");
+                  }}
                 />
               </div>
 
@@ -488,6 +551,61 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="academic-year">{t("Academic year")}</Label>
+                  <Input
+                    id="academic-year"
+                    placeholder="2026-2027"
+                    value={draft.academicYear}
+                    onChange={(e) => update("academicYear", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">{t("Timezone")}</Label>
+                  <Input
+                    id="timezone"
+                    placeholder={DEFAULT_TIMEZONE}
+                    value={draft.timezone}
+                    onChange={(e) => update("timezone", e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t("IANA zone name used for timetables and dates.")}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="currency">{t("Currency")}</Label>
+                  <Input
+                    id="currency"
+                    placeholder={DEFAULT_CURRENCY}
+                    maxLength={8}
+                    value={draft.currency}
+                    onChange={(e) => update("currency", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="session-timeout">
+                    {t("Session timeout (minutes)")}
+                  </Label>
+                  <Input
+                    id="session-timeout"
+                    type="number"
+                    min={0}
+                    step={5}
+                    placeholder="60"
+                    value={draft.sessionTimeoutMinutes}
+                    onChange={(e) =>
+                      update("sessionTimeoutMinutes", e.target.value)
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t("Idle minutes before the session expires; 0 disables it.")}
+                  </p>
+                </div>
+              </div>
+
+              <Separator />
+
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <Label>{t("Check for updates")}</Label>
@@ -608,6 +726,14 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+
+              <Separator />
+
+              <div className="flex justify-end">
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? t("Saving…") : t("Save Settings")}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -624,10 +750,10 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
-                {logoUrl ? (
+                {draft.logoUrl ? (
                   <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border bg-muted">
                     <img
-                      src={logoUrl}
+                      src={draft.logoUrl}
                       alt="University logo"
                       className="h-full w-full object-contain"
                     />
@@ -644,53 +770,87 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <Separator />
-              <div className="space-y-3">
-                <DetailRow label={t("Version")} value={APP_VERSION} />
-                <DetailRow
-                  label={t("Frontend")}
-                  value={`React ${reactVersion}`}
-                />
-                <DetailRow
-                  label={t("Data layer")}
-                  value="Supabase (PostgreSQL)"
-                />
-                <DetailRow
-                  label={t("Copyright")}
-                  value={`\u00A9 ${new Date().getFullYear()} ${APP_NAME}`}
-                />
-              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("Version & build")}</CardTitle>
+              <CardDescription>
+                {t("Compiled client details for this deployment.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow label={t("Version")} value={APP_VERSION} />
+              <DetailRow
+                label={t("Build")}
+                value={import.meta.env.MODE === "production" ? "Production" : "Development"}
+              />
+              <DetailRow label={t("Frontend")} value={`React ${reactVersion}`} />
+              <DetailRow
+                label={t("Data layer")}
+                value="Supabase (PostgreSQL)"
+              />
+              <DetailRow
+                label={t("Copyright")}
+                value={`\u00A9 ${new Date().getFullYear()} ${APP_NAME}`}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{t("Center information")}</CardTitle>
+              <CardDescription>
+                {t("Values saved on this center's settings row.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <DetailRow
+                label={t("System name")}
+                value={draft.systemName.trim() || "—"}
+              />
+              <DetailRow
+                label={t("University name")}
+                value={draft.universityName.trim() || "—"}
+              />
+              <DetailRow
+                label={t("Academic year")}
+                value={draft.academicYear.trim() || "—"}
+              />
+              <DetailRow label={t("Timezone")} value={draft.timezone || "—"} />
+              <DetailRow label={t("Currency")} value={draft.currency || "—"} />
+              <DetailRow
+                label={t("Last backup")}
+                value={
+                  draft.lastBackupAt
+                    ? new Date(draft.lastBackupAt).toLocaleString()
+                    : "—"
+                }
+              />
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="license" className="mt-6 space-y-4">
           <LicenseTab
-            activatedAt={licenseActivatedAt}
-            token={licenseToken}
-            saving={saving}
-            renewing={renewing}
-            onSave={handleSave}
-            onRenew={() => {
-              setRenewError(null);
-              setRenewOpen(true);
-            }}
+            plan={draft.licensePlan}
+            status={draft.licenseStatus}
+            licenseKey={draft.licenseKey}
+            expiresAt={draft.licenseExpiresAt}
+            activating={saving}
+            error={licenseError}
+            onActivate={handleActivateLicense}
           />
         </TabsContent>
 
         <TabsContent value="backup-export" className="mt-6 space-y-4">
-          <BackupExportPage />
+          <BackupExportPage
+            onBackupDone={(at) => update("lastBackupAt", at)}
+            lastBackupAt={draft.lastBackupAt}
+          />
         </TabsContent>
       </Tabs>
-
-      {renewOpen && (
-        <LicenseRenewDialog
-          submitting={renewing}
-          error={renewError}
-          onSubmit={handleRenew}
-          onClose={() => setRenewOpen(false)}
-        />
-      )}
     </div>
   );
 }
