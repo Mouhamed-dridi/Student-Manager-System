@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { CalendarDays, Clock, Paperclip } from "lucide-react";
+import { CalendarDays, Clock, Paperclip, User } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -18,9 +18,11 @@ interface CourseCardProps {
   training?: string;
   actions?: ReactNode;
   onOpen?: () => void;
+  /** Optional teacher name to display on the card footer. */
+  teacherName?: string;
 }
 
-function CourseCard({ course, training, actions, onOpen }: CourseCardProps) {
+function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCardProps) {
   const thumbnail =
     course.thumbnail ?? thumbnailForTraining(course.training ?? training ?? "");
   // A JSON-string materials value would make `.length` report the string's
@@ -62,7 +64,13 @@ function CourseCard({ course, training, actions, onOpen }: CourseCardProps) {
           </p>
         ) : null}
       </CardContent>
-      <CardFooter className="gap-4 text-xs text-muted-foreground">
+      <CardFooter className="flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {teacherName ? (
+          <span className="flex items-center gap-1.5">
+            <User className="h-3 w-3" />
+            {teacherName}
+          </span>
+        ) : null}
         {course.day ? (
           <span className="flex items-center gap-1.5">
             <CalendarDays className="h-3.5 w-3.5" />
@@ -108,6 +116,8 @@ interface CourseCardsGridProps {
   renderActions?: (course: ScheduledCourseView) => ReactNode;
   /** Omit to render a read-only grid (e.g. an empty preview). */
   onOpenCourse?: (course: ScheduledCourseView) => void;
+  /** Map of teacherId → teacher name, used to display the author on each card. */
+  teacherNameMap?: Map<string, string>;
 }
 
 export default function CourseCardsGrid({
@@ -115,6 +125,7 @@ export default function CourseCardsGrid({
   training,
   renderActions,
   onOpenCourse,
+  teacherNameMap,
 }: CourseCardsGridProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -125,6 +136,7 @@ export default function CourseCardsGrid({
           training={training}
           actions={renderActions?.(c)}
           onOpen={onOpenCourse ? () => onOpenCourse(c) : undefined}
+          teacherName={c.teacherId ? teacherNameMap?.get(c.teacherId) : undefined}
         />
       ))}
     </div>

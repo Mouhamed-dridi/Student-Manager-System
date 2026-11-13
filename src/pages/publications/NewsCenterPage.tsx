@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
 import { errorMessage, listPublications, softDeletePublication } from "@/lib/api";
+import { useI18n } from "@/lib/i18n";
 import {
   NOTIFICATION_TYPE_LABELS,
   RECIPIENT_LABELS,
@@ -54,6 +55,8 @@ export default function NewsCenterPage() {
   return (
     <div>
       <h2 className="text-2xl font-semibold">News Center</h2>
+      {/* Replaced old table with modern feed */}
+      <Feed />
       <p className="mt-1 text-sm text-muted-foreground">
         Every published announcement, newest first.
       </p>
