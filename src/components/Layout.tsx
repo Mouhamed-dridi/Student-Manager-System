@@ -33,13 +33,16 @@ import SettingsPage from "@/pages/settings/SettingsPage";
 import { BackupExportPage } from "@/pages/settings/BackupExportPage";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
+import LogoutButton from "@/components/LogoutButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useViewHistory } from "@/hooks/viewHistory";
 import { clearSession } from "@/lib/session";
 import { useAuthDisplayName } from "@/lib/authDisplay";
 import { brandTitle, useBranding } from "@/lib/branding";
+import { useI18n } from "@/lib/i18n";
 
 function LayoutShell() {
+  const { t } = useI18n();
   // Sections live in the in-app history stack instead of local state: that is
   // what the header's back arrow walks, and it keeps the sidebar highlight and
   // the rendered page in step with the stack.
@@ -75,7 +78,7 @@ function LayoutShell() {
     const sectionActive = isSectionActive(item, active);
     setOpenSections((prev) => toggleSectionOpen(prev, item.key, sectionActive));
     if (!sectionActive) {
-      pushSection(item.key, item.label);
+      pushSection(item.key, t(item.label));
       // Entering Events from elsewhere always starts a new event, not an edit.
       if (item.key === "events") setEditingEvent(null);
       onNavigate?.();
@@ -102,14 +105,17 @@ function LayoutShell() {
           // Saving hands the admin straight to the history list, where the row
           // now appears, instead of leaving them on a cleared form.
           setEventNotice(
-            `"${saved.title}" was ${wasUpdate ? "updated" : "created"}.`,
+            t('"{title}" was {action}.', {
+              title: saved.title,
+              action: wasUpdate ? t("updated") : t("created"),
+            }),
           );
           setEditingEvent(null);
-          pushSection("event-history", "Event History");
+          pushSection("event-history", t("Event History"));
         }}
         onClose={() => {
           setEditingEvent(null);
-          pushSection("event-history", "Event History");
+          pushSection("event-history", t("Event History"));
         }}
       />
     ),
@@ -118,7 +124,7 @@ function LayoutShell() {
         notice={eventNotice}
         onEdit={(event) => {
           setEditingEvent(event);
-          pushSection("events", "New Event");
+          pushSection("events", t("New Event"));
         }}
       />
     ),
@@ -154,7 +160,7 @@ function LayoutShell() {
                 )}
               >
                 <item.icon className="h-4 w-4" />
-                {item.label}
+                {t(item.label)}
                 <ChevronDown
                   className={cn(
                     "ml-auto h-4 w-4 transition-transform",
@@ -168,7 +174,7 @@ function LayoutShell() {
                     <button
                       key={child.key}
                       onClick={() => {
-                        pushSection(child.key, child.label);
+                        pushSection(child.key, t(child.label));
                         onNavigate?.();
                       }}
                       className={cn(
@@ -178,7 +184,7 @@ function LayoutShell() {
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
                       )}
                     >
-                      {child.label}
+                      {t(child.label)}
                     </button>
                   ))}
                 </div>
@@ -190,7 +196,7 @@ function LayoutShell() {
           <button
             key={item.key}
             onClick={() => {
-              pushSection(item.key, item.label);
+              pushSection(item.key, t(item.label));
               onNavigate?.();
             }}
             className={cn(
@@ -201,7 +207,7 @@ function LayoutShell() {
             )}
           >
             <item.icon className="h-4 w-4" />
-            {item.label}
+            {t(item.label)}
           </button>
         );
       })}
@@ -246,7 +252,7 @@ function LayoutShell() {
               variant="ghost"
               size="icon-sm"
               className="lg:hidden"
-              aria-label="Open navigation"
+              aria-label={t("Open navigation")}
               onClick={() => setMobileNavOpen(true)}
             >
               <Menu className="h-5 w-5" />
@@ -261,9 +267,7 @@ function LayoutShell() {
             <span className="hidden max-w-40 truncate text-sm font-medium text-muted-foreground sm:inline">
               {displayName}
             </span>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
+            <LogoutButton onConfirm={handleLogout} />
           </div>
         </header>
 
@@ -277,10 +281,13 @@ function LayoutShell() {
 }
 
 export default function Layout() {
+  const { t } = useI18n();
   // The dashboard is the floor of the back stack, so the arrow stays hidden
   // until the operator navigates away from it.
   return (
-    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+    <ViewHistoryProvider
+      root={{ key: "dashboard", label: t("Dashboard") }}
+    >
       <LayoutShell />
     </ViewHistoryProvider>
   );

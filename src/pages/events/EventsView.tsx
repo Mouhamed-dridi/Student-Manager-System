@@ -263,28 +263,28 @@ export default function EventsView({
   };
 
   return (
-    <div className="dark min-h-full w-full space-y-6 text-white">
+    <div className="min-h-full w-full space-y-6 text-zinc-900 dark:text-white">
       {/* ------------------------------------------------------ header */}
       {/* The only title on the page: navigation lives in the portal top bar
           (this view registers with useNestedView), so there is no second
           "Back to Events" link competing with it. */}
       <header>
-        <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+        <h2 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white sm:text-3xl">
           {initialEvent ? "Edit Event" : "Create New Event"}
         </h2>
-        <p className="mt-1 text-sm text-zinc-400">
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Set the essentials now — you can refine the details later.
         </p>
       </header>
 
       {/* ------------------------------------------------------ form container */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 shadow-xl sm:p-8">
+      <div className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-6 shadow-xl sm:p-8">
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
             {/* ------------------------------------------------ left column */}
             <div className="space-y-5">
               {/* title */}
-              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Event name
                 </span>
@@ -293,7 +293,7 @@ export default function EventsView({
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
                   placeholder="e.g. Regional Cybersecurity Hackathon"
-                  className="mt-1 w-full bg-transparent text-lg font-medium text-white outline-none placeholder:text-zinc-600"
+                  className="mt-1 w-full bg-transparent text-lg font-medium text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
 
@@ -302,7 +302,7 @@ export default function EventsView({
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Starts
                 </p>
-                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
@@ -312,7 +312,7 @@ export default function EventsView({
                       type="date"
                       value={startDate}
                       onChange={(event) => setStartDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                   <div className="min-w-0">
@@ -324,7 +324,7 @@ export default function EventsView({
                       type="time"
                       value={startTime}
                       onChange={(event) => setStartTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                 </div>
@@ -335,7 +335,7 @@ export default function EventsView({
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Ends
                 </p>
-                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+                <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
@@ -346,7 +346,7 @@ export default function EventsView({
                       value={endDate}
                       min={startDate || undefined}
                       onChange={(event) => setEndDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                   <div className="min-w-0">
@@ -358,14 +358,14 @@ export default function EventsView({
                       type="time"
                       value={endTime}
                       onChange={(event) => setEndTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-sm text-white outline-none transition-colors [color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
                     />
                   </div>
                 </div>
               </div>
 
               {/* location */}
-              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
                 <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   <MapPin className="h-3.5 w-3.5" />
                   Location / Google Maps link
@@ -374,7 +374,7 @@ export default function EventsView({
                   value={location}
                   onChange={(event) => setLocation(event.target.value)}
                   placeholder="https://maps.app.goo.gl/… or Room B-12"
-                  className="mt-1 w-full bg-transparent text-sm text-white outline-none placeholder:text-zinc-600"
+                  className="mt-1 w-full bg-transparent text-sm text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
 
@@ -396,7 +396,7 @@ export default function EventsView({
                           "rounded-full border px-4 py-2 text-sm transition-colors",
                           selected
                             ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
-                            : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
+                            : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white",
                         )}
                       >
                         {option.label}
@@ -415,7 +415,7 @@ export default function EventsView({
               <div className="space-y-2">
                 <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Gift categories
-                  <span className="ml-2 normal-case tracking-normal text-zinc-600">
+                  <span className="ml-2 normal-case tracking-normal text-zinc-400 dark:text-zinc-600">
                     Select all that apply
                   </span>
                 </p>
@@ -434,7 +434,7 @@ export default function EventsView({
                           "rounded-full border px-4 py-2 text-sm transition-colors",
                           selected
                             ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
-                            : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
+                            : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white",
                         )}
                       >
                         {option.label}
@@ -450,7 +450,7 @@ export default function EventsView({
               </div>
 
               {/* details */}
-              <label className="block cursor-text rounded-xl border border-zinc-800 bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
                 <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                   Details
                 </span>
@@ -459,20 +459,20 @@ export default function EventsView({
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   placeholder="What is this event about? Agenda, speakers, what to bring…"
-                  className="mt-1 w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-zinc-600"
+                  className="mt-1 w-full resize-none bg-transparent text-sm text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
 
               {/* advanced */}
-              <details className="group rounded-xl border border-zinc-800 bg-zinc-950">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm text-zinc-400 transition-colors hover:text-white">
+              <details className="group rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-400 transition-colors hover:text-zinc-900 dark:hover:text-white">
                   <span className="flex items-center gap-2">
                       <Users className="h-4 w-4" />
                       Partners
                     </span>
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                 </summary>
-                <div className="space-y-4 border-t border-zinc-800 p-4">
+                <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 p-4">
                   <div className="space-y-2">
                     <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
                       Partners
@@ -491,7 +491,7 @@ export default function EventsView({
                           }
                         }}
                         placeholder="Partner name"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500"
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-emerald-500"
                       />
                       <input
                         value={partnerLink}
@@ -506,29 +506,29 @@ export default function EventsView({
                           }
                         }}
                         placeholder="https://…"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-emerald-500"
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-emerald-500"
                       />
                       <button
                         type="button"
                         onClick={addPartner}
                         disabled={!partnerName.trim() && !partnerLink.trim()}
-                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                        className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 transition-colors hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Plus className="h-4 w-4" />
                         Add
                       </button>
                     </div>
                     {partnerError && (
-                      <p className="text-xs text-red-400">{partnerError}</p>
+                      <p className="text-xs text-red-600 dark:text-red-400">{partnerError}</p>
                     )}
                     {partners.length > 0 && (
-                      <ul className="divide-y divide-zinc-800 overflow-hidden rounded-xl border border-zinc-800">
+                      <ul className="divide-y divide-zinc-200 dark:divide-zinc-800 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
                         {partners.map((partner, index) => (
                           <li
                             key={`${partner.name}-${partner.link}-${index}`}
-                            className="flex items-center gap-3 bg-zinc-900 px-3 py-2 text-sm"
+                            className="flex items-center gap-3 bg-zinc-50 px-3 py-2 dark:bg-zinc-900 text-sm"
                           >
-                            <span className="min-w-0 flex-1 truncate text-zinc-200">
+                            <span className="min-w-0 flex-1 truncate text-zinc-800 dark:text-zinc-200">
                               {partner.name || partner.link}
                             </span>
                             <span className="hidden min-w-0 flex-1 truncate text-xs text-zinc-500 sm:block">
@@ -540,7 +540,7 @@ export default function EventsView({
                                 partner.name || partner.link
                               }`}
                               onClick={() => removePartner(index)}
-                              className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
+                              className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:text-red-600 dark:hover:text-red-400"
                             >
                               <X className="h-3.5 w-3.5" />
                             </button>
@@ -574,9 +574,9 @@ export default function EventsView({
                   className={cn(
                     "relative aspect-square overflow-hidden rounded-xl border-2 border-dashed transition-all",
                     previewImage
-                      ? "border-zinc-800 bg-zinc-950"
-                      : "cursor-pointer border-zinc-800 bg-zinc-950 hover:border-emerald-500/50 hover:bg-zinc-900",
-                    dragging && "border-emerald-500/60 bg-zinc-900",
+                      ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
+                      : "cursor-pointer border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900",
+                    dragging && "border-emerald-500/60 bg-zinc-50 dark:bg-zinc-900",
                   )}
                   onClick={previewImage ? undefined : pickCover}
                 >
@@ -607,18 +607,18 @@ export default function EventsView({
                     </>
                   ) : (
                     <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
                         <ImagePlus className="h-5 w-5" />
                       </span>
                       <div>
-                        <p className="text-sm font-medium text-zinc-200">
+                        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
                           Upload cover image
                         </p>
                         <p className="mt-1 text-xs text-zinc-500">
                           Drag &amp; drop or click to browse. JPG or PNG.
                         </p>
                       </div>
-                      <span className="rounded-full border border-zinc-800 px-3 py-1 text-[11px] text-zinc-500">
+                      <span className="rounded-full border border-zinc-200 px-3 py-1 dark:border-zinc-800 text-[11px] text-zinc-500">
                         Recommended 1200 × 1200
                       </span>
                     </div>
@@ -637,7 +637,7 @@ export default function EventsView({
               </div>
 
               {/* live preview */}
-              <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950">
+              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="relative aspect-[16/10] w-full bg-gradient-to-br from-emerald-500/20 via-zinc-900 to-zinc-950">
                   {previewImage && (
                     <img
@@ -654,7 +654,7 @@ export default function EventsView({
                     <p className="mt-1.5 line-clamp-2 text-sm font-semibold text-white">
                       {title.trim() || "Your event title"}
                     </p>
-                    <p className="mt-0.5 truncate text-[11px] text-zinc-400">
+                    <p className="mt-0.5 truncate text-[11px] text-zinc-300">
                       {previewDate}
                     </p>
                     {location.trim() && (
@@ -666,7 +666,7 @@ export default function EventsView({
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500">
+              <div className="flex items-start gap-2 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
                 The cover and details appear on the teacher portal as soon as
                 you save.
@@ -675,10 +675,10 @@ export default function EventsView({
           </div>
 
           {/* ------------------------------------------------------ footer */}
-          <div className="mt-6 flex flex-col gap-3 border-t border-zinc-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 flex flex-col gap-3 border-t border-zinc-200 dark:border-zinc-800 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               {error ? (
-                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400">
                   {error}
                 </p>
               ) : (
@@ -692,7 +692,7 @@ export default function EventsView({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white"
+                  className="rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-4 py-2 text-sm text-zinc-700 dark:text-zinc-300 transition-colors hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white"
                 >
                   Cancel
                 </button>

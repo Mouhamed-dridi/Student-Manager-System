@@ -24,8 +24,10 @@ import { parseStudentFile, type ImportResult } from "./importStudents";
 import { exportStudents } from "./exportStudents";
 import StudentImportPreview from "./StudentImportPreview";
 import StudentListView from "./StudentListView";
+import { useT } from "@/lib/i18n";
 
 export default function StudentsPage() {
+  const t = useT();
   const [students, setStudents] = useState<Student[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
@@ -214,12 +216,12 @@ export default function StudentsPage() {
         }}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">Students</h2>
+          <h2 className="text-2xl font-semibold">{t("Students")}</h2>
           <div className="flex items-center gap-2">
             <SegmentedTabsList>
-              <SegmentedTabsTrigger value="list">Student List</SegmentedTabsTrigger>
+              <SegmentedTabsTrigger value="list">{t("Student List")}</SegmentedTabsTrigger>
               <SegmentedTabsTrigger value="add" onClick={handleAddNew}>
-                Add Student
+                {t("Add Student")}
               </SegmentedTabsTrigger>
             </SegmentedTabsList>
             <Button
@@ -227,7 +229,7 @@ export default function StudentsPage() {
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="h-4 w-4" />
-              Import Excel
+              {t("Import Excel")}
             </Button>
             <Button
               variant="outline"
@@ -237,7 +239,7 @@ export default function StudentsPage() {
               disabled={!students || students.length === 0}
             >
               <Download className="h-4 w-4" />
-              Export Excel
+              {t("Export Excel")}
             </Button>
             <input
               ref={fileInputRef}

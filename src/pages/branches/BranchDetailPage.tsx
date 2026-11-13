@@ -7,9 +7,10 @@
 // BranchesPage registers nothing here — this page registers itself with
 // `useNestedView`, and a student profile opened from the roster stacks on top.
 //
-// Deliberately monochrome (zinc-950 / zinc-800 / white): this is the operator's
-// "class file" surface, the one place in the app drawn as a document instead of
-// a themed card. Everything else keeps the shared design tokens.
+// Deliberately monochrome: this is the operator's "class file" surface, drawn
+// as a document instead of a themed card. It follows the global theme through
+// paired light/dark zinc classes (white/zinc-200/zinc-900 in light mode,
+// zinc-950/zinc-800/white in dark mode), so it never stays dark by accident.
 
 import { useState, type ReactNode } from "react";
 import {
@@ -17,6 +18,7 @@ import {
   BookOpen,
   CalendarDays,
   ChevronRight,
+  Lock,
   Mail,
   Phone,
   Plus,
@@ -68,6 +70,7 @@ import { useUserProfiles } from "@/lib/userProfile";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import BranchLevelBadge from "./BranchLevelBadge";
+import { MATERIAL_CATEGORY_LABELS, matchingTeachersForMaterial } from "./materialSpecialty";
 
 /** Select sentinel: a material nobody has been assigned to yet. */
 const UNASSIGNED = "__unassigned";
@@ -95,15 +98,53 @@ function Stat({
   icon: ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3">
+    <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/60">
       <p className="flex items-center gap-1.5 text-[11px] font-medium tracking-widest text-zinc-500 uppercase">
         {icon}
         {label}
       </p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-white">
         {value}
       </p>
     </div>
+  );
+}
+
+/**
+ * Read-only teacher badge used when a material has exactly one specialist:
+ * there is nothing to choose, so the assignment is shown as a locked pill
+ * (avatar + name) instead of a dropdown.
+ */
+function LockedTeacherBadge({
+  teacher,
+  avatarUrl,
+}: {
+  teacher: Teacher;
+  avatarUrl?: string;
+}) {
+  return (
+    <span
+      className="inline-flex h-7 items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 py-0.5 pr-2 pl-0.5 text-xs font-medium text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200"
+      title="Only teacher whose specialty matches this material"
+    >
+      <UserAvatar
+        name={teacher.fullName}
+        src={avatarUrl}
+        className="h-5 w-5 border-zinc-300 bg-zinc-200 text-[9px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+      />
+      <span className="max-w-40 truncate">{teacher.fullName}</span>
+      <Lock className="h-3 w-3 shrink-0 text-zinc-400 dark:text-zinc-500" />
+    </span>
+  );
+}
+
+/** Shown when a recognised material has no teacher in its specialty family. */
+function NoSpecialistBadge() {
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-md border border-dashed border-zinc-300 px-2 text-xs text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+      <UserRound className="h-3.5 w-3.5 shrink-0" />
+      No specialist
+    </span>
   );
 }
 
@@ -162,19 +203,27 @@ export default function BranchDetailPage({
   const teacherById = new Map(
     teachers.map((teacher) => [teacher.id, teacher]),
   );
-  // Base UI's Select.Value renders the raw value unless it can map it to a
-  // label, so the trigger would show a uuid for an assigned teacher.
-  const teacherOptions = [
-    { value: UNASSIGNED, label: "Unassigned" },
-    ...teachers.map((teacher) => ({
-      value: teacher.id,
-      label: teacher.fullName,
-    })),
-  ];
   const teacherLabel = (value: string | null) =>
     value === UNASSIGNED
       ? "Unassigned"
       : (teacherById.get(value ?? "")?.fullName ?? "Unknown teacher");
+  // Base UI's Select.Value renders the raw value unless it can map it to a
+  // label, so every dropdown gets its own (strictly filtered) items list.
+  const selectItemsFor = (options: readonly Teacher[]) => [
+    { value: UNASSIGNED, label: "Unassigned" },
+    ...options.map((teacher) => ({
+      value: teacher.id,
+      label: teacher.fullName,
+    })),
+  ];
+  // The material name typed in the Add dialog drives the same strict filter the
+  // table uses, and a lone specialist is chosen automatically rather than
+  // asking the operator to confirm the only possibility.
+  const draftMatch = matchingTeachersForMaterial(draftName, teachers);
+  const draftTeacher =
+    draftMatch.teachers.find((teacher) => teacher.id === draftTeacherId) ??
+    (draftMatch.teachers.length === 1 ? draftMatch.teachers[0] : undefined);
+  const draftValue = draftTeacher?.id ?? UNASSIGNED;
 
   const openAddDialog = () => {
     setDraftName("");
@@ -196,7 +245,7 @@ export default function BranchDetailPage({
         branchId: branch.id,
         name: draftName,
         description: draftDescription,
-        teacherId: draftTeacherId === UNASSIGNED ? null : draftTeacherId,
+        teacherId: draftValue === UNASSIGNED ? null : draftValue,
       });
       await onReload();
       setAddOpen(false);
@@ -245,13 +294,13 @@ export default function BranchDetailPage({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-100">
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
       {/* ------------------------------------------------------------ header */}
-      <div className="border-b border-zinc-800 p-5">
+      <div className="border-b border-zinc-200 p-5 dark:border-zinc-800">
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:outline-none"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 focus-visible:ring-2 focus-visible:ring-zinc-500 focus-visible:outline-none dark:text-zinc-400 dark:hover:text-white"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Branches
@@ -265,14 +314,14 @@ export default function BranchDetailPage({
                 {branch.programCode || "Branch"} track
               </span>
             </div>
-            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">
+            <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
               {branch.name}
             </h2>
           </div>
           <Button
             variant="outline"
             onClick={onOpenTimetable}
-            className="border-zinc-700 bg-transparent text-zinc-100 hover:bg-zinc-800 hover:text-white"
+            className="border-zinc-300 bg-transparent text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <CalendarDays className="h-4 w-4" />
             Open timetable
@@ -299,35 +348,39 @@ export default function BranchDetailPage({
       </div>
 
       {error && (
-        <p className="border-b border-red-500/30 bg-red-500/10 px-5 py-2.5 text-sm text-red-300">
+        <p className="border-b border-red-500/30 bg-red-500/10 px-5 py-2.5 text-sm text-red-700 dark:text-red-300">
           {error}
         </p>
       )}
 
       {/* ------------------------------------------------ materials & teachers */}
-      <section className="border-b border-zinc-800 p-5">
+      <section className="border-b border-zinc-200 p-5 dark:border-zinc-800">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-white">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
               Materials &amp; assigned teachers
             </h3>
             <p className="mt-0.5 text-xs text-zinc-500">
               One teacher per material — that is how one class ends up staffed
-              by several teachers.
+              by several teachers. Only teachers whose specialty matches the
+              material are listed; when there is a single one, they are locked
+              in place.
             </p>
           </div>
-          <Button
-            onClick={openAddDialog}
-            className="bg-white text-zinc-950 hover:bg-zinc-200"
-          >
-            <Plus className="h-4 w-4" />
-            Add Material
-          </Button>
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              onClick={openAddDialog}
+              className="bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+            >
+              <Plus className="h-4 w-4" />
+              Add Material
+            </Button>
+          </div>
         </div>
 
         {branchMaterials.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-dashed border-zinc-800 p-8 text-center">
-            <p className="text-sm font-medium text-zinc-200">
+          <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-800">
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
               No materials yet.
             </p>
             <p className="mt-1 text-xs text-zinc-500">
@@ -338,7 +391,7 @@ export default function BranchDetailPage({
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[46rem] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-[11px] font-medium tracking-widest text-zinc-500 uppercase">
+                <tr className="border-b border-zinc-200 text-[11px] font-medium tracking-widest text-zinc-500 uppercase dark:border-zinc-800">
                   <th className="py-2 pr-3 font-medium">Material</th>
                   <th className="py-2 pr-3 font-medium">Description</th>
                   <th className="py-2 pr-3 font-medium">Assigned Teacher</th>
@@ -347,63 +400,105 @@ export default function BranchDetailPage({
               </thead>
               <tbody>
                 {branchMaterials.map((material) => {
-                  const profile = material.teacherId
-                    ? teacherProfiles.get(material.teacherId)
+                  // Strict specialty filter: only this material family's
+                  // teachers are allowed, so the dropdown never offers an
+                  // unrelated specialty.
+                  const match = matchingTeachersForMaterial(
+                    material.name,
+                    teachers,
+                  );
+                  // A stored assignment is only trusted when it is a valid
+                  // specialist; the realignment effect above clears the rest.
+                  const assignedTeacher =
+                    material.teacherId &&
+                    match.teachers.some(
+                      (teacher) => teacher.id === material.teacherId,
+                    )
+                      ? teacherById.get(material.teacherId)
+                      : undefined;
+                  const lockedTeacher =
+                    match.category && match.teachers.length === 1
+                      ? match.teachers[0]
+                      : undefined;
+                  const selectedTeacher = assignedTeacher ?? lockedTeacher;
+                  const profile = selectedTeacher
+                    ? teacherProfiles.get(selectedTeacher.id)
                     : undefined;
+                  const scopeLabel = match.scopeLabel;
                   return (
                     <tr
                       key={material.id}
-                      className="border-b border-zinc-800/70 align-top last:border-0"
+                      className="border-b border-zinc-200 align-top last:border-0 dark:border-zinc-800/70"
                     >
-                      <td className="py-3 pr-3 font-medium text-white">
+                      <td className="py-3 pr-3 font-medium text-zinc-900 dark:text-white">
                         {material.name}
+                        {match.category ? (
+                          <span className="mt-1 block text-[10px] font-normal tracking-wide text-zinc-500 uppercase">
+                            {MATERIAL_CATEGORY_LABELS[match.category]}
+                          </span>
+                        ) : null}
                       </td>
-                      <td className="max-w-md py-3 pr-3 text-xs leading-relaxed text-zinc-400">
+                      <td className="max-w-md py-3 pr-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                         {material.description || "—"}
                       </td>
                       <td className="py-3 pr-3">
-                        <div className="flex items-center gap-2">
-                          <UserAvatar
-                            name={material.teacherName}
-                            src={profile?.avatarUrl}
-                            className="h-7 w-7 border-zinc-700 bg-zinc-800 text-[10px] text-zinc-300"
+                        {lockedTeacher ? (
+                          <LockedTeacherBadge
+                            teacher={lockedTeacher}
+                            avatarUrl={profile?.avatarUrl}
                           />
+                        ) : match.teachers.length === 0 ? (
+                          <>
+                            <NoSpecialistBadge />
+                            <p className="mt-1 text-[10px] text-zinc-500">
+                              {match.category
+                                ? `No ${scopeLabel} teacher in the roster.`
+                                : "No teachers in the roster yet."}
+                            </p>
+                          </>
+                        ) : (
                           <Select
-                            value={material.teacherId ?? UNASSIGNED}
+                            value={selectedTeacher?.id ?? UNASSIGNED}
                             onValueChange={(value) =>
                               void handleAssign(material, value)
                             }
-                            items={teacherOptions}
+                            items={selectItemsFor(match.teachers)}
                             itemToStringLabel={(value) =>
                               teacherLabel(value)
                             }
                             disabled={busyMaterialId === material.id}
                           >
                             <SelectTrigger
-                              className="h-7 w-48 border-zinc-700 bg-zinc-900 text-zinc-100"
+                              className="h-7 w-48 border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                               aria-label={`Teacher for ${material.name}`}
                             >
                               <SelectValue placeholder="Unassigned" />
                             </SelectTrigger>
-                            <SelectContent className="border-zinc-800 bg-zinc-900 text-zinc-100">
+                            <SelectContent className="border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
                               <SelectItem
                                 value={UNASSIGNED}
-                                className="focus:bg-zinc-800 focus:text-white"
+                                className="focus:bg-zinc-100 focus:text-zinc-900 dark:focus:bg-zinc-800 dark:focus:text-white"
                               >
                                 Unassigned
                               </SelectItem>
-                              {teachers.map((teacher) => (
+                              {match.teachers.map((teacher) => (
                                 <SelectItem
                                   key={teacher.id}
                                   value={teacher.id}
-                                  className="focus:bg-zinc-800 focus:text-white"
+                                  className="focus:bg-zinc-100 focus:text-zinc-900 dark:focus:bg-zinc-800 dark:focus:text-white"
                                 >
                                   {teacher.fullName}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        </div>
+                        )}
+                        {!lockedTeacher && match.category && match.teachers.length > 1 ? (
+                          <p className="mt-1 text-[10px] text-zinc-500">
+                            {match.teachers.length} {scopeLabel} specialists
+                            available.
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-3 text-right">
                         <Button
@@ -411,7 +506,7 @@ export default function BranchDetailPage({
                           size="icon-sm"
                           aria-label={`Delete ${material.name}`}
                           onClick={() => setDeleteTarget(material)}
-                          className="text-zinc-500 hover:bg-zinc-800 hover:text-red-300"
+                          className="text-zinc-500 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-300"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -428,7 +523,9 @@ export default function BranchDetailPage({
       {/* --------------------------------------------------------- the roster */}
       <section className="p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold text-white">Enrolled students</h3>
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
+            Enrolled students
+          </h3>
           <p className="text-xs text-zinc-500">
             {roster.length} {roster.length === 1 ? "student" : "students"}{" "}
             matched to this class by training
@@ -436,8 +533,8 @@ export default function BranchDetailPage({
         </div>
 
         {roster.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-dashed border-zinc-800 p-8 text-center">
-            <p className="text-sm font-medium text-zinc-200">
+          <div className="mt-4 rounded-lg border border-dashed border-zinc-300 p-8 text-center dark:border-zinc-800">
+            <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
               No students enrolled yet.
             </p>
             <p className="mt-1 text-xs text-zinc-500">
@@ -448,7 +545,7 @@ export default function BranchDetailPage({
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-zinc-800 text-[11px] font-medium tracking-widest text-zinc-500 uppercase">
+                <tr className="border-b border-zinc-200 text-[11px] font-medium tracking-widest text-zinc-500 uppercase dark:border-zinc-800">
                   <th className="py-2 pr-3 font-medium">Student</th>
                   <th className="py-2 pr-3 font-medium">Email</th>
                   <th className="py-2 pr-3 font-medium">Phone</th>
@@ -459,16 +556,16 @@ export default function BranchDetailPage({
                 {roster.map((student) => (
                   <tr
                     key={student.id}
-                    className="border-b border-zinc-800/70 last:border-0"
+                    className="border-b border-zinc-200 last:border-0 dark:border-zinc-800/70"
                   >
                     <td className="py-2.5 pr-3">
                       <div className="flex items-center gap-2.5">
                         <UserAvatar
                           name={student.fullName}
                           src={studentProfiles.get(student.id)?.avatarUrl}
-                          className="h-8 w-8 border-zinc-700 bg-zinc-800 text-[11px] text-zinc-300"
+                          className="h-8 w-8 border-zinc-300 bg-zinc-100 text-[11px] text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                         />
-                        <span className="font-medium text-white">
+                        <span className="font-medium text-zinc-900 dark:text-white">
                           {student.fullName}
                         </span>
                       </div>
@@ -477,23 +574,27 @@ export default function BranchDetailPage({
                       {student.email ? (
                         <a
                           href={`mailto:${student.email}`}
-                          className="inline-flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white"
+                          className="inline-flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
                         >
                           <Mail className="h-3.5 w-3.5 shrink-0" />
                           {student.email}
                         </a>
                       ) : (
-                        <span className="text-xs text-zinc-600">—</span>
+                        <span className="text-xs text-zinc-400 dark:text-zinc-600">
+                          —
+                        </span>
                       )}
                     </td>
                     <td className="py-2.5 pr-3">
                       {student.phone ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-400">
+                        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
                           <Phone className="h-3.5 w-3.5 shrink-0" />
                           {student.phone}
                         </span>
                       ) : (
-                        <span className="text-xs text-zinc-600">—</span>
+                        <span className="text-xs text-zinc-400 dark:text-zinc-600">
+                          —
+                        </span>
                       )}
                     </td>
                     <td className="py-2.5 text-right">
@@ -501,7 +602,7 @@ export default function BranchDetailPage({
                         variant="ghost"
                         size="sm"
                         onClick={() => setSelectedStudentId(student.id)}
-                        className="text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                        className="text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
                       >
                         View profile
                         <ChevronRight className="h-3.5 w-3.5" />
@@ -526,8 +627,8 @@ export default function BranchDetailPage({
           <DialogHeader>
             <DialogTitle>Add material</DialogTitle>
             <DialogDescription>
-              {branch.name} · the teacher is optional and can be changed later
-              from the table.
+              {branch.name} · the teacher list follows the material's specialty
+              family, and a single specialist is locked in automatically.
             </DialogDescription>
           </DialogHeader>
 
@@ -554,24 +655,83 @@ export default function BranchDetailPage({
             </div>
             <div className="space-y-1.5">
               <Label>Assigned teacher</Label>
-              <Select
-                value={draftTeacherId}
-                onValueChange={(value) => setDraftTeacherId(value ?? UNASSIGNED)}
-                items={teacherOptions}
-                itemToStringLabel={(value) => teacherLabel(value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.fullName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {draftMatch.category === null ? (
+                <>
+                  <Select
+                    value={draftValue}
+                    onValueChange={(value) =>
+                      setDraftTeacherId(value ?? UNASSIGNED)
+                    }
+                    items={selectItemsFor(teachers)}
+                    itemToStringLabel={(value) => teacherLabel(value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {teachers.map((teacher) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Type a material name to match a specialty family (languages,
+                    IT, management).
+                  </p>
+                </>
+              ) : draftMatch.teachers.length === 1 ? (
+                <>
+                  <LockedTeacherBadge
+                    teacher={draftMatch.teachers[0]}
+                    avatarUrl={
+                      teacherProfiles.get(draftMatch.teachers[0].id)?.avatarUrl
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The only teacher specialised in{" "}
+                    {draftMatch.scopeLabel} — assigned automatically.
+                  </p>
+                </>
+              ) : draftMatch.teachers.length === 0 ? (
+                <>
+                  <NoSpecialistBadge />
+                  <p className="text-xs text-muted-foreground">
+                    No teacher lists{" "}
+                    {draftMatch.scopeLabel} yet. The material will be saved
+                    unassigned.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Select
+                    value={draftValue}
+                    onValueChange={(value) =>
+                      setDraftTeacherId(value ?? UNASSIGNED)
+                    }
+                    items={selectItemsFor(draftMatch.teachers)}
+                    itemToStringLabel={(value) => teacherLabel(value)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                      {draftMatch.teachers.map((teacher) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.fullName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {draftMatch.teachers.length} teachers specialised in{" "}
+                    {draftMatch.scopeLabel}.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 

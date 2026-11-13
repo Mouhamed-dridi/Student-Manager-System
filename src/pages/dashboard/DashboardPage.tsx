@@ -37,6 +37,7 @@ import {
   OPERATOR_WIDGETS,
   type OperatorWidgetPrefs,
 } from "./dashboardWidgets";
+import { useT } from "@/lib/i18n";
 
 const CHART_COLORS = [
   "#2563eb",
@@ -57,6 +58,7 @@ function formatCurrency(value: number): string {
 }
 
 export default function DashboardPage() {
+  const t = useT();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Which cards/charts are visible; persisted per browser (src/lib/dashboardWidgets.ts).
@@ -95,7 +97,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Dashboard</h2>
+        <h2 className="text-2xl font-semibold">{t("Dashboard")}</h2>
         <PersonalizeDashboardButton onClick={() => setCustomizeOpen(true)} />
       </div>
 
@@ -181,7 +183,7 @@ export default function DashboardPage() {
         {widgets.revenuePlanChart && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Revenue by Plan</CardTitle>
+              <CardTitle className="text-base">{t("Revenue by Plan")}</CardTitle>
             </CardHeader>
             <CardContent className="h-72">
               {stats.revenueByPlan.length === 0 ? (
@@ -221,7 +223,7 @@ export default function DashboardPage() {
 
         <Card className={cn(bothRevenueCharts && "lg:col-span-2")}>
           <CardHeader>
-            <CardTitle className="text-base">Students by Program</CardTitle>
+            <CardTitle className="text-base">{t("Students by Program")}</CardTitle>
           </CardHeader>
           <CardContent className="h-72">
             {stats.studentsByProgram.length === 0 ? (

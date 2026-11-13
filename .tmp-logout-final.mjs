@@ -1,0 +1,35 @@
+const BASE = "http://127.0.0.1:5174";
+const target = await (await fetch(`http://127.0.0.1:9222/json/new?${encodeURIComponent("about:blank")}`, { method: "PUT" })).json();
+const ws = new WebSocket(target.webSocketDebuggerUrl);
+let id = 0; const pending = new Map(); const logs = [];
+const t0 = Date.now();
+ws.addEventListener("message", (e) => {
+  const m = JSON.parse(e.data);
+  if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+  if (m.method === "Runtime.exceptionThrown") logs.push(`${Date.now()-t0}ms EXC ` + (m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text));
+  if (m.method === "Runtime.consoleAPICalled" && m.params.type === "error") logs.push(`${Date.now()-t0}ms error ` + m.params.args.map((a) => (a.description ?? a.value ?? "")).join(" || ").slice(0, 500));
+});
+await new Promise((r) => ws.addEventListener("open", r));
+const send = (method, params = {}) => { const i = ++id; ws.send(JSON.stringify({ id: i, method, params })); return new Promise((res, rej) => pending.set(i, (m) => m.error ? rej(new Error(JSON.stringify(m.error))) : res(m.result))); };
+const ev = async (expr) => { const r = await send("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true }); return r.result?.value; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const waitFor = async (expr, label, timeout = 20000) => { const s = Date.now(); while (Date.now() - s < timeout) { if (await ev(expr)) return; await sleep(200); } throw new Error("timeout: " + label); };
+await send("Runtime.enable"); await send("Network.enable"); await send("Page.enable");
+await send("Network.setCookie", { name: "role", value: "operator", domain: "127.0.0.1", path: "/" });
+await send("Page.navigate", { url: BASE + "/dashboard" });
+await waitFor(`[...document.querySelectorAll('header button')].some((b) => b.textContent.trim() === 'Logout')`, "header");
+await sleep(1500);
+console.log("dashboard:", await ev(`JSON.stringify({ path: location.pathname, root: document.getElementById('root').childElementCount })`));
+await ev(`[...document.querySelectorAll('header button')].find((b) => b.textContent.trim() === 'Logout')?.click()`);
+await waitFor(`document.body.innerText.includes('Are you sure you want to sign out')`, "dialog");
+console.log("dialog:", await ev(`JSON.stringify({ title: document.querySelector('[data-slot="alert-dialog-title"]')?.textContent, msg: document.querySelector('[data-slot="alert-dialog-description"]')?.textContent, color: getComputedStyle(document.querySelector('[data-slot="alert-dialog-content"]')).backgroundColor, focus: document.activeElement?.textContent?.trim() })`));
+await ev(`[...document.querySelectorAll('[data-slot="alert-dialog-cancel"]')].at(-1)?.click()`);
+await sleep(800);
+console.log("after cancel:", await ev(`JSON.stringify({ dialogGone: !document.body.innerText.includes('Are you sure you want to sign out'), cookie: document.cookie, path: location.pathname })`));
+await ev(`[...document.querySelectorAll('header button')].find((b) => b.textContent.trim() === 'Logout')?.click()`);
+await waitFor(`document.body.innerText.includes('Are you sure you want to sign out')`, "dialog 2");
+await ev(`[...document.querySelectorAll('[data-slot="alert-dialog-action"]')].at(-1)?.click()`);
+await waitFor(`location.pathname === '/login' && document.querySelectorAll('form input').length === 2`, "login form");
+console.log("after confirm:", await ev(`JSON.stringify({ path: location.pathname, cookie: document.cookie, form: document.querySelectorAll('form input').length, text: document.body.innerText.slice(0,60) })`));
+console.log("ERROR LOGS:", logs.slice(-5));
+ws.close();

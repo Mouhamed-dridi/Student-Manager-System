@@ -29,6 +29,7 @@ import StudentExamScoresPage from "./StudentExamScoresPage";
 import StudentEventsView from "./StudentEventsView";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
+import LogoutButton from "@/components/LogoutButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
@@ -42,6 +43,7 @@ import { loadCurrentStudent } from "./currentStudent";
 import type { Student } from "@/pages/students/StudentForm";
 import { clearSession } from "@/lib/session";
 import { useUnreadAnnouncements } from "@/hooks/useUnreadAnnouncements";
+import { useI18n } from "@/lib/i18n";
 
 type PageKey =
   | "dashboard"
@@ -105,14 +107,18 @@ function clearStudentSession() {
 }
 
 export default function StudentLayout() {
+  const { t } = useI18n();
   return (
-    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+    <ViewHistoryProvider
+      root={{ key: "dashboard", label: t("Dashboard") }}
+    >
       <StudentShell />
     </ViewHistoryProvider>
   );
 }
 
 function StudentShell() {
+  const { t } = useI18n();
   // Sections come from the shared history stack (see useViewHistory) so the
   // header back arrow and the sidebar agree on where the student is.
   const { currentSection, pushSection } = useViewHistory();
@@ -193,12 +199,13 @@ function StudentShell() {
 
   // The header shows the active section's own label, including children whose
   // label differs from their parent ("Exam Score" inside "Exams").
-  const activeLabel =
+  const activeLabel = t(
     menuItems
       .flatMap((item) =>
         item.children ? [item, ...item.children] : [item],
       )
-      .find((item) => item.key === active)?.label ?? "Student Portal";
+      .find((item) => item.key === active)?.label ?? "Student Portal",
+  );
 
   // Rendered twice (desktop sidebar and mobile Sheet). `onNavigate` closes the
   // drawer once a section has actually been selected; toggling an open parent
@@ -221,7 +228,7 @@ function StudentShell() {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                {item.label}
+                {t(item.label)}
                 <ChevronDown
                   className={`ml-auto h-4 w-4 transition-transform ${
                     expanded ? "rotate-180" : ""
@@ -234,7 +241,7 @@ function StudentShell() {
                     <button
                       key={child.key}
                       onClick={() => {
-                        pushSection(child.key, child.label);
+                        pushSection(child.key, t(child.label));
                         onNavigate?.();
                       }}
                       className={`flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors ${
@@ -243,7 +250,7 @@ function StudentShell() {
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                       }`}
                     >
-                      {child.label}
+                      {t(child.label)}
                     </button>
                   ))}
                 </div>
@@ -256,7 +263,7 @@ function StudentShell() {
           <button
             key={item.key}
             onClick={() => {
-              pushSection(item.key, item.label);
+              pushSection(item.key, t(item.label));
               onNavigate?.();
             }}
             className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
@@ -266,7 +273,7 @@ function StudentShell() {
             }`}
           >
             <Icon className="h-4 w-4" />
-            {item.label}
+            {t(item.label)}
             {item.key === "announcements" && unreadAnnouncements > 0 && (
               <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
                 {unreadAnnouncements}
@@ -316,7 +323,7 @@ function StudentShell() {
               variant="ghost"
               size="icon-sm"
               className="lg:hidden"
-              aria-label="Open navigation"
+              aria-label={t("Open navigation")}
               onClick={() => setMobileNavOpen(true)}
             >
               <Menu className="h-5 w-5" />
@@ -343,9 +350,7 @@ function StudentShell() {
                   : ""}
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
+            <LogoutButton onConfirm={handleLogout} />
           </div>
         </header>
 

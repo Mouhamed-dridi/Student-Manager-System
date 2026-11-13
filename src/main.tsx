@@ -10,13 +10,16 @@ import "./index.css";
 import App from "./App.tsx";
 import { applyDarkMode, getCachedSettings, getSettings } from "@/lib/api";
 import { setBrandingFromSettings } from "@/lib/branding";
+import { setLanguage, syncLanguageFromSettings } from "@/lib/i18n";
 
 config.autoAddCss = false;
 
 applyDarkMode(getCachedSettings().darkMode === true);
+setLanguage(getCachedSettings().language === "fr" ? "fr" : "en");
 getSettings()
   .then((settings) => {
     applyDarkMode(settings.darkMode === true);
+    syncLanguageFromSettings(settings.language);
     setBrandingFromSettings(settings);
   })
   .catch(() => {});

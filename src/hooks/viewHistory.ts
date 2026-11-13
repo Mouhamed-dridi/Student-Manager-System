@@ -7,7 +7,10 @@ import {
 
 // In-app back navigation for the three portals. Sections are state, not routes
 // (see AGENTS.md), so the browser's history knows nothing about them: this
-// stack is the history the header arrow walks.
+// stack is the history the header arrow walks — and, through one synthetic
+// same-URL browser-history entry, also the history the browser's Back button
+// walks (`ViewHistoryProvider` turns `popstate` into `goBack()`), so Back from
+// a branch detail returns to the Branches grid instead of leaving the portal.
 //
 // The stack always starts with the portal's root section (the dashboard). A
 // section switch pushes another section entry; a nested view (course details,

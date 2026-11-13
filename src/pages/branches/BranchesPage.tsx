@@ -10,10 +10,11 @@
 // Sections are state, not routes (see AGENTS.md), so both are nested views on
 // the shared history stack rather than /branches/:id URLs.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, BookOpen, UserRound, Users } from "lucide-react";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
+  assignBranchMaterialTeacher,
   errorMessage,
   listBranchMaterials,
   listBranches,
@@ -33,6 +34,7 @@ import type { Teacher } from "@/pages/teachers/TeacherForm";
 import BranchDetailPage from "./BranchDetailPage";
 import BranchLevelBadge from "./BranchLevelBadge";
 import BranchPlanningPage from "./BranchPlanningPage";
+import { matchingTeachersForMaterial } from "./materialSpecialty";
 
 /** Kept as the name BranchPlanningPage imports; the shape lives in the API. */
 export type Branch = BranchRecord;
@@ -167,6 +169,43 @@ export default function BranchesPage() {
       setError(errorMessage(err));
     }
   }, [load]);
+
+  // Strict specialty matching applies to stored rows too, not just the
+  // dropdowns: once per visit, clear an assignment whose teacher belongs to a
+  // different family and auto-assign a material that has exactly one
+  // specialist. Unrecognised material names are left alone (nothing to match).
+  const realignedRef = useRef(false);
+  useEffect(() => {
+    if (!data || realignedRef.current || data.teachers.length === 0) return;
+    const fixes: { id: string; teacherId: string | null }[] = [];
+    for (const material of data.materials) {
+      const match = matchingTeachersForMaterial(material.name, data.teachers);
+      if (match.unmatched) continue;
+      const valid = material.teacherId
+        ? match.teachers.some((teacher) => teacher.id === material.teacherId)
+        : false;
+      if (valid) continue;
+      if (match.teachers.length === 1) {
+        fixes.push({ id: material.id, teacherId: match.teachers[0].id });
+      } else if (material.teacherId) {
+        fixes.push({ id: material.id, teacherId: null });
+      }
+    }
+    if (fixes.length === 0) return;
+    realignedRef.current = true;
+    void (async () => {
+      try {
+        await Promise.all(
+          fixes.map((fix) =>
+            assignBranchMaterialTeacher(fix.id, fix.teacherId),
+          ),
+        );
+        await reload();
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    })();
+  }, [data, reload]);
 
   // Branches and their materials are not in the realtime publication, so a
   // quiet refetch on focus keeps the grid in step with other tabs.

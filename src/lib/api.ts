@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { getRole } from "@/lib/session";
+import { setTheme } from "@/lib/theme";
 import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
@@ -4544,7 +4545,7 @@ export function getCachedSettings(): AppSettings {
 
 /** Applies (or clears) the app-wide `.dark` class on <html>. */
 export function applyDarkMode(enabled: boolean): void {
-  document.documentElement.classList.toggle("dark", enabled);
+  setTheme(enabled ? "dark" : "light");
 }
 
 /** Session key → value snapshot for the current settings (DB with local fallback). */

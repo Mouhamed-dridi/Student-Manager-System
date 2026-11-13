@@ -29,6 +29,7 @@ import TeacherEventDetailPage from "./TeacherEventDetailPage";
 import TeacherSettingsPage from "./TeacherSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
+import LogoutButton from "@/components/LogoutButton";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
@@ -42,6 +43,7 @@ import { loadCurrentTeacher } from "./currentTeacher";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { clearSession } from "@/lib/session";
 import { useUnreadAnnouncements } from "@/hooks/useUnreadAnnouncements";
+import { useI18n } from "@/lib/i18n";
 
 type PageKey =
   | "dashboard"
@@ -95,14 +97,18 @@ function clearTeacherSession() {
 }
 
 export default function TeacherLayout() {
+  const { t } = useI18n();
   return (
-    <ViewHistoryProvider root={{ key: "dashboard", label: "Dashboard" }}>
+    <ViewHistoryProvider
+      root={{ key: "dashboard", label: t("Dashboard") }}
+    >
       <TeacherShell />
     </ViewHistoryProvider>
   );
 }
 
 function TeacherShell() {
+  const { t } = useI18n();
   // Sections live in the shared history stack (see useViewHistory): the header
   // back arrow walks it, and `pushSection` is the sidebar's only navigation.
   const { currentSection, pushSection } = useViewHistory();
@@ -234,7 +240,7 @@ function TeacherShell() {
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                {item.label}
+                {t(item.label)}
                 <ChevronDown
                   className={`ml-auto h-4 w-4 transition-transform ${
                     expanded ? "rotate-180" : ""
@@ -247,7 +253,7 @@ function TeacherShell() {
                     <button
                       key={child.key}
                       onClick={() => {
-                        pushSection(child.key, child.label);
+                        pushSection(child.key, t(child.label));
                         // Leaving the events section closes any open event.
                         setOpenEventId(null);
                         onNavigate?.();
@@ -258,7 +264,7 @@ function TeacherShell() {
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                       }`}
                     >
-                      {child.label}
+                      {t(child.label)}
                     </button>
                   ))}
                 </div>
@@ -271,7 +277,7 @@ function TeacherShell() {
           <button
             key={item.key}
             onClick={() => {
-              pushSection(item.key, item.label);
+              pushSection(item.key, t(item.label));
               // Leaving the events section also closes any open event.
               setOpenEventId(null);
               onNavigate?.();
@@ -283,7 +289,7 @@ function TeacherShell() {
             }`}
           >
             <Icon className="h-4 w-4" />
-            {item.label}
+            {t(item.label)}
             {item.key === "announcements" && unreadAnnouncements > 0 && (
               <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">
                 {unreadAnnouncements}
@@ -333,7 +339,7 @@ function TeacherShell() {
               variant="ghost"
               size="icon-sm"
               className="lg:hidden"
-              aria-label="Open navigation"
+              aria-label={t("Open navigation")}
               onClick={() => setMobileNavOpen(true)}
             >
               <Menu className="h-5 w-5" />
@@ -358,9 +364,7 @@ function TeacherShell() {
               src={avatar ?? undefined}
               fallback="T"
             />
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
+            <LogoutButton onConfirm={handleLogout} />
           </div>
         </header>
 

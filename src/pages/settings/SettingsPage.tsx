@@ -30,7 +30,6 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
-  applyDarkMode,
   errorMessage,
   getSettings,
   reconcileAttendanceProfiles,
@@ -46,6 +45,8 @@ import {
   APP_VERSION,
 } from "@/lib/appInfo";
 import { setBrandingFromSettings } from "@/lib/branding";
+import { setTheme, useTheme } from "@/lib/theme";
+import { useI18n } from "@/lib/i18n";
 import {
   INVALID_TOKEN_MESSAGE,
   isValidLicenseToken,
@@ -114,6 +115,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function SettingsPage() {
+  const { t, setLanguage: setAppLanguage } = useI18n();
   const [tab, setTab] = useState<TabKey>("general");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -124,8 +126,11 @@ export default function SettingsPage() {
   const [universityName, setUniversityName] = useState("");
   const [logoUrl, setLogoUrl] = useState<string | undefined>(undefined);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [language, setLanguage] = useState<string | undefined>(undefined);
-  const [darkMode, setDarkMode] = useState(false);
+  const [language, setLanguageDraft] = useState<string | undefined>(undefined);
+  // Global store, not a local copy: the header/top bar and the other settings
+  // pages switch at the same time as this switch.
+  const theme = useTheme();
+  const darkMode = theme === "dark";
   const [licenseActivatedAt, setLicenseActivatedAt] = useState<
     string | undefined
   >(undefined);
@@ -153,8 +158,8 @@ export default function SettingsPage() {
         setSystemName(settings.systemName ?? "");
         setUniversityName(settings.universityName ?? "");
         setLogoUrl(settings.logoUrl);
-        setLanguage(settings.language);
-        setDarkMode(settings.darkMode === true);
+        setLanguageDraft(settings.language === "fr" ? "fr" : "en");
+        setTheme(settings.darkMode === true ? "dark" : "light");
         setLicenseActivatedAt(settings.licenseActivatedAt);
         setLicenseToken(settings.licenseToken);
       })
@@ -168,10 +173,6 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    applyDarkMode(darkMode);
-  }, [darkMode]);
 
   useEffect(() => {
     if (!successMessage) return;
@@ -204,6 +205,10 @@ export default function SettingsPage() {
       setError(null);
       await saveSettings(settings);
       setBrandingFromSettings(settings);
+      // Apply the language immediately: every subscribed layout/page re-renders
+      // in the chosen language without a reload. The DB row remains the durable
+      // copy for the next visit, and the store mirrors the localStorage cache.
+      setAppLanguage(settings.language === "fr" ? "fr" : "en");
       setSuccessMessage("Settings saved.");
     } catch (err) {
       setError(errorMessage(err));
@@ -292,14 +297,14 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) return <DataLoading label="Loading settings…" />;
+  if (loading) return <DataLoading label={t("Loading settings…")} />;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Settings</h2>
+        <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          System-wide configuration for this center.
+          {t("System-wide configuration for this center.")}
         </p>
       </div>
 
@@ -308,7 +313,7 @@ export default function SettingsPage() {
       {successMessage && (
         <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {successMessage}
+          {t(successMessage)}
         </div>
       )}
 
@@ -316,7 +321,7 @@ export default function SettingsPage() {
         <TabsList variant="line" className="h-10 w-full">
           {TABS.map((item) => (
             <TabsTrigger key={item.key} value={item.key}>
-              {item.label}
+              {t(item.label)}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -324,14 +329,14 @@ export default function SettingsPage() {
         <TabsContent value="general" className="mt-6 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>General</CardTitle>
+              <CardTitle>{t("General")}</CardTitle>
               <CardDescription>
-                Branding shown across the operator sidebar and top bar.
+                {t("Branding shown across the operator sidebar and top bar.")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="system-name">System name</Label>
+                <Label htmlFor="system-name">{t("System name")}</Label>
                 <Input
                   id="system-name"
                   placeholder="Student Manager System"
@@ -340,16 +345,16 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="university-name">University name</Label>
+                <Label htmlFor="university-name">{t("University name")}</Label>
                 <Input
                   id="university-name"
-                  placeholder="Center / university name"
+                  placeholder={t("Center / university name")}
                   value={universityName}
                   onChange={(e) => setUniversityName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>University logo</Label>
+                <Label>{t("University logo")}</Label>
                 <div className="flex flex-wrap items-center gap-4">
                   {logoUrl ? (
                     <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-lg border bg-muted">
@@ -373,7 +378,7 @@ export default function SettingsPage() {
                       onClick={() => logoInputRef.current?.click()}
                     >
                       <ImagePlus className="h-4 w-4" />
-                      {uploadingLogo ? "Uploading…" : "Upload logo"}
+                      {uploadingLogo ? t("Uploading…") : t("Upload logo")}
                     </Button>
                     {logoUrl && (
                       <Button
@@ -383,7 +388,7 @@ export default function SettingsPage() {
                         onClick={() => setLogoUrl(undefined)}
                       >
                         <Trash2 className="h-4 w-4" />
-                        Remove
+                        {t("Remove")}
                       </Button>
                     )}
                   </div>
@@ -396,9 +401,10 @@ export default function SettingsPage() {
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  PNG or JPEG; downscaled to ≤{LOGO_MAX_WIDTH}px wide and uploaded
-                  to the <code>university-logo</code> bucket. Only the public URL
-                  is stored in settings, then shown on the login card.
+                  {t(
+                    "PNG or JPEG; downscaled to {width}px wide and uploaded to the university-logo bucket. Only the public URL is stored in settings, then shown on the login card.",
+                    { width: LOGO_MAX_WIDTH },
+                  )}
                 </p>
               </div>
 
@@ -406,7 +412,7 @@ export default function SettingsPage() {
 
               <div className="flex justify-end">
                 <Button onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving…" : "Save Settings"}
+                  {saving ? t("Saving…") : t("Save Settings")}
                 </Button>
               </div>
             </CardContent>
@@ -416,25 +422,27 @@ export default function SettingsPage() {
         <TabsContent value="preferences" className="mt-6 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Preferences</CardTitle>
+              <CardTitle>{t("Preferences")}</CardTitle>
               <CardDescription>
-                Personal display preferences for this account.
+                {t("Personal display preferences for this account.")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Language</Label>
+                <Label>{t("Language")}</Label>
                 <Select
                   value={language ?? ""}
-                  onValueChange={(value) => setLanguage(value ?? undefined)}
+                  onValueChange={(value) =>
+                    setLanguageDraft(value ?? undefined)
+                  }
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select language" />
+                    <SelectValue placeholder={t("Select language")} />
                   </SelectTrigger>
                   <SelectContent>
                     {LANGUAGE_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.label)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -445,14 +453,16 @@ export default function SettingsPage() {
 
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <Label>Dark mode</Label>
+                  <Label>{t("Dark mode")}</Label>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Applies the dark theme across the whole app.
+                    {t("Applies the dark theme across the whole app.")}
                   </p>
                 </div>
                 <Switch
                   checked={darkMode}
-                  onCheckedChange={(checked) => setDarkMode(checked)}
+                  onCheckedChange={(checked) =>
+                    setTheme(checked ? "dark" : "light")
+                  }
                 />
               </div>
 
@@ -460,7 +470,7 @@ export default function SettingsPage() {
 
               <div className="flex justify-end">
                 <Button onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving…" : "Save Settings"}
+                  {saving ? t("Saving…") : t("Save Settings")}
                 </Button>
               </div>
             </CardContent>
@@ -470,17 +480,19 @@ export default function SettingsPage() {
         <TabsContent value="system" className="mt-6 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>System</CardTitle>
+              <CardTitle>{t("System")}</CardTitle>
               <CardDescription>
-                Deployment details for this {APP_SHORT_NAME} instance.
+                {t("Deployment details for this {name} instance.", {
+                  name: APP_SHORT_NAME,
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <Label>Check for updates</Label>
+                  <Label>{t("Check for updates")}</Label>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Look for a newer version of the application.
+                    {t("Look for a newer version of the application.")}
                   </p>
                 </div>
                 <Button
@@ -494,7 +506,7 @@ export default function SettingsPage() {
                       updateChecking ? "h-4 w-4 animate-spin" : "h-4 w-4"
                     }
                   />
-                  {updateChecking ? "Checking…" : "Check for Updates"}
+                  {updateChecking ? t("Checking…") : t("Check for Updates")}
                 </Button>
               </div>
               {updateResult && (
@@ -508,12 +520,11 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <Label>Sync & validate data</Label>
+                    <Label>{t("Sync & validate data")}</Label>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Scans the attendance log for records missing program,
-                      training or class info and backfills them from the
-                      matching student/teacher profiles. Stored values are
-                      never overwritten, only gaps are filled.
+                      {t(
+                        "Scans the attendance log for records missing program, training or class info and backfills them from the matching student/teacher profiles. Stored values are never overwritten, only gaps are filled.",
+                      )}
                     </p>
                   </div>
                   <Button
@@ -523,7 +534,7 @@ export default function SettingsPage() {
                     disabled={syncing}
                   >
                     <Database className="h-4 w-4" />
-                    {syncing ? "Syncing…" : "Sync Data"}
+                    {syncing ? t("Syncing…") : t("Sync Data")}
                   </Button>
                 </div>
 
@@ -533,23 +544,31 @@ export default function SettingsPage() {
                   <div className="space-y-3 rounded-md border bg-muted/50 p-3">
                     <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
                       <div>
-                        <p className="text-xs text-muted-foreground">Scanned</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("Scanned")}
+                        </p>
                         <p className="font-semibold">{syncResult.scanned}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Fixed</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("Fixed")}
+                        </p>
                         <p className="font-semibold text-green-700 dark:text-green-400">
                           {syncResult.updated}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Unmatched</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("Unmatched")}
+                        </p>
                         <p className="font-semibold">
                           {syncResult.unmatched}
                         </p>
                       </div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Failed</p>
+                        <p className="text-xs text-muted-foreground">
+                          {t("Failed")}
+                        </p>
                         <p className="font-semibold">
                           {syncResult.failed}
                         </p>
@@ -596,9 +615,11 @@ export default function SettingsPage() {
         <TabsContent value="about" className="mt-6 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>About</CardTitle>
+              <CardTitle>{t("About")}</CardTitle>
               <CardDescription>
-                Application details for this {APP_SHORT_NAME} deployment.
+                {t("Application details for this {name} deployment.", {
+                  name: APP_SHORT_NAME,
+                })}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -625,11 +646,17 @@ export default function SettingsPage() {
               </div>
               <Separator />
               <div className="space-y-3">
-                <DetailRow label="Version" value={APP_VERSION} />
-                <DetailRow label="Frontend" value={`React ${reactVersion}`} />
-                <DetailRow label="Data layer" value="Supabase (PostgreSQL)" />
+                <DetailRow label={t("Version")} value={APP_VERSION} />
                 <DetailRow
-                  label="Copyright"
+                  label={t("Frontend")}
+                  value={`React ${reactVersion}`}
+                />
+                <DetailRow
+                  label={t("Data layer")}
+                  value="Supabase (PostgreSQL)"
+                />
+                <DetailRow
+                  label={t("Copyright")}
                   value={`\u00A9 ${new Date().getFullYear()} ${APP_NAME}`}
                 />
               </div>

@@ -5,9 +5,9 @@ import type { BranchLevel } from "@/lib/api";
 // detail page. Deliberately monochrome so the badge reads as a stamp, not as
 // another status colour: the level is the only thing it encodes.
 const TONE: Record<BranchLevel, string> = {
-  CAP: "bg-zinc-900 text-white border-zinc-700",
-  BTP: "bg-zinc-800 text-zinc-50 border-zinc-600",
-  BTS: "bg-zinc-700 text-white border-zinc-500",
+  CAP: "border-zinc-300 bg-zinc-100 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white",
+  BTP: "border-zinc-400 bg-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-50",
+  BTS: "border-zinc-700 bg-zinc-900 text-white dark:border-zinc-500 dark:bg-zinc-700 dark:text-white",
 };
 
 export default function BranchLevelBadge({

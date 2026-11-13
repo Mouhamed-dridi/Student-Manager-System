@@ -37,7 +37,6 @@ import {
 import { DataLoading } from "@/components/DataState";
 import UserAvatar from "@/components/UserAvatar";
 import {
-  applyDarkMode,
   deleteProfilePicture,
   errorMessage,
   getSettings,
@@ -47,6 +46,8 @@ import {
 } from "@/lib/api";
 import type { UserProfile } from "@/lib/api";
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
+import { setTheme, useTheme } from "@/lib/theme";
+import { setLanguage as applyLanguage, useI18n } from "@/lib/i18n";
 import { notifyStudentProfileChanged } from "@/lib/studentProfile";
 import {
   loadUserProfile,
@@ -109,6 +110,7 @@ type SocialKey = (typeof SOCIAL_FIELDS)[number]["key"];
 type SocialState = Record<SocialKey, string>;
 
 export default function StudentSettingsPage() {
+  const { t } = useI18n();
   // undefined = session record still loading; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   // The form waits for the user_profiles row so its inputs start from the
@@ -139,8 +141,8 @@ export default function StudentSettingsPage() {
   if (student === undefined || (student && !profileReady)) {
     return (
       <div>
-        <h2 className="text-2xl font-semibold">Settings</h2>
-        <DataLoading label="Loading settings…" />
+        <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
+        <DataLoading label={t("Loading settings…")} />
       </div>
     );
   }
@@ -148,10 +150,11 @@ export default function StudentSettingsPage() {
   if (!student) {
     return (
       <div>
-        <h2 className="text-2xl font-semibold">Settings</h2>
+        <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
         <p className="mt-4 text-sm text-muted-foreground">
-          Your student record could not be found. It may have been removed by
-          the administration.
+          {t(
+          "Your student record could not be found. It may have been removed by the administration.",
+        )}
         </p>
       </div>
     );
@@ -159,15 +162,15 @@ export default function StudentSettingsPage() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="text-2xl font-semibold">Settings</h2>
+      <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Manage your profile and display preferences.
+        {t("Manage your profile and display preferences.")}
       </p>
 
       <Tabs defaultValue="profile" className="mt-6">
         <TabsList variant="line">
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="profile">{t("Profile")}</TabsTrigger>
+          <TabsTrigger value="general">{t("General")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-6">
@@ -189,6 +192,7 @@ function ProfileTab({
   student: Student;
   onSaved: (next: Student) => void;
 }) {
+  const { t } = useI18n();
   // user_profiles is the source for the name/photo in the top bar; the
   // students row is the fallback for accounts created before that table.
   const profile = useUserProfile("student", student.id);
@@ -541,7 +545,7 @@ function ProfileTab({
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={handleSaveProfile} disabled={saving}>
-          {saving ? "Saving…" : "Save Changes"}
+          {saving ? t("Saving…") : t("Save Changes")}
         </Button>
         {saveMessage && (
           <p className="text-sm text-green-600 dark:text-green-400">
@@ -557,7 +561,9 @@ function ProfileTab({
 }
 
 function GeneralTab() {
-  const [darkMode, setDarkMode] = useState(false);
+  const { t } = useI18n();
+  const theme = useTheme();
+  const darkMode = theme === "dark";
   const [language, setLanguage] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
@@ -568,7 +574,7 @@ function GeneralTab() {
     getSettings()
       .then((settings) => {
         if (cancelled) return;
-        setDarkMode(settings.darkMode === true);
+        setTheme(settings.darkMode === true ? "dark" : "light");
         setLanguage(settings.language);
       })
       .catch(() => {
@@ -581,10 +587,6 @@ function GeneralTab() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (!loading) applyDarkMode(darkMode);
-  }, [darkMode, loading]);
 
   useEffect(() => {
     if (!status) return;
@@ -608,35 +610,36 @@ function GeneralTab() {
   };
 
   const handleDarkMode = (checked: boolean) => {
-    setDarkMode(checked);
-    // Apply immediately; the persisted copy follows.
-    applyDarkMode(checked);
+    // Apply immediately through the global store; the persisted copy follows.
+    setTheme(checked ? "dark" : "light");
     void persist({ darkMode: checked });
   };
 
   const handleLanguage = (value: string) => {
     setLanguage(value);
+    // Apply immediately through the global store, like dark mode.
+    applyLanguage(value === "fr" ? "fr" : "en");
     void persist({ language: value });
   };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>General</CardTitle>
+        <CardTitle>{t("General")}</CardTitle>
         <CardDescription>
-          Display preferences for this deployment.
+          {t("Display preferences for this deployment.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
-          <DataLoading label="Loading preferences…" />
+          <DataLoading label={t("Loading preferences…")} />
         ) : (
           <>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <Label>Dark mode</Label>
+                <Label>{t("Dark mode")}</Label>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Applies the dark theme across the whole app.
+                  {t("Applies the dark theme across the whole app.")}
                 </p>
               </div>
               <Switch checked={darkMode} onCheckedChange={handleDarkMode} />
@@ -645,24 +648,24 @@ function GeneralTab() {
             <Separator />
 
             <div className="space-y-2">
-              <Label>Language</Label>
+              <Label>{t("Language")}</Label>
               <Select
                 value={language ?? ""}
                 onValueChange={(value) => value && handleLanguage(value)}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select language" />
+                  <SelectValue placeholder={t("Select language")} />
                 </SelectTrigger>
                 <SelectContent>
                   {LANGUAGE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.label)}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Stored as the app-wide language preference.
+                {t("Stored as the app-wide language preference.")}
               </p>
             </div>
 
@@ -674,7 +677,7 @@ function GeneralTab() {
                     : "text-sm text-green-600 dark:text-green-400"
                 }
               >
-                {error ?? status}
+                {error ?? t(status ?? "")}
               </p>
             )}
           </>
