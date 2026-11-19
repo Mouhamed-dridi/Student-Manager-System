@@ -48,10 +48,9 @@ import { setBrandingFromSettings } from "@/lib/branding";
 import { setTheme, useTheme } from "@/lib/theme";
 import { useI18n } from "@/lib/i18n";
 import {
-  INVALID_TOKEN_MESSAGE,
-  isValidLicenseToken,
-  licenseExpiry,
-} from "@/lib/license";
+  activateLicenseKey,
+  setLicenseFromSettings,
+} from "@/lib/licenseStore";
 import { LicenseTab } from "./LicenseTab";
 import { LANGUAGE_OPTIONS } from "@/lib/languages";
 import { BackupExportPage } from "./BackupExportPage";
@@ -192,6 +191,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [licenseError, setLicenseError] = useState<string | null>(null);
+  const [licenseActivating, setLicenseActivating] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -254,10 +254,8 @@ export default function SettingsPage() {
   const persist = async (
     patch: Partial<AppSettings>,
     message: string,
-    nextDraft?: SettingsDraft,
   ): Promise<boolean> => {
-    const base = nextDraft ?? draft;
-    const settings: AppSettings = { ...settingsFromDraft(base), ...patch };
+    const settings: AppSettings = { ...settingsFromDraft(draft), ...patch };
     try {
       setSaving(true);
       setError(null);
@@ -265,6 +263,9 @@ export default function SettingsPage() {
       setBrandingFromSettings(settings);
       setAppLanguage(settings.language === "fr" ? "fr" : "en");
       setTheme(settings.darkMode === true ? "dark" : "light");
+      // Keep the app-wide gate in step with the columns just written, without
+      // waiting for the realtime event.
+      setLicenseFromSettings(settings);
       setSuccessMessage(message);
       return true;
     } catch (err) {
@@ -282,33 +283,33 @@ export default function SettingsPage() {
   };
 
   /**
-   * Validates the pasted key against the issued token pool and restarts the
-   * license term from today. The three license columns are persisted right away
-   * (they are the tab's own action), and the rest of the form is saved with them.
+   * Validates the pasted key against the `PREFIX-XXXX-XXXX-XXXX-XXXX` format and
+   * writes only the four license columns (key, plan, status, expiry), so the
+   * rest of the unsaved form is untouched. The shared license store is updated
+   * by `activateLicenseKey()`, which unlocks the app immediately if the lock
+   * screen was showing.
    */
   const handleActivateLicense = async (key: string): Promise<boolean> => {
     setLicenseError(null);
-    if (!isValidLicenseToken(key)) {
-      setLicenseError(INVALID_TOKEN_MESSAGE);
-      return false;
+    setLicenseActivating(true);
+    try {
+      const result = await activateLicenseKey(key);
+      if (!result.ok) {
+        setLicenseError(result.error ?? "That license key is not valid.");
+        return false;
+      }
+      setDraft((current) => ({
+        ...current,
+        licenseKey: result.key ?? "",
+        licensePlan: result.plan ?? "",
+        licenseStatus: "Active",
+        licenseExpiresAt: result.expiresAt ?? "",
+      }));
+      setSuccessMessage("License activated.");
+      return true;
+    } finally {
+      setLicenseActivating(false);
     }
-    const expiresAt = licenseExpiry(new Date().toISOString()).toISOString();
-    const nextDraft: SettingsDraft = {
-      ...draft,
-      licenseKey: key,
-      licenseStatus: "active",
-      licenseExpiresAt: expiresAt,
-    };
-    setDraft(nextDraft);
-    return persist(
-      {
-        licenseKey: key,
-        licenseStatus: "active",
-        licenseExpiresAt: expiresAt,
-      },
-      "License activated.",
-      nextDraft,
-    );
   };
 
   /**
@@ -838,7 +839,7 @@ export default function SettingsPage() {
             status={draft.licenseStatus}
             licenseKey={draft.licenseKey}
             expiresAt={draft.licenseExpiresAt}
-            activating={saving}
+            activating={licenseActivating}
             error={licenseError}
             onActivate={handleActivateLicense}
           />

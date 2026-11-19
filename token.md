@@ -1,42 +1,67 @@
-# License Tokens
+# License Keys
 
-Pool of license tokens accepted by the Settings > License renewal dialog.
+Human-readable mirror of the key format enforced by `src/lib/license.ts`.
+The app cannot read this file at runtime — **the code is the source of truth**;
+update both when the format changes.
 
-These are **base64** encoded. Decoded, each one is a `fake-token-...` placeholder,
-so they carry no real entitlement — they exist for development and demo data only.
-
-| # | Token | Decoded |
-|---|---|---|
-| 1 | `ZmFrZS10b2tlbi0yMGNhcnJldHNyLW5vdC1yZWFs` | `fake-token-20carretsr-not-real` |
-| 2 | `ZmFrZS10b2tlbi0yMGNhcnJldHNyLXRlc3QtMDAx` | `fake-token-20carretsr-test-001` |
-| 3 | `ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRlbW8tYWJj` | `fake-token-20carretsr-demo-abc` |
-| 4 | `ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRldi1vbmx5` | `fake-token-20carretsr-dev-only` |
-| 5 | `ZmFrZS10b2tlbi0yMGNhcnJldHNyLW1vY2steHl6` | `fake-token-20carretsr-mock-xyz` |
-
-## Raw list
+## Format
 
 ```
-ZmFrZS10b2tlbi0yMGNhcnJldHNyLW5vdC1yZWFs
-ZmFrZS10b2tlbi0yMGNhcnJldHNyLXRlc3QtMDAx
-ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRlbW8tYWJj
-ZmFrZS10b2tlbi0yMGNhcnJldHNyLWRldi1vbmx5
-ZmFrZS10b2tlbi0yMGNhcnJldHNyLW1vY2steHl6
+PREFIX-XXXX-XXXX-XXXX-XXXX[-XXXX]
 ```
 
-## Status
+- Case-insensitive (the app trims and upper-cases before validating).
+- Four **or** five groups of four characters after the prefix; each character
+  is `A–Z` or `0–9`.
+- Examples: `M-A1B2-C3D4-E5F6-G7H8` (4 groups) and
+  `M-AGR6-HGRW-ZS43-MVVG-YB5D` (5 groups).
 
-These tokens **are** enforced. `LICENSE_TOKENS` in `src/lib/license.ts` holds
-the pool and `isValidLicenseToken()` checks membership, called from
-`handleRenew` in `src/pages/settings/SettingsPage.tsx`. A submitted token that
-is not in the pool never reaches the database: the dialog stays open and shows
-"License not valid, please add another, recheck, or contact support."
+## Terms
 
-A valid token restarts the term from today, stores itself in the
-`license_token` settings row (so the License card shows the key that is
-actually active) and stamps `license_activated_at`, which drives the expiry date
-and remaining-days count.
+| Prefix | Plan       | Days added from activation |
+| ------ | ---------- | -------------------------- |
+| `M-`   | 1 Month    | 30                         |
+| `3-`   | 3 Months   | 90                         |
+| `Y-`   | 1 Year     | 365                        |
 
-Because a browser bundle cannot read this file at runtime, **the array in
-`src/lib/license.ts` is the source of truth** — update it whenever this list
-changes. Matching is exact after trimming; base64 is case-sensitive, so the
-comparison does not fold case.
+Anything else is rejected before it reaches the database, with the message in
+`INVALID_LICENSE_KEY_MESSAGE` ("Invalid license key. Use M- (1 month), 3- (3
+months) or Y- (1 year) followed by four or five groups of four characters…").
+
+## Activation
+
+`activateLicenseKey()` (`src/lib/licenseStore.ts`) validates the key, computes
+`license_expires_at = now + plan.days`, then writes only these columns on
+`public.center_settings` row `id = 1` (`saveLicenseActivation()` in
+`src/lib/api.ts`):
+
+| Column               | Value                                   |
+| -------------------- | --------------------------------------- |
+| `license_key`        | the normalized key                      |
+| `license_plan`       | `1 Month` \| `3 Months` \| `1 Year`     |
+| `license_status`     | `Active`                                |
+| `license_expires_at` | ISO timestamp of the computed expiry    |
+
+Everything else is derived from `license_expires_at`:
+
+```ts
+Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)));
+```
+
+`daysRemaining <= 0` (or a missing/unreadable expiry) locks the app behind
+`src/components/LicenseLockScreen.tsx`; activating a valid key there unlocks it
+immediately, without a reload.
+
+## Sample keys (development)
+
+These are structurally valid and grant real terms — they are only samples for
+testing the flow, not issued licenses:
+
+```
+M-A1B2-C3D4-E5F6-G7H8
+M-AGR6-HGRW-ZS43-MVVG-YB5D
+3-A1B2-C3D4-E5F6-G7H8
+3-AGR6-HGRW-ZS43-MVVG-YB5D
+Y-A1B2-C3D4-E5F6-G7H8
+Y-AGR6-HGRW-ZS43-MVVG-YB5D
+```

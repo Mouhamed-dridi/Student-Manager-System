@@ -782,7 +782,7 @@ declare
 begin
   foreach t in array array[
     'students', 'teachers', 'courses', 'publications', 'course_reviews', 'events',
-    'quizzes', 'quiz_responses'
+    'quizzes', 'quiz_responses', 'center_settings'
   ]
   loop
     begin

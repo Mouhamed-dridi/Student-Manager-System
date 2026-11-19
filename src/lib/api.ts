@@ -4737,6 +4737,53 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   if (error) throw centerSettingsError(error);
 }
 
+/** The four license columns written when a key is activated. */
+export interface LicenseActivation {
+  licenseKey: string;
+  /** Plan label: "1 Month" | "3 Months" | "1 Year". */
+  licensePlan: string;
+  /** Always "Active" for a freshly activated key. */
+  licenseStatus: string;
+  /** ISO timestamp computed from the key's prefix. */
+  licenseExpiresAt: string;
+}
+
+/**
+ * Writes only the license columns on `center_settings` row id = 1, so the lock
+ * screen can activate a key before the rest of the app (and the rest of the
+ * settings form) has loaded without overwriting branding or preferences.
+ *
+ * An upsert is used because a database seeded without row 1 would otherwise
+ * update zero rows and silently do nothing. The localStorage cache is only
+ * mirrored after the write succeeds, so a rejected key never looks active on
+ * the next boot.
+ */
+export async function saveLicenseActivation(
+  activation: LicenseActivation,
+): Promise<void> {
+  const { error } = await withTimeout(
+    supabase.from("center_settings").upsert(
+      {
+        id: CENTER_SETTINGS_ID,
+        license_key: activation.licenseKey,
+        license_plan: activation.licensePlan,
+        license_status: activation.licenseStatus,
+        license_expires_at: activation.licenseExpiresAt,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "id" },
+    ),
+  );
+  if (error) throw centerSettingsError(error);
+  writeLocalSettingsStore({
+    ...readLocalSettingsStore(),
+    license_key: activation.licenseKey,
+    license_plan: activation.licensePlan,
+    license_status: activation.licenseStatus,
+    license_expires_at: activation.licenseExpiresAt,
+  });
+}
+
 /**
  * Stamps `last_backup_at` after a Backup & Export download. Best effort: a
  * failed stamp must never block the file the operator asked for, so the error is

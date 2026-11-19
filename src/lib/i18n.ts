@@ -350,6 +350,42 @@ const FRENCH: Record<string, string> = {
   "Stored as the app-wide language preference.":
     "Enregistré comme préférence de langue de l'application.",
 
+  // ------------------------------------------------------------------ license
+  "Active plan": "Forfait actif",
+  "No plan": "Aucun forfait",
+  "Not activated": "Non activée",
+  "License key": "Clé de licence",
+  "Days remaining": "Jours restants",
+  Expires: "Expire le",
+  "License terms": "Durées de licence",
+  "Each key adds its term to the activation date.":
+    "Chaque clé ajoute sa durée à la date d'activation.",
+  Current: "Actuel",
+  "{days} days": "{days} jours",
+  "1 Month": "1 mois",
+  "3 Months": "3 mois",
+  "1 Year": "1 an",
+  "Activate a new key": "Activer une nouvelle clé",
+  "Activate License": "Activer la licence",
+  "Activate Product": "Activer le produit",
+  "Activating…": "Activation…",
+  "Keys look like M-XXXX-XXXX-XXXX-XXXX-XXXX (four or five groups). Activating restarts the term from today and updates the plan, status and expiration date on this center.":
+    "Les clés ressemblent à M-XXXX-XXXX-XXXX-XXXX-XXXX (quatre ou cinq groupes). L'activation redémarre la durée à partir d'aujourd'hui et met à jour le forfait, le statut et la date d'expiration de ce centre.",
+  "That license key is not valid.": "Cette clé de licence n'est pas valide.",
+  "License verification": "Vérification de la licence",
+  "License required": "Licence requise",
+  "License expired": "Licence expirée",
+  "Checking your license…": "Vérification de votre licence…",
+  "The workspace stays locked until a valid license is confirmed.":
+    "L'espace de travail reste verrouillé jusqu'à la confirmation d'une licence valide.",
+  "The license for this center expired on {date}. Enter a valid key to restore access.":
+    "La licence de ce centre a expiré le {date}. Saisissez une clé valide pour rétablir l'accès.",
+  "No valid license is active on this center. Enter a valid key to unlock the workspace.":
+    "Aucune licence valide n'est active sur ce centre. Saisissez une clé valide pour déverrouiller l'espace de travail.",
+  "Accepted key formats": "Formats de clé acceptés",
+  "Need help? Contact support at {email}.":
+    "Besoin d'aide ? Contactez le support à {email}.",
+
   // --------------------------------------------------------------------- auth
   Logout: "Déconnexion",
   "Sign out": "Se déconnecter",
