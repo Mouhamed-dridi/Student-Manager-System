@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CheckCircle2,
   KeyRound,
@@ -22,7 +22,6 @@ import { Separator } from "@/components/ui/separator";
 import { APP_SHORT_NAME } from "@/lib/appInfo";
 import { useI18n } from "@/lib/i18n";
 import {
-  LICENSE_PLANS,
   LICENSE_KEY_PLACEHOLDER,
   SUPPORT_EMAIL,
   SUPPORT_PHONE,
@@ -117,8 +116,6 @@ export function LicenseTab({
 }: LicenseTabProps) {
   const { t } = useI18n();
   const [newKey, setNewKey] = useState("");
-  const [selectedPrefix, setSelectedPrefix] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const now = useMinuteTick();
 
   const expiresDate = expiresAt ? new Date(expiresAt) : null;
@@ -140,20 +137,8 @@ export function LicenseTab({
   const submitKey = async () => {
     const key = newKey.trim();
     if (!key || activating) return;
-    if (await onActivate(key)) {
-      setNewKey("");
-      setSelectedPrefix(null);
-    }
+    if (await onActivate(key)) setNewKey("");
   };
-
-  const pickPrefix = (prefix: string) => {
-    setSelectedPrefix(prefix);
-    inputRef.current?.focus();
-  };
-
-  const placeholder = selectedPrefix
-    ? `${selectedPrefix}-${LICENSE_KEY_PLACEHOLDER.slice(2)}`
-    : LICENSE_KEY_PLACEHOLDER;
 
   return (
     <div className="space-y-4">
@@ -214,59 +199,14 @@ export function LicenseTab({
             <InfoRow label={t("License key")} value={maskLicenseKey(licenseKey)} />
           </div>
 
-          <div className="space-y-3">
-            <div>
-              <p className="text-sm font-medium">{t("License terms")}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("Each key adds its term to the activation date.")}
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {LICENSE_PLANS.map((option) => {
-                const selected = selectedPrefix === option.prefix;
-                const current =
-                  plan.trim().toLowerCase() === option.label.toLowerCase();
-                return (
-                  <button
-                    key={option.prefix}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => pickPrefix(option.prefix)}
-                    className={`relative flex flex-col items-start gap-1 rounded-xl border p-4 text-left transition ${
-                      selected
-                        ? "border-zinc-900 bg-white ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100"
-                        : "border-zinc-200 bg-zinc-50 hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:border-zinc-600"
-                    }`}
-                  >
-                    {current && (
-                      <span className="absolute right-3 top-3 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                        {t("Current")}
-                      </span>
-                    )}
-                    <span className="font-mono text-xs font-semibold tracking-[0.14em] text-muted-foreground">
-                      {option.prefix}-
-                    </span>
-                    <span className="text-lg font-semibold leading-tight">
-                      {t(option.label)}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {t("{days} days", { days: option.days })}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="new-license-key">{t("Activate a new key")}</Label>
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 id="new-license-key"
-                ref={inputRef}
                 value={newKey}
                 onChange={(e) => setNewKey(e.target.value.toUpperCase())}
-                placeholder={placeholder}
+                placeholder={LICENSE_KEY_PLACEHOLDER}
                 className="min-w-0 flex-1 font-mono uppercase"
                 spellCheck={false}
                 autoComplete="off"

@@ -265,6 +265,9 @@ const FRENCH: Record<string, string> = {
   "Try a different search or filter.":
     "Essayez une autre recherche ou un autre filtre.",
   "Delete publication": "Supprimer l'annonce",
+  "Edit publication": "Modifier l'annonce",
+  "Every published announcement, newest first.":
+    "Toutes les annonces publiées, de la plus récente à la plus ancienne.",
   "Delete publication?": "Supprimer l'annonce ?",
   '"{title}" will be moved to the Trash. You can restore it later or permanently delete from there.':
     '"{title}" sera déplacé vers la corbeille. Vous pourrez le restaurer plus tard ou le supprimer définitivement depuis celle-ci.',
@@ -357,11 +360,6 @@ const FRENCH: Record<string, string> = {
   "License key": "Clé de licence",
   "Days remaining": "Jours restants",
   Expires: "Expire le",
-  "License terms": "Durées de licence",
-  "Each key adds its term to the activation date.":
-    "Chaque clé ajoute sa durée à la date d'activation.",
-  Current: "Actuel",
-  "{days} days": "{days} jours",
   "1 Month": "1 mois",
   "3 Months": "3 mois",
   "1 Year": "1 an",
