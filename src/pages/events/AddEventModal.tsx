@@ -352,7 +352,7 @@ export default function AddEventModal({
                 </p>
                 <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <Calendar className="h-3.5 w-3.5" />
                       {t("Date")}
                     </span>
@@ -364,7 +364,7 @@ export default function AddEventModal({
                     />
                   </div>
                   <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <Clock className="h-3.5 w-3.5" />
                       {t("Time")}
                     </span>
@@ -385,7 +385,7 @@ export default function AddEventModal({
                 </p>
                 <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <Calendar className="h-3.5 w-3.5" />
                       {t("Date")}
                     </span>
@@ -398,7 +398,7 @@ export default function AddEventModal({
                     />
                   </div>
                   <div className="min-w-0">
-                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                       <Clock className="h-3.5 w-3.5" />
                       {t("Time")}
                     </span>
@@ -609,8 +609,8 @@ export default function AddEventModal({
             {/* ----------------------------------------------- right column */}
             <div className="space-y-4">
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Cover banner
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Cover banner")}
                 </p>
                 <div
                   onDragOver={(event) => {
@@ -627,8 +627,9 @@ export default function AddEventModal({
                     "relative aspect-square overflow-hidden rounded-xl border-2 border-dashed transition-all",
                     previewImage
                       ? "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950"
-                      : "cursor-pointer border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 hover:border-emerald-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-900",
-                    dragging && "border-emerald-500/60 bg-zinc-50 dark:bg-zinc-900",
+                      : "cursor-pointer border-zinc-200 bg-white hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-600 dark:hover:bg-zinc-900",
+                    dragging &&
+                      "border-zinc-500 bg-zinc-100 dark:border-zinc-400 dark:bg-zinc-900",
                   )}
                   onClick={previewImage ? undefined : pickCover}
                 >
@@ -636,7 +637,7 @@ export default function AddEventModal({
                     <>
                       <img
                         src={previewImage}
-                        alt="Event cover preview"
+                        alt={t("Event cover preview")}
                         className="h-full w-full object-cover"
                       />
                       <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2">
@@ -645,11 +646,11 @@ export default function AddEventModal({
                           onClick={pickCover}
                           className="rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur transition-colors hover:bg-black/80"
                         >
-                          Change image
+                          {t("Change image")}
                         </button>
                         <button
                           type="button"
-                          aria-label="Remove cover"
+                          aria-label={t("Remove cover")}
                           onClick={removeCover}
                           className="rounded-full bg-black/60 p-1.5 text-white backdrop-blur transition-colors hover:bg-black/80"
                         >
@@ -664,14 +665,14 @@ export default function AddEventModal({
                       </span>
                       <div>
                         <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                          Upload cover image
+                          {t("Upload cover image")}
                         </p>
-                        <p className="mt-1 text-xs text-zinc-500">
-                          Drag &amp; drop or click to browse. JPG or PNG.
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          {t("Drag & drop or click to browse. JPG or PNG.")}
                         </p>
                       </div>
-                      <span className="rounded-full border border-zinc-200 px-3 py-1 dark:border-zinc-800 text-[11px] text-zinc-500">
-                        Recommended 1200 × 1200
+                      <span className="rounded-full border border-zinc-200 px-3 py-1 text-[11px] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                        {t("Recommended 1200 × 1200")}
                       </span>
                     </div>
                   )}
@@ -690,7 +691,7 @@ export default function AddEventModal({
 
               {/* live preview */}
               <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-                <div className="relative aspect-[16/10] w-full bg-gradient-to-br from-emerald-500/20 via-zinc-900 to-zinc-950">
+                <div className="relative aspect-[16/10] w-full bg-gradient-to-br from-zinc-700/40 via-zinc-900 to-zinc-950">
                   {previewImage && (
                     <img
                       src={previewImage}
@@ -700,17 +701,17 @@ export default function AddEventModal({
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
                   <div className="absolute inset-x-3 bottom-3">
-                    <span className="inline-flex rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-300">
+                    <span className="inline-flex rounded-full border border-zinc-700 bg-zinc-900/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-100">
                       {previewType}
                     </span>
                     <p className="mt-1.5 line-clamp-2 text-sm font-semibold text-white">
-                      {title.trim() || "Your event title"}
+                      {title.trim() || t("Your event title")}
                     </p>
                     <p className="mt-0.5 truncate text-[11px] text-zinc-300">
                       {previewDate}
                     </p>
                     {location.trim() && (
-                      <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+                      <p className="mt-0.5 truncate text-[11px] text-zinc-400 dark:text-zinc-500">
                         {location.trim()}
                       </p>
                     )}
@@ -718,10 +719,11 @@ export default function AddEventModal({
                 </div>
               </div>
 
-              <div className="flex items-start gap-2 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500">
-                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                The cover and details appear on the teacher portal as soon as
-                you save.
+              <div className="flex items-start gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-[11px] leading-relaxed text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+                {t(
+                  "The cover and details appear on the teacher portal as soon as you save.",
+                )}
               </div>
             </div>
           </div>
@@ -734,8 +736,8 @@ export default function AddEventModal({
                   {error}
                 </p>
               ) : (
-                <p className="text-xs text-zinc-500">
-                  Only the event name is required.
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {t("Only the event name is required.")}
                 </p>
               )}
             </div>
@@ -745,19 +747,19 @@ export default function AddEventModal({
                 onClick={onClose}
                 className="rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-4 py-2 text-sm text-zinc-700 dark:text-zinc-300 transition-colors hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white"
               >
-                Cancel
+                {t("Cancel")}
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-950 transition-colors hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 dark:focus-visible:ring-zinc-500"
               >
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {saving
-                  ? "Saving…"
+                  ? t("Saving…")
                   : initialEvent
-                    ? "Save changes"
-                    : "Create event"}
+                    ? t("Save changes")
+                    : t("Create event")}
               </button>
             </div>
           </div>

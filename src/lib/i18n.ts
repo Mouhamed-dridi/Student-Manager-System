@@ -323,6 +323,63 @@ const FRENCH: Record<string, string> = {
   "Class {class} already has “{subject}”{window}.":
     "La classe {class} a déjà « {subject} »{window}.",
 
+  // ------------------------------------------------------------------- events
+  "Create New Event": "Nouvel événement",
+  "Edit Event": "Modifier l'événement",
+  "Set the essentials now — you can refine the details later.":
+    "Définissez l'essentiel maintenant — vous pourrez affiner les détails ensuite.",
+  "Event name": "Nom de l'événement",
+  "e.g. Regional Cybersecurity Hackathon":
+    "ex. Hackathon régional de cybersécurité",
+  "Starts": "Début",
+  "Ends": "Fin",
+  "Location / Google Maps link": "Lieu / lien Google Maps",
+  "https://maps.app.goo.gl/… or Room B-12":
+    "https://maps.app.goo.gl/… ou Salle B-12",
+  "Event type": "Type d'événement",
+  "Keeping the existing type: {type}":
+    "Conservation du type existant : {type}",
+  "Gift categories": "Catégories de cadeaux",
+  "Select all that apply": "Sélectionnez tout ce qui s'applique",
+  "Also keeping: {list}": "Également conservé : {list}",
+  "What is this event about? Agenda, speakers, what to bring…":
+    "De quoi parle cet événement ? Programme, intervenants, à apporter…",
+  "Partner name": "Nom du partenaire",
+  "Add": "Ajouter",
+  "No link": "Aucun lien",
+  "Remove {name}": "Supprimer {name}",
+  "Cover banner": "Bannière de couverture",
+  "Upload cover image": "Importer une image de couverture",
+  "Drag & drop or click to browse. JPG or PNG.":
+    "Glissez-déposez ou cliquez pour parcourir. JPG ou PNG.",
+  "Recommended 1200 × 1200": "Recommandé 1200 × 1200",
+  "Change image": "Changer l'image",
+  "Remove cover": "Supprimer la couverture",
+  "Event cover preview": "Aperçu de la couverture",
+  "Your event title": "Titre de votre événement",
+  "Date to be announced": "Date à annoncer",
+  "The cover and details appear on the teacher portal as soon as you save.":
+    "La couverture et les détails apparaissent sur le portail enseignant dès l'enregistrement.",
+  "Only the event name is required.": "Seul le nom de l'événement est requis.",
+  "Choose an image file for the cover.":
+    "Choisissez un fichier image pour la couverture.",
+  "Add a partner name or a partner link.":
+    "Ajoutez un nom ou un lien de partenaire.",
+  "Please give the event a title.": "Veuillez donner un titre à l'événement.",
+  "The end date cannot be before the start date.":
+    "La date de fin ne peut pas précéder la date de début.",
+  "The end time cannot be before the start time.":
+    "L'heure de fin ne peut pas précéder l'heure de début.",
+  "Create event": "Créer l'événement",
+  Event: "Événement",
+  Workshop: "Atelier",
+  Hackathon: "Hackathon",
+  Talks: "Conférence",
+  Money: "Argent",
+  Certification: "Certification",
+  Gadget: "Gadget",
+  Other: "Autre",
+
   // ------------------------------------------------------------- students/teachers
   "Student List": "Liste des étudiants",
   "Add Student": "Ajouter un étudiant",

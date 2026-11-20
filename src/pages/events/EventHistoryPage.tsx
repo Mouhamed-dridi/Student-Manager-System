@@ -1,5 +1,12 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, ImagePlus, Pencil, Trash2 } from "lucide-react";
+import {
+  CalendarDays,
+  CheckCircle2,
+  ImagePlus,
+  Pencil,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -31,6 +38,9 @@ import {
   subscribeToTable,
   type AppEvent,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { formatPersonName } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { asLink, formatDateRange, formatTime } from "./eventFormat";
 
 interface EventHistoryPageProps {
@@ -52,6 +62,42 @@ interface EventHistoryTableProps {
   onDelete: (event: AppEvent) => void;
 }
 
+/**
+ * `events.type` is free text with no CHECK, so the known creator options get a
+ * dictionary key while anything else is title-cased as stored.
+ */
+const EVENT_TYPE_KEYS: Record<string, string> = {
+  event: "Event",
+  workshop: "Workshop",
+  hackathon: "Hackathon",
+  talks: "Talks",
+};
+
+/** Localized label for a stored event type ("talks" → "Conférence"). */
+function eventTypeLabel(
+  type: string | null | undefined,
+  translate: (key: string) => string,
+): string {
+  const raw = (type ?? "").trim();
+  if (!raw) return "—";
+  return translate(EVENT_TYPE_KEYS[raw.toLowerCase()] ?? formatPersonName(raw));
+}
+
+/** Normalized key so the filter pills match regardless of stored casing. */
+function typeKeyOf(type: string | null | undefined): string {
+  return (type ?? "").trim().toLowerCase();
+}
+
+/** Monochrome pill shared by the table cell and the filter bar. */
+function typePillClass(selected = false): string {
+  return cn(
+    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+    selected
+      ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+      : "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  );
+}
+
 /** The event rows: cover, schedule, partners, participants and row actions. */
 export function EventHistoryTable({
   events,
@@ -60,11 +106,15 @@ export function EventHistoryTable({
   onEdit,
   onDelete,
 }: EventHistoryTableProps) {
+  const t = useT();
+
   /** Full "Name (link), Name" text for the cell tooltip, so a long list is still readable. */
   const partnersLabel = (partners: AppEvent["partners"]): string =>
     (partners ?? [])
       .map((partner) => {
-        const label = partner.name || partner.link;
+        const label = partner.name
+          ? formatPersonName(partner.name)
+          : partner.link;
         return partner.link && partner.name ? `${label} (${partner.link})` : label;
       })
       .join(", ");
@@ -72,143 +122,198 @@ export function EventHistoryTable({
   const peopleDetail = (event: AppEvent): string => {
     const parts: string[] = [];
     if (event.organizers.length > 0) {
-      parts.push(`Organizers: ${event.organizers.map(teacherName).join(", ")}`);
+      parts.push(
+        t("Organizers: {names}", {
+          names: event.organizers.map(teacherName).join(", "),
+        }),
+      );
     }
     if (event.members.length > 0) {
-      parts.push(`Members: ${event.members.map(studentName).join(", ")}`);
+      parts.push(
+        t("Members: {names}", {
+          names: event.members.map(studentName).join(", "),
+        }),
+      );
     }
     return parts.join(" · ");
   };
 
+  const peopleSummary = (event: AppEvent): string =>
+    [
+      event.organizers.length > 0
+        ? `${event.organizers.length} ${
+            event.organizers.length === 1 ? t("organizer") : t("organizers")
+          }`
+        : "",
+      event.members.length > 0
+        ? `${event.members.length} ${
+            event.members.length === 1 ? t("member") : t("members")
+          }`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Cover</TableHead>
-          <TableHead>Title</TableHead>
-          <TableHead>Type</TableHead>
-          <TableHead>Dates</TableHead>
-          <TableHead>Time</TableHead>
-          <TableHead>Partners</TableHead>
-          <TableHead>People</TableHead>
-          <TableHead className="w-24">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {events.map((event) => (
-          <TableRow key={event.id}>
-            <TableCell>
-              {event.coverUrl ? (
-                <img
-                  src={event.coverUrl}
-                  alt=""
-                  className="h-10 w-16 rounded object-cover"
-                />
-              ) : (
-                <div className="flex h-10 w-16 items-center justify-center rounded bg-muted text-muted-foreground">
-                  <ImagePlus className="h-4 w-4" />
-                </div>
-              )}
-            </TableCell>
-            <TableCell className="font-medium">{event.title}</TableCell>
-            <TableCell>{event.type}</TableCell>
-            <TableCell className="whitespace-nowrap">
-              {formatDateRange(event.startsOn, event.endsOn)}
-            </TableCell>
-            <TableCell className="whitespace-nowrap">
-              {formatTime(event.eventTime)}
-            </TableCell>
-            <TableCell
-              title={partnersLabel(event.partners)}
-              className="max-w-[18rem]"
-            >
-              {event.partners?.length ? (
-                event.partners.map((partner, index) => {
-                  const href = asLink(partner.link);
-                  // A partner with no name is a legacy row that stored a bare
-                  // link, so fall back to showing the URL as the label.
-                  const label = partner.name || partner.link;
-                  return (
-                    <Fragment key={`${partner.name}-${partner.link}-${index}`}>
-                      {index > 0 && ", "}
-                      {href ? (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={partner.link}
-                          className="font-medium underline-offset-2 hover:underline"
-                        >
-                          {label}
-                        </a>
-                      ) : (
-                        <span className="font-medium">{label}</span>
-                      )}
-                    </Fragment>
-                  );
-                })
-              ) : (
-                "—"
-              )}
-            </TableCell>
-            <TableCell className="text-xs" title={peopleDetail(event)}>
-              {event.organizers.length + event.members.length === 0
-                ? "—"
-                : [
-                    event.organizers.length > 0
-                      ? `${event.organizers.length} organizer${
-                          event.organizers.length === 1 ? "" : "s"
-                        }`
-                      : "",
-                    event.members.length > 0
-                      ? `${event.members.length} member${
-                          event.members.length === 1 ? "" : "s"
-                        }`
-                      : "",
-                  ]
-                    .filter(Boolean)
-                    .join(", ")}
-            </TableCell>
-            <TableCell>
-              <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Edit"
-                  onClick={() => onEdit(event)}
-                >
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger
-                    render={
-                      <Button variant="ghost" size="icon">
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    }
-                  />
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete event?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        &quot;{event.title}&quot; will be hidden from this list. The
-                        row is kept in the database.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => void onDelete(event)}>
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </TableCell>
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-zinc-50/70 hover:bg-zinc-50/70 dark:bg-zinc-900/60 dark:hover:bg-zinc-900/60">
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Cover")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Title")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Type")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Dates")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Time")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Partners")}
+            </TableHead>
+            <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("People")}
+            </TableHead>
+            <TableHead className="w-24 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Actions")}
+            </TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {events.map((event) => (
+            <TableRow
+              key={event.id}
+              className="hover:bg-zinc-50 dark:hover:bg-zinc-900/60"
+            >
+              <TableCell>
+                {event.coverUrl ? (
+                  <img
+                    src={event.coverUrl}
+                    alt=""
+                    className="h-10 w-16 rounded object-cover"
+                  />
+                ) : (
+                  <div className="flex h-10 w-16 items-center justify-center rounded bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+                    <ImagePlus className="h-4 w-4" />
+                  </div>
+                )}
+              </TableCell>
+              <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
+                {event.title}
+              </TableCell>
+              <TableCell>
+                <span className={typePillClass()}>
+                  {eventTypeLabel(event.type, t)}
+                </span>
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+                {formatDateRange(event.startsOn, event.endsOn)}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-zinc-600 dark:text-zinc-300">
+                {formatTime(event.eventTime)}
+              </TableCell>
+              <TableCell
+                title={partnersLabel(event.partners)}
+                className="max-w-[18rem] text-zinc-700 dark:text-zinc-300"
+              >
+                {event.partners?.length ? (
+                  event.partners.map((partner, index) => {
+                    const href = asLink(partner.link);
+                    // A partner with no name is a legacy row that stored a bare
+                    // link, so fall back to showing the URL as the label.
+                    const label = partner.name
+                      ? formatPersonName(partner.name)
+                      : partner.link;
+                    return (
+                      <Fragment key={`${partner.name}-${partner.link}-${index}`}>
+                        {index > 0 && ", "}
+                        {href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={partner.link}
+                            className="font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                          >
+                            {label}
+                          </a>
+                        ) : (
+                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                            {label}
+                          </span>
+                        )}
+                      </Fragment>
+                    );
+                  })
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-600">—</span>
+                )}
+              </TableCell>
+              <TableCell
+                className="text-xs text-zinc-600 dark:text-zinc-400"
+                title={peopleDetail(event)}
+              >
+                {event.organizers.length + event.members.length === 0
+                  ? "—"
+                  : peopleSummary(event)}
+              </TableCell>
+              <TableCell>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title={t("Edit")}
+                    aria-label={t("Edit")}
+                    className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                    onClick={() => onEdit(event)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={t("Delete event")}
+                          aria-label={t("Delete event")}
+                          className="text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>{t("Delete event?")}</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t(
+                            "{name} will be hidden from this list. The row is kept in the database.",
+                            { name: event.title },
+                          )}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => void onDelete(event)}>
+                          {t("Delete")}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -221,6 +326,7 @@ export default function EventHistoryPage({
   onEdit,
   notice,
 }: EventHistoryPageProps) {
+  const t = useT();
   const [events, setEvents] = useState<AppEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -233,6 +339,9 @@ export default function EventHistoryPage({
   // for the tooltip. Ids that no longer resolve (a trashed person) are skipped.
   const [teachers, setTeachers] = useState<{ id: string; fullName: string }[]>([]);
   const [students, setStudents] = useState<{ id: string; fullName: string }[]>([]);
+
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
 
   const refresh = () => {
     listEvents()
@@ -249,12 +358,12 @@ export default function EventHistoryPage({
   useEffect(() => {
     listTeachers()
       .then((rows) =>
-        setTeachers(rows.map((t) => ({ id: t.id, fullName: t.fullName }))),
+        setTeachers(rows.map((row) => ({ id: row.id, fullName: row.fullName }))),
       )
       .catch(() => setTeachers([]));
     listStudents()
       .then((rows) =>
-        setStudents(rows.map((s) => ({ id: s.id, fullName: s.fullName }))),
+        setStudents(rows.map((row) => ({ id: row.id, fullName: row.fullName }))),
       )
       .catch(() => setStudents([]));
   }, []);
@@ -266,25 +375,58 @@ export default function EventHistoryPage({
   }, [successMessage]);
 
   const teacherName = useMemo(() => {
-    const map = new Map(teachers.map((t) => [t.id, t.fullName]));
-    return (id: string) => map.get(id) ?? "Unknown";
-  }, [teachers]);
+    const map = new Map(teachers.map((row) => [row.id, row.fullName]));
+    return (id: string) => map.get(id) ?? t("Unknown");
+  }, [teachers, t]);
 
   const studentName = useMemo(() => {
-    const map = new Map(students.map((s) => [s.id, s.fullName]));
-    return (id: string) => map.get(id) ?? "Unknown";
-  }, [students]);
+    const map = new Map(students.map((row) => [row.id, row.fullName]));
+    return (id: string) => map.get(id) ?? t("Unknown");
+  }, [students, t]);
 
   const handleDelete = async (event: AppEvent) => {
     setError(null);
     try {
       await softDeleteEvent(event.id);
       refresh();
-      setSuccessMessage(`"${event.title}" was deleted.`);
+      setSuccessMessage(t("{name} was deleted.", { name: event.title }));
     } catch (err) {
       setError(errorMessage(err));
     }
   };
+
+  // Filter pills: only the types actually present, in first-seen order.
+  const typeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const event of events ?? []) {
+      const key = typeKeyOf(event.type);
+      if (!key || seen.has(key)) continue;
+      seen.set(key, eventTypeLabel(event.type, t));
+    }
+    return [...seen.entries()].map(([value, label]) => ({ value, label }));
+  }, [events, t]);
+
+  const filteredEvents = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return (events ?? []).filter((event) => {
+      if (typeFilter !== "all" && typeKeyOf(event.type) !== typeFilter) {
+        return false;
+      }
+      if (!term) return true;
+      const haystack = [
+        event.title,
+        event.type,
+        eventTypeLabel(event.type, t),
+        ...(event.partners ?? []).flatMap((partner) => [
+          partner.name,
+          partner.link,
+        ]),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [events, query, typeFilter, t]);
 
   const totalPeople = (events ?? []).reduce(
     (sum, event) => sum + event.organizers.length + event.members.length,
@@ -292,12 +434,12 @@ export default function EventHistoryPage({
   );
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold">Event History</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Every event and publication that has been created. Use{" "}
-        <span className="font-medium">Edit</span> to change one, or{" "}
-        <span className="font-medium">Events → New Event</span> to add another.
+    <div className="text-zinc-900 dark:text-zinc-100">
+      <h2 className="text-2xl font-semibold">{t("Event History")}</h2>
+      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        {t(
+          "Every event that has been created. Use Edit to change one, or Events → New Event to add another.",
+        )}
       </p>
 
       {loadError && (
@@ -307,47 +449,106 @@ export default function EventHistoryPage({
       )}
 
       {banner && (
-        <div className="mt-4 flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
-          <CheckCircle2 className="h-4 w-4 shrink-0" />
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-zinc-500 dark:text-zinc-400" />
           {banner}
         </div>
       )}
 
-      {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="mt-4 text-sm text-zinc-700 dark:text-zinc-300">{error}</p>
+      )}
 
       {events === null ? (
         !loadError && (
           <div className="mt-4">
-            <DataLoading label="Loading events…" />
+            <DataLoading label={t("Loading events…")} />
           </div>
         )
       ) : events.length === 0 ? (
-        <Card className="mt-4 max-w-xl">
+        <Card className="mt-4 max-w-xl border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
           <CardContent className="py-8 text-center">
-            <p className="text-sm font-medium">No events created yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Events you create will be listed here, with their cover image,
-              schedule and participants.
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+              {t("No events created yet")}
+            </p>
+            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+              {t(
+                "Events you create will be listed here, with their cover image, schedule and participants.",
+              )}
             </p>
           </CardContent>
         </Card>
       ) : (
         <>
-          <div className="mt-6">
-            <EventHistoryTable
-              events={events}
-              teacherName={teacherName}
-              studentName={studentName}
-              onEdit={onEdit}
-              onDelete={(event) => void handleDelete(event)}
-            />
+          {/* search + type filters */}
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="relative w-full max-w-sm">
+              <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("Search by title, partner or type…")}
+                aria-label={t("Search by title, partner or type…")}
+                className="h-9 w-full rounded-lg border border-zinc-200 bg-white pr-3 pl-9 text-sm text-zinc-900 transition-colors outline-none placeholder:text-zinc-400 focus:border-zinc-500 focus:ring-0 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-zinc-400"
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                aria-pressed={typeFilter === "all"}
+                onClick={() => setTypeFilter("all")}
+                className={cn(
+                  typePillClass(typeFilter === "all"),
+                  "px-3 py-1 transition-colors",
+                )}
+              >
+                {t("All")}
+              </button>
+              {typeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={typeFilter === option.value}
+                  onClick={() => setTypeFilter(option.value)}
+                  className={cn(
+                    typePillClass(typeFilter === option.value),
+                    "px-3 py-1 transition-colors",
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="mt-4">
+            {filteredEvents.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-6 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">
+                {t("No events match your search.")}
+              </div>
+            ) : (
+              <EventHistoryTable
+                events={filteredEvents}
+                teacherName={teacherName}
+                studentName={studentName}
+                onEdit={onEdit}
+                onDelete={(event) => void handleDelete(event)}
+              />
+            )}
+          </div>
+
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
             <CalendarDays className="h-3.5 w-3.5" />
-            {events.length} event{events.length === 1 ? "" : "s"}, {totalPeople}{" "}
-            participant{totalPeople === 1 ? "" : "s"}. Organizers and members are
-            stored as ids; names are resolved live.
+            {filteredEvents.length !== events.length
+              ? `${t("{shown} of {total} events shown", {
+                  shown: filteredEvents.length,
+                  total: events.length,
+                })} · `
+              : ""}
+            {events.length} {events.length === 1 ? t("event") : t("events")},{" "}
+            {totalPeople}{" "}
+            {totalPeople === 1 ? t("participant") : t("participants")}.{" "}
+            {t("Organizers and members are stored as ids; names are resolved live.")}
           </p>
         </>
       )}

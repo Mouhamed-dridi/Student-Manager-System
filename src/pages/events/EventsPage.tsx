@@ -2,6 +2,7 @@ import { useState } from "react";
 import { History, Plus } from "lucide-react";
 import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import type { AppEvent } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import EventsView from "./EventsView";
 
 interface EventsPageProps {
@@ -35,6 +36,7 @@ export default function EventsPage({
   );
   const [prevEvent, setPrevEvent] = useState(initialEvent);
   const { pushSection } = useViewHistory();
+  const t = useT();
 
   // Adjust state during render if a new initialEvent is handed in
   if (initialEvent !== prevEvent) {
@@ -50,7 +52,7 @@ export default function EventsPage({
   useNestedView(
     isCreating,
     "create-event",
-    initialEvent ? "Edit Event" : "Create Event",
+    initialEvent ? t("Edit Event") : t("Create event"),
     () => {
       setCurrentView("overview");
       onClose?.();
