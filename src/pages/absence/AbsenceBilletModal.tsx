@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Printer, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,6 +9,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useBranding } from "@/lib/branding";
+import { recordBilletPrint } from "@/lib/billetPrints";
+import { useT } from "@/lib/i18n";
 import {
   errorMessage,
   resolveBilletContext,
@@ -38,16 +40,28 @@ interface AbsenceBilletModalProps {
   onClose: () => void;
   /** Called once the new ticket has been stored. */
   onSaved?: (billet: AbsenceBillet) => void;
+  /** Opens the printer right away (the archive's Re-print action). */
+  autoPrint?: boolean;
 }
 
-/** Class / branch printed on the ticket, with the same fallbacks as the log. */
+/**
+ * Class / branch printed on the ticket, with the same fallbacks as the log.
+ * The attendance row stores the training (sometimes without its branch), so
+ * the program is prefixed as "CAP · Vendeur caissier étalagiste" when the
+ * label does not already name it.
+ */
 function classLabel(record: AttendanceRecord): string {
-  return (
-    record.className?.trim() ||
-    record.training?.trim() ||
-    record.program?.trim() ||
-    "General"
-  );
+  const className = record.className?.trim();
+  const program = record.program?.trim();
+  const training = record.training?.trim();
+  const base = className || training || program || "General";
+  // Only a real branch code is prefixed; a longer program label is a class
+  // name of its own and would duplicate the training.
+  const branchCode = /^(CAP|BTP|BTS)/i.exec(program ?? "")?.[0]?.toUpperCase();
+  if (branchCode && !new RegExp(`^${branchCode}\\b`, "i").test(base)) {
+    return `${branchCode} · ${base}`;
+  }
+  return base;
 }
 
 /**
@@ -135,7 +149,9 @@ export default function AbsenceBilletModal({
   billet: archived,
   onClose,
   onSaved,
+  autoPrint = false,
 }: AbsenceBilletModalProps) {
+  const t = useT();
   const branding = useBranding();
   const [billet, setBillet] = useState<AbsenceBillet | null>(archived ?? null);
   // A fresh ticket is archived on mount, so it starts in the saving state.
@@ -171,6 +187,9 @@ export default function AbsenceBilletModal({
       const context = await resolveBilletContext(
         record.className,
         record.date,
+        record.time ?? record.absenceTime ?? null,
+        record.program,
+        record.training,
       ).catch(() => null);
       const saved = await archiveBillet(record, code, context);
       setBillet(saved);
@@ -194,6 +213,9 @@ export default function AbsenceBilletModal({
       const context = await resolveBilletContext(
         record.className,
         record.date,
+        record.time ?? record.absenceTime ?? null,
+        record.program,
+        record.training,
       ).catch(() => null);
       return archiveBillet(record, code, context);
     })()
@@ -207,6 +229,18 @@ export default function AbsenceBilletModal({
         setSaving(false);
       });
   }, [record, code, onSaved]);
+
+  const printTicket = useCallback(() => {
+    recordBilletPrint(code);
+    window.print();
+  }, [code]);
+
+  // Re-print opens the printer once the sheet is laid out; Preview never does.
+  useEffect(() => {
+    if (!autoPrint || !billet) return;
+    const timer = window.setTimeout(printTicket, 400);
+    return () => window.clearTimeout(timer);
+  }, [autoPrint, billet, printTicket]);
 
   const studentName = billet?.studentName ?? record?.fullName ?? "—";
   const className = billet?.className || (record ? classLabel(record) : "—");
@@ -223,13 +257,13 @@ export default function AbsenceBilletModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Absence ticket</DialogTitle>
+          <DialogTitle>{t("Absence ticket")}</DialogTitle>
           <DialogDescription>
             {billet
-              ? "Archived billet — reprint it at any time."
+              ? t("Archived billet - reprint it at any time.")
               : saving
-                ? "Generating the billet and saving it to the archive…"
-                : "Printable billet d'absence."}
+                ? t("Generating the billet and saving it to the archive.")
+                : t("Printable billet d'absence.")}
           </DialogDescription>
         </DialogHeader>
 
@@ -319,23 +353,23 @@ export default function AbsenceBilletModal({
         </div>
 
         {saving ? (
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <p className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Saving to the Billets archive…
+            {t("Saving to the Billets archive.")}
           </p>
         ) : null}
         {billet ? (
-          <p className="text-xs text-muted-foreground">
-            Saved to the Billets archive.
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {t("Saved to the Billets archive.")}
           </p>
         ) : null}
         {error ? (
           <p className="text-xs text-destructive">{error}</p>
         ) : null}
 
-        <div className="billet-no-print flex flex-wrap items-center justify-between gap-2 border-t pt-3">
-          <span className="text-xs text-muted-foreground">
-            A5 · “Save as PDF” keeps a copy
+        <div className="billet-no-print flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            {t("A5 · “Save as PDF” keeps a copy")}
           </span>
           <div className="flex gap-2">
             {error && record ? (
@@ -345,15 +379,15 @@ export default function AbsenceBilletModal({
                 onClick={() => void retryArchive()}
               >
                 <RotateCcw className="h-4 w-4" />
-                Retry save
+                {t("Retry save")}
               </Button>
             ) : null}
             <Button variant="outline" onClick={onClose}>
-              Close
+              {t("Close")}
             </Button>
-            <Button onClick={() => window.print()}>
+            <Button onClick={printTicket}>
               <Printer className="h-4 w-4" />
-              Print ticket
+              {t("Print ticket")}
             </Button>
           </div>
         </div>

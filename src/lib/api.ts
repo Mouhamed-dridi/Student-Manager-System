@@ -1132,6 +1132,18 @@ export async function insertPayment(payment: Payment): Promise<Payment> {
   if (!caps.supportsPlanDetails && hasPlanDetails(payment)) {
     throw new Error(PAYMENTS_PLAN_MISSING);
   }
+  const created = newHistoryEntry(
+    "created",
+    [],
+    paymentSnapshot(payment),
+  );
+  if (!caps.supportsHistory) {
+    localEditHistory.push({
+      paymentId: payment.id,
+      studentName: payment.studentName,
+      entry: created,
+    });
+  }
   const { data, error } = await withTimeout(
     supabase
       .from("payments")
@@ -1144,6 +1156,7 @@ export async function insertPayment(payment: Payment): Promise<Payment> {
         // Payments are always recorded as paid; status is no longer chosen.
         status: payment.status ?? "paid",
         ...(caps.supportsPlanDetails ? planDetailPayload(payment) : {}),
+        ...(caps.supportsHistory ? { edit_history: [created] } : {}),
       })
       .select()
       .single(),
@@ -1158,6 +1171,18 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
   if (!caps.supportsPlanDetails && payments.some(hasPlanDetails)) {
     throw new Error(PAYMENTS_PLAN_MISSING);
   }
+  const createdEntries = new Map(
+    payments.map((p) => [p.id, newHistoryEntry("created", [], paymentSnapshot(p))]),
+  );
+  if (!caps.supportsHistory) {
+    for (const p of payments) {
+      localEditHistory.push({
+        paymentId: p.id,
+        studentName: p.studentName,
+        entry: createdEntries.get(p.id)!,
+      });
+    }
+  }
   const { error } = await withTimeout(
     supabase
       .from("payments")
@@ -1170,6 +1195,9 @@ export async function insertPayments(payments: Payment[]): Promise<void> {
           payment_date: p.paymentDate,
           status: p.status ?? "paid",
           ...(caps.supportsPlanDetails ? planDetailPayload(p) : {}),
+          ...(caps.supportsHistory
+            ? { edit_history: [createdEntries.get(p.id)] }
+            : {}),
         })),
       ),
   );
@@ -1183,11 +1211,18 @@ export interface PaymentFieldChange {
   to: string;
 }
 
-/** One recorded edit; entries are appended to payments.edit_history. */
+/** What happened to the payment: created, edited or moved to the trash. */
+export type PaymentHistoryAction = "created" | "updated" | "deleted";
+
+/** One recorded action; entries are appended to payments.edit_history. */
 export interface EditHistoryEntry {
   changedAt: string;
   changedBy: string;
+  /** Entries written before actions were typed are all edits. */
+  actionType?: PaymentHistoryAction;
   changes: PaymentFieldChange[];
+  /** Key field values of a created/deleted payment (a snapshot). */
+  details?: PaymentFieldChange[];
 }
 
 /** An edit-history entry paired with its payment, for the History page. */
@@ -1229,6 +1264,68 @@ function paymentDiffs(before: Payment, after: Payment): PaymentFieldChange[] {
   return changes;
 }
 
+/** The key details of a whole payment, used for created/deleted entries. */
+function paymentSnapshot(payment: Payment): PaymentFieldChange[] {
+  return PAYMENT_FIELD_COMPARATORS.filter(
+    ({ label }) => label !== "Student",
+  ).map(({ label, value }) => ({
+    field: label,
+    from: "",
+    to: value(payment),
+  }));
+}
+
+function newHistoryEntry(
+  actionType: PaymentHistoryAction,
+  changes: PaymentFieldChange[],
+  details?: PaymentFieldChange[],
+): EditHistoryEntry {
+  return {
+    changedAt: new Date().toISOString(),
+    changedBy: getRole() ?? "operator",
+    actionType,
+    changes,
+    ...(details ? { details } : {}),
+  };
+}
+
+/** The stored edit_history array of one payment (empty when unreadable). */
+async function readPaymentHistory(
+  paymentId: string,
+): Promise<EditHistoryEntry[]> {
+  const { data: current } = await withTimeout(
+    supabase
+      .from("payments")
+      .select("edit_history")
+      .eq("id", paymentId)
+      .maybeSingle(),
+  );
+  const raw = (current as { edit_history?: unknown } | null)?.edit_history;
+  return Array.isArray(raw) ? (raw as EditHistoryEntry[]) : [];
+}
+
+/**
+ * Where a new history entry goes: appended to edit_history when the column
+ * exists, otherwise into the in-session log. Returns the update payload
+ * fragment so the caller can fold it into its own update.
+ */
+async function paymentHistoryPayload(
+  payment: Payment,
+  entry: EditHistoryEntry,
+  supportsHistory: boolean,
+): Promise<Record<string, unknown>> {
+  if (!supportsHistory) {
+    localEditHistory.push({
+      paymentId: payment.id,
+      studentName: payment.studentName,
+      entry,
+    });
+    return {};
+  }
+  const existing = await readPaymentHistory(payment.id);
+  return { edit_history: [...existing, entry] };
+}
+
 /**
  * Updates the editable fields of an existing payment and appends one entry
  * describing the change to the payment's edit_history (jsonb) column when that
@@ -1251,34 +1348,12 @@ export async function updatePayment(
     payment_date: after.paymentDate,
     status: after.status ?? "paid",
     ...(caps.supportsPlanDetails ? planDetailPayload(after) : {}),
+    ...(await paymentHistoryPayload(
+      after,
+      newHistoryEntry("updated", changes),
+      caps.supportsHistory,
+    )),
   };
-  const entry: EditHistoryEntry = {
-    changedAt: new Date().toISOString(),
-    changedBy: getRole() ?? "operator",
-    changes,
-  };
-  if (caps.supportsHistory) {
-    const { data: current } = await withTimeout(
-      supabase
-        .from("payments")
-        .select("edit_history")
-        .eq("id", after.id)
-        .maybeSingle(),
-    );
-    const existing = Array.isArray(
-      (current as { edit_history?: unknown } | null)?.edit_history,
-    )
-      ? ((current as { edit_history: unknown }).edit_history as EditHistoryEntry[])
-      : [];
-    payload.edit_history = [...existing, entry];
-  } else {
-    // No edit_history column: track this edit in-memory for the session.
-    localEditHistory.push({
-      paymentId: after.id,
-      studentName: after.studentName,
-      entry,
-    });
-  }
   const { error } = await withTimeout(
     supabase.from("payments").update(payload).eq("id", after.id),
   );
@@ -1293,14 +1368,24 @@ export async function updatePayment(
  */
 export async function softDeletePayment(payment: Payment): Promise<void> {
   const caps = await detectPaymentsCapabilities();
+  const history = await paymentHistoryPayload(
+    payment,
+    newHistoryEntry("deleted", [], paymentSnapshot(payment)),
+    caps.supportsHistory,
+  );
   if (!caps.supportsTrash) {
     localTrashDeletedAt.set(payment.id, new Date().toISOString());
-    return;
+    if (!caps.supportsHistory) return;
   }
   const { error } = await withTimeout(
     supabase
       .from("payments")
-      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .update({
+        ...(caps.supportsTrash
+          ? { is_deleted: true, deleted_at: new Date().toISOString() }
+          : {}),
+        ...history,
+      })
       .eq("id", payment.id),
   );
   if (error) throw new Error(error.message);
@@ -1309,23 +1394,32 @@ export async function softDeletePayment(payment: Payment): Promise<void> {
 /** Restores a trashed payment back to the active list. */
 export async function restorePayment(payment: Payment): Promise<void> {
   const caps = await detectPaymentsCapabilities();
+  const history = await paymentHistoryPayload(
+    payment,
+    newHistoryEntry("updated", [{ field: "Status", from: "Deleted", to: "Active" }]),
+    caps.supportsHistory,
+  );
   if (!caps.supportsTrash) {
     localTrashDeletedAt.delete(payment.id);
-    return;
+    if (!caps.supportsHistory) return;
   }
   const { error } = await withTimeout(
     supabase
       .from("payments")
-      .update({ is_deleted: false, deleted_at: null })
+      .update({
+        ...(caps.supportsTrash ? { is_deleted: false, deleted_at: null } : {}),
+        ...history,
+      })
       .eq("id", payment.id),
   );
   if (error) throw new Error(error.message);
 }
 
 /**
- * Every recorded payment edit across all payments (incl. trashed), newest
- * first. When the edit_history column is missing this serves the in-memory
- * log from this session instead of querying it.
+ * Every recorded payment action (created / updated / deleted) across all
+ * payments (incl. trashed), newest first. When the edit_history column is
+ * missing this serves the in-memory log from this session instead of
+ * querying it.
  */
 export async function listPaymentHistory(): Promise<PaymentHistoryItem[]> {
   const caps = await detectPaymentsCapabilities();
@@ -1344,8 +1438,13 @@ export async function listPaymentHistory(): Promise<PaymentHistoryItem[]> {
       for (const entry of history) {
         items.push({
           paymentId: row.id,
-          studentName: studentNameFor.get(row.student_id) ?? "Unknown student",
-          entry,
+          studentName: studentNameFor.get(row.student_id) ?? "",
+          entry: {
+            ...entry,
+            // Legacy entries predate actions; every one of them is an edit.
+            actionType: entry.actionType ?? "updated",
+            changes: Array.isArray(entry.changes) ? entry.changes : [],
+          },
         });
       }
     }
@@ -2476,36 +2575,103 @@ function normalizeBilletLabel(value: string | null | undefined): string {
 }
 
 /**
+ * Comparison key for a class label: the planning row may name the branch
+ * ("CAP · Vendeur caissier étalagiste") while the attendance snapshot only
+ * carries the training ("Vendeur caissier étalagiste"), so a leading branch
+ * code is dropped and punctuation folded before comparing.
+ */
+function billetClassKey(value: string | null | undefined): string {
+  return normalizeBilletLabel(value).replace(/^(cap|btp|bts)\s+/, "");
+}
+
+/** Start/end clock values of a "08:00 - 10:00" (or single "08:00") window. */
+function clockWindow(value: string | null | undefined): [string, string] | null {
+  const text = (value ?? "").trim();
+  if (!text) return null;
+  const parts = text.split(/\s*[–-]\s*/).filter(Boolean);
+  const clock = (part: string) => {
+    const match = /^(\d{1,2}):(\d{2})/.exec(part);
+    return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+  };
+  const from = clock(parts[0] ?? "");
+  if (!from) return null;
+  return [from, clock(parts[1] ?? "")];
+}
+
+/** True when the session starts at the same clock time as the absence. */
+function sameStart(
+  sessionTime: string | null,
+  absenceWindow: [string, string] | null,
+): boolean {
+  if (!absenceWindow) return false;
+  const sessionWindow = clockWindow(sessionTime);
+  return sessionWindow != null && sessionWindow[0] === absenceWindow[0];
+}
+
+/**
  * Subject and teacher for a generated ticket.
  *
- * `attendance` carries neither, so the class's planning is read for that day
- * and the answer is used only when exactly one session matches the class. A
- * blank teacher is preferred over printing a wrong name on a signed document,
- * so an ambiguous or empty day falls back to `null`.
+ * `attendance` carries neither, so the class's planning is read for that day.
+ * The class is matched on the training part of its label (planning rows may
+ * prefix the branch code), and when several sessions share the class the
+ * absence's own time window narrows them down. The answer is used only when it
+ * is unambiguous: a blank teacher is preferred over printing a wrong name on a
+ * signed document.
  */
 export async function resolveBilletContext(
   className: string | null,
   date: string | null,
+  timeSlot?: string | null,
+  program?: string | null,
+  training?: string | null,
 ): Promise<BilletSessionContext> {
-  const label = normalizeBilletLabel(className);
   const day = date?.slice(0, 10) ?? "";
-  if (!label || !day) return { subject: null, teacherName: null };
+  const keys = new Set(
+    [className, training, program, program && training ? `${program} ${training}` : null]
+      .map((value) => billetClassKey(value))
+      .filter(Boolean),
+  );
+  if (keys.size === 0 || !day) return { subject: null, teacherName: null };
+  // Without class_name/session_time the session cannot be matched at all; the
+  // ticket then keeps its class label and a blank teacher.
+  if (!(await hasPlanningClassTimeColumns())) {
+    return { subject: null, teacherName: null };
+  }
 
   const { data, error } = await withTimeout(
     supabase
       .from("planning")
-      .select("course, teacher_id, class_name")
+      .select("course, teacher_id, class_name, session_time")
       .eq("date", day),
   );
   if (error) throw new Error(error.message);
 
-  const matches = ((data ?? []) as {
+  let matches = ((data ?? []) as {
     course: string | null;
     teacher_id: string | null;
     class_name: string | null;
-  }[]).filter((row) => normalizeBilletLabel(row.class_name) === label);
+    session_time: string | null;
+  }[]).filter((row) => keys.has(billetClassKey(row.class_name)));
 
-  if (matches.length !== 1) return { subject: null, teacherName: null };
+  // A class can have several sessions in one day; the absence's own window
+  // picks the right one without guessing.
+  if (matches.length > 1) {
+    const window = clockWindow(timeSlot);
+    const byTime = window ? matches.filter((row) => sameStart(row.session_time, window)) : [];
+    if (byTime.length === 1) matches = byTime;
+  }
+
+  // Still ambiguous only when the day holds distinct sessions: identical
+  // subject and teacher across all of them is still a safe answer.
+  if (matches.length > 1) {
+    const subjects = new Set(matches.map((row) => row.course?.trim() || ""));
+    const teachers = new Set(matches.map((row) => row.teacher_id ?? ""));
+    if (subjects.size !== 1 || teachers.size !== 1) {
+      return { subject: null, teacherName: null };
+    }
+  }
+
+  if (matches.length === 0) return { subject: null, teacherName: null };
   const [session] = matches;
 
   let teacherName: string | null = null;

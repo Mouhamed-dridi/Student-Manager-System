@@ -19,6 +19,7 @@ import {
   type EventPartner,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 import {
   GIFT_OPTIONS,
   composeEventTime,
@@ -99,6 +100,7 @@ export default function AddEventModal({
   onClose,
   onSaved,
 }: AddEventModalProps) {
+  const t = useT();
   const initialTime = useMemo(
     () => parseEventTime(initialEvent?.eventTime ?? ""),
     [initialEvent],
@@ -169,9 +171,9 @@ export default function AddEventModal({
   );
 
   const previewImage = coverPreview ?? coverUrl;
-  const previewType = activeType?.label ?? type ?? "Event";
+  const previewType = activeType ? t(activeType.label) : type || t("Event");
   const previewDate = [
-    startDate ? formatDay(startDate) : "Date to be announced",
+    startDate ? formatDay(startDate) : t("Date to be announced"),
     startTime ? formatTime(composeEventTime(startTime, endTime, "")) : "",
   ]
     .filter(Boolean)
@@ -182,7 +184,7 @@ export default function AddEventModal({
   const handlePickCover = async (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setError("Choose an image file for the cover.");
+      setError(t("Choose an image file for the cover."));
       return;
     }
     setError(null);
@@ -206,7 +208,7 @@ export default function AddEventModal({
     const name = partnerName.trim();
     const link = partnerLink.trim();
     if (!name && !link) {
-      setPartnerError("Add a partner name or a partner link.");
+      setPartnerError(t("Add a partner name or a partner link."));
       return;
     }
     setPartnerError(null);
@@ -239,15 +241,15 @@ export default function AddEventModal({
     setError(null);
 
     if (!title.trim()) {
-      setError("Please give the event a title.");
+      setError(t("Please give the event a title."));
       return;
     }
     if (startDate && endDate && endDate < startDate) {
-      setError("The end date cannot be before the start date.");
+      setError(t("The end date cannot be before the start date."));
       return;
     }
     if (startTime && endTime && endTime < startTime) {
-      setError("The end time cannot be before the start time.");
+      setError(t("The end time cannot be before the start time."));
       return;
     }
 
@@ -310,15 +312,15 @@ export default function AddEventModal({
                 id="add-event-title"
                 className="text-2xl font-semibold tracking-tight"
               >
-                {initialEvent ? "Edit Event" : "Create New Event"}
+                {initialEvent ? t("Edit Event") : t("Create New Event")}
               </h2>
-              <p className="mt-1 text-sm text-zinc-500">
-                Set the essentials now — you can refine the details later.
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                {t("Set the essentials now — you can refine the details later.")}
               </p>
             </div>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t("Close")}
               onClick={onClose}
               className="shrink-0 rounded-full border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-2 text-zinc-600 dark:text-zinc-400 transition-colors hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white"
             >
@@ -330,47 +332,47 @@ export default function AddEventModal({
             {/* ------------------------------------------------ left column */}
             <div className="space-y-5">
               {/* title */}
-              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Event name
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 p-4 transition-colors focus-within:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-400">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Event name")}
                 </span>
                 <input
                   autoFocus
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="e.g. Regional Cybersecurity Hackathon"
+                  placeholder={t("e.g. Regional Cybersecurity Hackathon")}
                   className="mt-1 w-full bg-transparent text-lg font-medium text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
 
               {/* start */}
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Starts
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Starts")}
                 </p>
                 <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
-                      Date
+                      {t("Date")}
                     </span>
                     <input
                       type="date"
                       value={startDate}
                       onChange={(event) => setStartDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                     />
                   </div>
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Clock className="h-3.5 w-3.5" />
-                      Time
+                      {t("Time")}
                     </span>
                     <input
                       type="time"
                       value={startTime}
                       onChange={(event) => setStartTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                     />
                   </div>
                 </div>
@@ -378,56 +380,56 @@ export default function AddEventModal({
 
               {/* end */}
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Ends
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Ends")}
                 </p>
                 <div className="grid grid-cols-2 gap-3 rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 p-3">
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Calendar className="h-3.5 w-3.5" />
-                      Date
+                      {t("Date")}
                     </span>
                     <input
                       type="date"
                       value={endDate}
                       min={startDate || undefined}
                       onChange={(event) => setEndDate(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                     />
                   </div>
                   <div className="min-w-0">
                     <span className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
                       <Clock className="h-3.5 w-3.5" />
-                      Time
+                      {t("Time")}
                     </span>
                     <input
                       type="time"
                       value={endTime}
                       onChange={(event) => setEndTime(event.target.value)}
-                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-emerald-500"
+                      className="mt-1.5 w-full rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2 py-1.5 text-sm text-zinc-900 dark:text-white outline-none transition-colors [color-scheme:light] dark:[color-scheme:dark] focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                     />
                   </div>
                 </div>
               </div>
 
               {/* location */}
-              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
-                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 p-4 transition-colors focus-within:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-400">
+                <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                   <MapPin className="h-3.5 w-3.5" />
-                  Location / Google Maps link
+                  {t("Location / Google Maps link")}
                 </span>
                 <input
                   value={location}
                   onChange={(event) => setLocation(event.target.value)}
-                  placeholder="https://maps.app.goo.gl/… or Room B-12"
+                  placeholder={t("https://maps.app.goo.gl/… or Room B-12")}
                   className="mt-1 w-full bg-transparent text-sm text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
 
               {/* type pills */}
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Event type
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Event type")}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {EVENT_TYPE_OPTIONS.map((option) => {
@@ -439,30 +441,30 @@ export default function AddEventModal({
                         aria-pressed={selected}
                         onClick={() => setType(option.value)}
                         className={cn(
-                          "rounded-full border px-4 py-2 text-sm transition-colors",
+                          "rounded-full border px-4 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none dark:focus-visible:ring-zinc-500",
                           selected
-                            ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
-                            : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white",
+                            ? "border-zinc-900 bg-zinc-900 font-semibold text-white shadow-sm dark:border-white dark:bg-white dark:text-zinc-950"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-white",
                         )}
                       >
-                        {option.label}
+                        {t(option.label)}
                       </button>
                     );
                   })}
                 </div>
                 {type.trim() && !activeType && (
-                  <p className="text-xs text-zinc-500">
-                    Keeping the existing type: {type}
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {t("Keeping the existing type: {type}", { type })}
                   </p>
                 )}
               </div>
 
               {/* gift pills */}
               <div className="space-y-2">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Gift categories
+                <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Gift categories")}
                   <span className="ml-2 normal-case tracking-normal text-zinc-400 dark:text-zinc-600">
-                    Select all that apply
+                    {t("Select all that apply")}
                   </span>
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -477,34 +479,38 @@ export default function AddEventModal({
                         aria-pressed={selected}
                         onClick={() => toggleGift(option.value)}
                         className={cn(
-                          "rounded-full border px-4 py-2 text-sm transition-colors",
+                          "rounded-full border px-4 py-2 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none dark:focus-visible:ring-zinc-500",
                           selected
-                            ? "border-emerald-500 bg-emerald-500 font-semibold text-emerald-950 shadow-sm"
-                            : "border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white",
+                            ? "border-zinc-900 bg-zinc-900 font-semibold text-white shadow-sm dark:border-white dark:bg-white dark:text-zinc-950"
+                            : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-white",
                         )}
                       >
-                        {option.label}
+                        {t(option.label)}
                       </button>
                     );
                   })}
                 </div>
                 {unknownGifts.length > 0 && (
-                  <p className="text-xs text-zinc-500">
-                    Also keeping: {unknownGifts.join(", ")}
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {t("Also keeping: {list}", {
+                      list: unknownGifts.join(", "),
+                    })}
                   </p>
                 )}
               </div>
 
               {/* details */}
-              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 p-4 transition-colors focus-within:border-emerald-500">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                  Details
+              <label className="block cursor-text rounded-xl border border-zinc-200 bg-zinc-50 p-4 transition-colors focus-within:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-400">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  {t("Details")}
                 </span>
                 <textarea
                   rows={4}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="What is this event about? Agenda, speakers, what to bring…"
+                  placeholder={t(
+                    "What is this event about? Agenda, speakers, what to bring…",
+                  )}
                   className="mt-1 w-full resize-none bg-transparent text-sm text-zinc-900 dark:text-white outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
                 />
               </label>
@@ -514,14 +520,14 @@ export default function AddEventModal({
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-400 transition-colors hover:text-zinc-900 dark:hover:text-white">
                   <span className="flex items-center gap-2">
                       <Users className="h-4 w-4" />
-                      Partners
+                      {t("Partners")}
                     </span>
                   <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
                 </summary>
                 <div className="space-y-4 border-t border-zinc-200 dark:border-zinc-800 p-4">
                   <div className="space-y-2">
-                    <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                      Partners
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                      {t("Partners")}
                     </p>
                     <div className="flex flex-col gap-2 sm:flex-row">
                       <input
@@ -536,8 +542,8 @@ export default function AddEventModal({
                             addPartner();
                           }
                         }}
-                        placeholder="Partner name"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-emerald-500"
+                        placeholder={t("Partner name")}
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                       />
                       <input
                         value={partnerLink}
@@ -552,7 +558,7 @@ export default function AddEventModal({
                           }
                         }}
                         placeholder="https://…"
-                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-emerald-500"
+                        className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-2.5 py-2 text-sm text-zinc-900 dark:text-white outline-none transition-colors placeholder:text-zinc-400 dark:placeholder:text-zinc-600 focus:border-zinc-500 dark:focus:border-zinc-400 focus:ring-0"
                       />
                       <button
                         type="button"
@@ -561,7 +567,7 @@ export default function AddEventModal({
                         className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 px-3 py-2 text-sm text-zinc-700 dark:text-zinc-300 transition-colors hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Plus className="h-4 w-4" />
-                        Add
+                        {t("Add")}
                       </button>
                     </div>
                     {partnerError && (
@@ -578,13 +584,13 @@ export default function AddEventModal({
                               {partner.name || partner.link}
                             </span>
                             <span className="hidden min-w-0 flex-1 truncate text-xs text-zinc-500 sm:block">
-                              {partner.link || "No link"}
+                              {partner.link || t("No link")}
                             </span>
                             <button
                               type="button"
-                              aria-label={`Remove ${
-                                partner.name || partner.link
-                              }`}
+                              aria-label={t("Remove {name}", {
+                                name: partner.name || partner.link,
+                              })}
                               onClick={() => removePartner(index)}
                               className="shrink-0 rounded p-0.5 text-zinc-500 transition-colors hover:text-red-600 dark:hover:text-red-400"
                             >

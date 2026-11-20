@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import {
+  Download,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +29,9 @@ import {
 } from "@/components/ui/select";
 import type { Program } from "@/lib/trainings";
 import { listPrograms, listTrainings } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import StudentList from "./StudentList";
+import { exportStudents } from "./exportStudents";
 import type { Student } from "./StudentForm";
 
 type ProgramFilter = Program | "all";
@@ -48,6 +56,7 @@ export default function StudentListView({
   onDelete,
   onDeleteMany,
 }: StudentListViewProps) {
+  const t = useT();
   const [search, setSearch] = useState("");
   const [program, setProgram] = useState<ProgramFilter>("all");
   const [training, setTraining] = useState("all");
@@ -83,8 +92,18 @@ export default function StudentListView({
     search.trim() !== "" || program !== "all" || training !== "all";
 
   const query = search.trim().toLowerCase();
+  const queryDigits = query.replace(/\D/g, "");
   const filtered = students.filter((s) => {
-    if (query && !s.fullName.toLowerCase().includes(query)) return false;
+    if (query) {
+      const matchesName = s.fullName.toLowerCase().includes(query);
+      const matchesEmail = (s.email ?? "").toLowerCase().includes(query);
+      const rawPhone = s.phone ?? "";
+      const matchesPhone =
+        rawPhone.toLowerCase().includes(query) ||
+        (queryDigits.length > 0 &&
+          rawPhone.replace(/\D/g, "").includes(queryDigits));
+      if (!matchesName && !matchesEmail && !matchesPhone) return false;
+    }
     if (program !== "all" && s.program !== program) return false;
     if (training !== "all" && s.training !== training) return false;
     return true;
@@ -124,16 +143,28 @@ export default function StudentListView({
     });
   };
 
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleExportSelected = () => {
+    exportStudents(students.filter((s) => selectedIds.has(s.id)));
+  };
+
+  const deleteSelectedTitle =
+    selectedIds.size === 1
+      ? t("Delete 1 selected student?")
+      : t("Delete {count} selected students?", { count: selectedIds.size });
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
           <Input
-            placeholder="Search by full name..."
+            placeholder={t("Search students...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            aria-label={t("Search students...")}
+            className="h-8 border-zinc-200 bg-zinc-100/80 pl-8 dark:border-zinc-800 dark:bg-zinc-900"
           />
         </div>
 
@@ -141,9 +172,10 @@ export default function StudentListView({
           <Button
             variant="outline"
             onClick={() => setFiltersOpen((open) => !open)}
+            className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <SlidersHorizontal className="h-4 w-4" />
-            Filter
+            {t("Filter")}
           </Button>
 
           {filtersOpen && (
@@ -152,9 +184,9 @@ export default function StudentListView({
                 className="fixed inset-0 z-40"
                 onClick={() => setFiltersOpen(false)}
               />
-              <div className="absolute right-0 top-full z-50 mt-2 w-64 space-y-3 rounded-lg border bg-popover p-4 shadow-md">
+              <div className="absolute right-0 top-full z-50 mt-2 w-64 space-y-3 rounded-xl border border-zinc-200 bg-white p-4 shadow-md dark:border-zinc-800 dark:bg-zinc-950">
                 <div className="space-y-1.5">
-                  <Label>Branch</Label>
+                  <Label>{t("Branch")}</Label>
                   <Select
                     value={program}
                     onValueChange={(value) => {
@@ -166,7 +198,7 @@ export default function StudentListView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="all">{t("All")}</SelectItem>
                       {programOptions.map((p) => (
                         <SelectItem key={p.id} value={p.code}>
                           {p.code}
@@ -177,7 +209,7 @@ export default function StudentListView({
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label>Program</Label>
+                  <Label>{t("Program")}</Label>
                   <Select
                     value={training}
                     onValueChange={(value) => setTraining(value ?? "all")}
@@ -186,7 +218,7 @@ export default function StudentListView({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
+                      <SelectItem value="all">{t("All")}</SelectItem>
                       {trainingOptions.map((name) => (
                         <SelectItem key={name} value={name}>
                           {name}
@@ -204,70 +236,96 @@ export default function StudentListView({
           <button
             type="button"
             onClick={handleClear}
-            className="cursor-pointer text-sm text-muted-foreground underline-offset-4 hover:underline"
+            className="cursor-pointer text-sm text-zinc-500 underline-offset-4 hover:text-zinc-900 hover:underline dark:text-zinc-400 dark:hover:text-white"
           >
-            Clear filters
+            {t("Clear filters")}
           </button>
         )}
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800 dark:bg-zinc-950">
+          <span
+            className="text-sm font-medium text-zinc-700 dark:text-zinc-200"
+            role="status"
+          >
+            {t("{count} selected", { count: selectedIds.size })}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleExportSelected}
+              className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+            >
+              <Download className="h-4 w-4" />
+              {t("Export selected")}
+            </Button>
+
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
+                  >
+                    <Trash2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                    {t("Delete selected")}
+                  </Button>
+                }
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{deleteSelectedTitle}</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t(
+                      "They will be moved to the Trash. You can restore them later or permanently delete from there.",
+                    )}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      onDeleteMany([...selectedIds]);
+                      clearSelection();
+                    }}
+                    className="bg-zinc-900 font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+                  >
+                    {t("Delete")}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={clearSelection}
+              className="text-zinc-500 hover:bg-zinc-200/60 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+            >
+              <X className="h-4 w-4" />
+              {t("Clear selection")}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {students.length > 0 && filtered.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No students match your search or filters.
+          {t("No students match your search or filters.")}
         </p>
       ) : (
-        <>
-          {selectedIds.size > 0 && (
-            <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/50 px-3 py-2">
-              <span className="text-sm font-medium">
-                {selectedIds.size} student
-                {selectedIds.size === 1 ? "" : "s"} selected
-              </span>
-              <AlertDialog>
-                <AlertDialogTrigger
-                  render={
-                    <Button variant="destructive" size="sm">
-                      <Trash2 className="h-4 w-4" />
-                      Delete Selected
-                    </Button>
-                  }
-                />
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Delete {selectedIds.size} selected student
-                      {selectedIds.size === 1 ? "" : "s"}?
-                    </AlertDialogTitle>
-                    <AlertDialogDescription>
-                      They will be moved to the Trash. You can restore them
-                      later or permanently delete from there.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => {
-                        onDeleteMany([...selectedIds]);
-                        setSelectedIds(new Set());
-                      }}
-                    >
-                      Delete All
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          )}
-          <StudentList
-            students={filtered}
-            selectedIds={selectedIds}
-            onToggleRow={toggleRow}
-            onToggleAll={toggleAll}
-            onOpenProfile={onOpenProfile}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
-        </>
+        <StudentList
+          students={filtered}
+          selectedIds={selectedIds}
+          onToggleRow={toggleRow}
+          onToggleAll={toggleAll}
+          onOpenProfile={onOpenProfile}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       )}
     </div>
   );

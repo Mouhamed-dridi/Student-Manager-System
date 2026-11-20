@@ -34,6 +34,7 @@ import { BackupExportPage } from "@/pages/settings/BackupExportPage";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import LogoutButton from "@/components/LogoutButton";
+import ExitGuard from "@/components/ExitGuard";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useViewHistory } from "@/hooks/viewHistory";
 import { clearSession } from "@/lib/session";
@@ -276,6 +277,8 @@ function LayoutShell() {
           {pages[active]}
         </main>
       </div>
+
+      <ExitGuard />
     </div>
   );
 }

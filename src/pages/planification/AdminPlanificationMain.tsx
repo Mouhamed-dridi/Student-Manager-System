@@ -15,11 +15,11 @@
 // /admin/planification/teacher/:teacherId — the header arrow and the detail's
 // own Back button both return here.
 //
-// The three sub-tabs (Emploi du temps / Emploi des examens / Planning PFE) are
-// defined in planning.ts by the `session_type` values they show. The active tab
-// filters the per-card counts here and is handed to the branch timetable, which
-// filters its grid the same way and asks for the specialised exam or PFE dialog
-// when that tab is active — so the tab bar and every grid can never disagree.
+// The three sub-tabs (Timetable / Exam Schedule / PFE Planning) are defined in
+// planning.ts by the `session_type` values they show. The active tab filters
+// the per-card counts here and is handed to the branch timetable, which filters
+// its grid the same way and asks for the specialised exam or PFE dialog when
+// that tab is active — so the tab bar and every grid can never disagree.
 //
 // Reads go through src/lib/api (no inline Supabase calls) and are joined in
 // the client: `planning.teacher_id` has no FK to `teachers`, so an embedded
@@ -39,6 +39,8 @@ import {
 } from "@/components/ui/segmented-tabs";
 import { Tabs } from "@/components/ui/tabs";
 import { DataError, DataLoading } from "@/components/DataState";
+import { formatPersonName } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   errorMessage,
@@ -93,13 +95,27 @@ interface TrainingCardData {
   weekSessions: number;
 }
 
+/**
+ * Duplicate detection key for a training name: case, accents and repeated
+ * spaces are folded, so `Comptable d'entreprise` and `comptable  d'Entreprise`
+ * are recognised as the same training in a track column.
+ */
+function trainingKey(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
 /** "No teacher assigned" / one name / the first two plus a count. */
-function teacherSummary(teacherNames: string[]): string {
-  if (teacherNames.length === 0) return "No teacher assigned";
+function teacherSummary(teacherNames: string[], t: (key: string, vars?: Record<string, string | number>) => string): string {
+  if (teacherNames.length === 0) return t("No teacher assigned");
   if (teacherNames.length === 1) return teacherNames[0];
   const head = teacherNames.slice(0, 2).join(", ");
   const rest = teacherNames.length - 2;
-  return rest > 0 ? `${head} +${rest} more` : head;
+  return rest > 0 ? `${head} ${t("+{count} more", { count: rest })}` : head;
 }
 
 function TrainingCard({
@@ -109,10 +125,11 @@ function TrainingCard({
   card: TrainingCardData;
   onOpen: () => void;
 }) {
+  const t = useT();
   // Every card is actionable: an unassigned training still needs its timetable
   // built, and that is where the operator assigns a teacher.
   const assigned = card.teacherNames.length > 0;
-  const summary = teacherSummary(card.teacherNames);
+  const summary = teacherSummary(card.teacherNames, t);
   return (
     <button
       type="button"
@@ -120,10 +137,10 @@ function TrainingCard({
       title={
         assigned
           ? `${card.trainingName}\n${card.teacherNames.join(", ")}`
-          : `${card.trainingName} — open the timetable to add sessions`
+          : `${card.trainingName} — ${t("Open the timetable to add sessions")}`
       }
       className={cn(
-        "flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4 text-left text-zinc-900 transition-colors hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800/50 dark:focus-visible:ring-zinc-500",
         !assigned && "border-dashed",
       )}
     >
@@ -133,27 +150,27 @@ function TrainingCard({
         </span>
         <span
           className={cn(
-            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums",
             card.weekSessions > 0
-              ? "bg-foreground text-background"
-              : "border border-border text-muted-foreground",
+              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              : "border border-zinc-300 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400",
           )}
         >
-          {card.weekSessions} this week
+          {t("{count} this week", { count: card.weekSessions })}
         </span>
       </div>
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
         <UsersRound className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{summary}</span>
         {card.teacherNames.length > 1 && (
-          <span className="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold">
-            {card.teacherNames.length} teachers
+          <span className="shrink-0 rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold dark:border-zinc-700">
+            {t("{count} teachers", { count: card.teacherNames.length })}
           </span>
         )}
       </span>
       {!assigned && (
-        <span className="flex items-center gap-1 text-[11px] font-medium">
-          Open timetable to add sessions
+        <span className="flex items-center gap-1 text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+          {t("Open timetable to add sessions")}
           <ArrowRight className="h-3 w-3" />
         </span>
       )}
@@ -171,19 +188,20 @@ function TrackColumn({
   cards: TrainingCardData[];
   onOpen: (card: TrainingCardData) => void;
 }) {
+  const t = useT();
   return (
     <section className="flex min-w-0 flex-col">
-      <div className="rounded-lg border border-foreground/20 bg-accent/60 px-3 py-2 text-center">
-        <h3 className="text-sm font-semibold tracking-widest uppercase">
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-center dark:border-zinc-800 dark:bg-zinc-900">
+        <h3 className="text-sm font-semibold tracking-widest text-zinc-900 uppercase dark:text-zinc-100">
           {code}
         </h3>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {cards.length} {cards.length === 1 ? "training" : "trainings"}
+        <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+          {cards.length} {cards.length === 1 ? t("training") : t("trainings")}
         </p>
       </div>
       {cards.length === 0 ? (
-        <p className="mt-4 rounded-md border border-dashed p-4 text-center text-xs text-muted-foreground">
-          No trainings in this track yet.
+        <p className="mt-4 rounded-md border border-dashed border-zinc-300 p-4 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          {t("No trainings in this track yet.")}
         </p>
       ) : (
         <div className="mt-4 flex flex-col gap-4">
@@ -201,6 +219,7 @@ function TrackColumn({
 }
 
 export default function AdminPlanificationMain() {
+  const t = useT();
   const [data, setData] = useState<PlanificationData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
@@ -250,13 +269,15 @@ export default function AdminPlanificationMain() {
   if (!data) {
     return (
       <div>
-        <h2 className="text-2xl font-semibold">Planification</h2>
+        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+          {t("Planification")}
+        </h2>
         {error ? (
           <div className="mt-4">
             <DataError message={error} />
           </div>
         ) : (
-          <DataLoading label="Loading the training overview…" />
+          <DataLoading label={t("Loading the training overview…")} />
         )}
       </div>
     );
@@ -286,7 +307,7 @@ export default function AdminPlanificationMain() {
           teachers={data.teachers}
           courses={data.courses}
           initialWeekStart={cursor}
-          backLabel="Back to Planification"
+          backLabel={t("Back to Planification")}
           onBack={() => setBranchTrainingId(null)}
           onReload={reload}
           sessionTypes={planningSessionTypesForTab(tab)}
@@ -337,11 +358,13 @@ export default function AdminPlanificationMain() {
           teacherById.get(b)?.fullName ?? "",
         ),
     );
+    // Names are stored as typed; the overview always prints them title-cased.
     const teacherNames = [
       ...new Set(
-        teacherIds.map(
-          (teacherId) =>
-            teacherById.get(teacherId)?.fullName ?? "Unknown teacher",
+        teacherIds.map((teacherId) =>
+          formatPersonName(
+            teacherById.get(teacherId)?.fullName ?? t("Unknown teacher"),
+          ),
         ),
       ),
     ];
@@ -359,9 +382,23 @@ export default function AdminPlanificationMain() {
     });
   }
 
-  cards.sort((a, b) => a.trainingName.localeCompare(b.trainingName));
+  // The same training can be stored twice under two program rows of one track
+  // (e.g. two BTS programs), which would print two identical cards in the BTS
+  // column. Collapse on the track + folded name, keeping the entry that
+  // actually carries this week's sessions.
+  const cardsByTrack = new Map<string, TrainingCardData>();
+  for (const card of cards) {
+    const key = `${card.tier}::${trainingKey(card.trainingName)}`;
+    const existing = cardsByTrack.get(key);
+    if (!existing || card.weekSessions > existing.weekSessions) {
+      cardsByTrack.set(key, card);
+    }
+  }
+  const visibleCards = [...cardsByTrack.values()];
 
-  const otherCards = cards.filter((card) => card.tier === "");
+  visibleCards.sort((a, b) => a.trainingName.localeCompare(b.trainingName));
+
+  const otherCards = visibleCards.filter((card) => card.tier === "");
   // One handler for every card: the branch timetable is the single editing
   // surface, whether or not a teacher is already assigned. Assigning the
   // teacher (or the room, subject, slot and note) happens inside its dialog.
@@ -371,10 +408,13 @@ export default function AdminPlanificationMain() {
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold">Planification</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Trainings by track. Open a card for its weekly timetable — the standard
-        slot grid, where sessions, teachers and rooms are edited.
+      <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+        {t("Planification")}
+      </h2>
+      <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+        {t(
+          "Trainings by track. Open a card for its weekly timetable — the standard slot grid, where sessions, teachers and rooms are edited.",
+        )}
       </p>
 
       <Tabs
@@ -382,10 +422,10 @@ export default function AdminPlanificationMain() {
         onValueChange={(value) => setTab(value as PlanningTab)}
         className="mt-6"
       >
-        <SegmentedTabsList aria-label="Planification view">
+        <SegmentedTabsList aria-label={t("Planification view")}>
           {PLANNING_TABS.map((option) => (
             <SegmentedTabsTrigger key={option.key} value={option.key}>
-              {option.label}
+              {t(option.label)}
             </SegmentedTabsTrigger>
           ))}
         </SegmentedTabsList>
@@ -396,18 +436,18 @@ export default function AdminPlanificationMain() {
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Previous week"
+            aria-label={t("Previous week")}
             onClick={() => setCursor((current) => addDays(current, -7))}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="min-w-44 text-center text-sm font-medium">
+          <span className="min-w-44 text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
             {formatWeekRange(cursor)}
           </span>
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Next week"
+            aria-label={t("Next week")}
             onClick={() => setCursor((current) => addDays(current, 7))}
           >
             <ChevronRight className="h-4 w-4" />
@@ -417,14 +457,15 @@ export default function AdminPlanificationMain() {
             size="sm"
             onClick={() => setCursor(startOfWeek(new Date()))}
           >
-            This week
+            {t("This week")}
           </Button>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {uniqueTrainings.length}{" "}
-          {uniqueTrainings.length === 1 ? "training" : "trainings"} ·{" "}
+        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+          {visibleCards.length}{" "}
+          {visibleCards.length === 1 ? t("training") : t("trainings")} ·{" "}
           {tabWeekEntries.length}{" "}
-          {tabWeekEntries.length === 1 ? "session" : "sessions"} in this view
+          {tabWeekEntries.length === 1 ? t("session") : t("sessions")}{" "}
+          {t("in this view")}
         </span>
       </div>
 
@@ -439,7 +480,7 @@ export default function AdminPlanificationMain() {
           <TrackColumn
             key={tier.code}
             code={tier.code}
-            cards={cards.filter((card) => card.tier === tier.code)}
+            cards={visibleCards.filter((card) => card.tier === tier.code)}
             onOpen={openCard}
           />
         ))}
@@ -449,8 +490,8 @@ export default function AdminPlanificationMain() {
           visible instead of being silently dropped from the overview. */}
       {otherCards.length > 0 ? (
         <section className="mt-8">
-          <h3 className="border-b pb-2 text-sm font-semibold tracking-widest uppercase">
-            Other programs
+          <h3 className="border-b border-zinc-200 pb-2 text-sm font-semibold tracking-widest text-zinc-900 uppercase dark:border-zinc-800 dark:text-zinc-100">
+            {t("Other programs")}
           </h3>
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
             {otherCards.map((card) => (

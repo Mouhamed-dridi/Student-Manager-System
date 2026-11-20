@@ -30,6 +30,7 @@ import StudentEventsView from "./StudentEventsView";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import LogoutButton from "@/components/LogoutButton";
+import ExitGuard from "@/components/ExitGuard";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
@@ -359,6 +360,8 @@ function StudentShell() {
           {pages[active]}
         </main>
       </div>
+
+      <ExitGuard />
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
-  getSystemName,
+  getSettings,
   insertPayments,
   listPayments,
   listStudents,
@@ -31,6 +31,7 @@ export default function PayPage() {
   const [students, setStudents] = useState<Student[] | null>(null);
   const [payments, setPayments] = useState<Payment[] | null>(null);
   const [centerName, setCenterName] = useState("SSM");
+  const [currency, setCurrency] = useState("");
   const [receiptTarget, setReceiptTarget] = useState<Payment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -39,11 +40,12 @@ export default function PayPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([listStudents(), listPayments(), getSystemName()])
-      .then(([nextStudents, nextPayments, nextName]) => {
+    Promise.all([listStudents(), listPayments(), getSettings()])
+      .then(([nextStudents, nextPayments, settings]) => {
         setStudents(nextStudents);
         setPayments(nextPayments);
-        setCenterName(nextName);
+        setCenterName(settings.systemName?.trim() || "SSM");
+        setCurrency(settings.currency?.trim() ?? "");
       })
       .catch((err) => setError(errorMessage(err)));
   }, []);
@@ -131,6 +133,7 @@ export default function PayPage() {
         ) : (
           <PaymentsView
             payments={paymentsWithNames ?? []}
+            currency={currency}
             onEdit={(payment) => {
               setError(null);
               setEditing(payment);

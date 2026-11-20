@@ -1,3 +1,4 @@
+import { t } from "@/lib/i18n";
 import type { Student } from "@/pages/students/StudentForm";
 
 /** How the money reached the center. Stored verbatim in payments.payment_method. */
@@ -29,13 +30,17 @@ export interface Payment {
   createdAt?: string;
 }
 
+/**
+ * Stored values stay untouched ("check", "Espèce", "Virement" — legacy rows
+ * included); only the visible label follows the active language.
+ */
 export const PAYMENT_METHOD_OPTIONS: {
   value: PaymentMethod;
   label: string;
 }[] = [
   { value: "check", label: "Check" },
-  { value: "Espèce", label: "Espèce" },
-  { value: "Virement", label: "Virement" },
+  { value: "Espèce", label: "Cash" },
+  { value: "Virement", label: "Transfer" },
 ];
 
 export const SEMESTER_OPTIONS = ["Semester 1", "Semester 2"] as const;
@@ -55,29 +60,96 @@ export const MONTH_OPTIONS = [
   "December",
 ] as const;
 
+export const PLAN_TYPE_OPTIONS: {
+  value: Payment["planType"];
+  label: string;
+}[] = [
+  { value: "monthly", label: "Monthly" },
+  { value: "semester", label: "Semester" },
+  { value: "one_time", label: "One-Time" },
+];
+
+/** English labels for exports and non-React callers. */
 export const PLAN_LABELS: Record<Payment["planType"], string> = {
   one_time: "One-Time",
   semester: "Semester",
   monthly: "Monthly",
 };
 
+/** Currency unit fallback; mirrors the Settings page default. */
+export const DEFAULT_CURRENCY = "TND";
+
 /** Program + training as one snapshot string, e.g. "BTP - Web Development". */
 export function studentProgramSnapshot(student: Student): string {
   return [student.program, student.training].filter(Boolean).join(" - ");
 }
 
-/** What the Semester/Month column should read for a payment. */
+/** Localized plan label ("Mensuel", "Semestriel", "Paiement unique"). */
+export function planTypeLabel(planType: Payment["planType"]): string {
+  return t(PLAN_LABELS[planType] ?? planType);
+}
+
+/** Normalizes the stored method (and its legacy spellings) to one category. */
+export function paymentMethodCategory(
+  value?: string,
+): "cash" | "check" | "transfer" | null {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (["cash", "espèce", "espece", "espèces", "especes"].includes(normalized))
+    return "cash";
+  if (["check", "chèque", "cheque"].includes(normalized)) return "check";
+  if (["transfer", "virement", "virement bancaire"].includes(normalized))
+    return "transfer";
+  return null;
+}
+
+const METHOD_LABEL_KEYS = {
+  cash: "Cash",
+  check: "Check",
+  transfer: "Transfer",
+} as const;
+
+/** Readable, localized label for a stored payment_method value. */
+export function formatPaymentMethod(value?: string): string {
+  if (!value) return "—";
+  const category = paymentMethodCategory(value);
+  return category ? t(METHOD_LABEL_KEYS[category]) : value;
+}
+
+/** Semester/month snapshots are stored in English; show them in the UI language. */
+function periodValueLabel(value?: string): string {
+  if (!value) return "—";
+  if (
+    (SEMESTER_OPTIONS as readonly string[]).includes(value) ||
+    (MONTH_OPTIONS as readonly string[]).includes(value)
+  ) {
+    return t(value);
+  }
+  return value;
+}
+
+/** What the Period column (and receipt) should read for a payment. */
 export function paymentPeriodLabel(payment: Payment): string {
-  if (payment.planType === "semester") return payment.semester ?? "—";
-  if (payment.planType === "monthly") return payment.paymentMonth ?? "—";
+  if (payment.planType === "semester") return periodValueLabel(payment.semester);
+  if (payment.planType === "monthly")
+    return periodValueLabel(payment.paymentMonth);
   return "—";
 }
 
-/** Readable label for a stored payment_method value. */
-export function formatPaymentMethod(value?: string): string {
+/** payment_date is a plain YYYY-MM-DD string; render it as DD/MM/YYYY. */
+export function paymentDateLabel(value: string): string {
   if (!value) return "—";
-  return (
-    PAYMENT_METHOD_OPTIONS.find((option) => option.value === value)?.label ??
-    value
-  );
+  const [year, month, day] = value.split("T")[0].split("-");
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
+}
+
+/** `1,200.00 DT` — thousands separators plus the center's currency unit. */
+export function formatMoney(amount: number, currency?: string): string {
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
+  const unit = (currency ?? "").trim() || DEFAULT_CURRENCY;
+  return `${formatted} ${unit}`;
 }

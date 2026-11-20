@@ -44,17 +44,19 @@ export const PLANNING_TABS: readonly {
 }[] = [
   {
     key: "timetable",
-    label: "Emploi du temps",
+    // English copy doubles as the i18n key; the French label comes from
+    // src/lib/i18n.ts.
+    label: "Timetable",
     sessionTypes: PLANNING_TIMETABLE_SESSION_TYPES,
   },
   {
     key: "exams",
-    label: "Emploi des examens",
+    label: "Exam Schedule",
     sessionTypes: PLANNING_EXAM_SESSION_TYPES,
   },
   {
     key: "pfe",
-    label: "Planning PFE",
+    label: "PFE Planning",
     sessionTypes: PLANNING_PFE_SESSION_TYPES,
   },
 ];

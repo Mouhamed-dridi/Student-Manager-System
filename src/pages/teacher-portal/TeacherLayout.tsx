@@ -30,6 +30,7 @@ import TeacherSettingsPage from "./TeacherSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import LogoutButton from "@/components/LogoutButton";
+import ExitGuard from "@/components/ExitGuard";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
 import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
@@ -380,6 +381,8 @@ function TeacherShell() {
           )}
         </main>
       </div>
+
+      <ExitGuard />
     </div>
   );
 }

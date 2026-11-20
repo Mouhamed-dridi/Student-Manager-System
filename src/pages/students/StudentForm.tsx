@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listPrograms, listTrainings } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { DEFAULT_STUDENT_PASSWORD } from "@/pages/users/userAccounts";
 import { EDUCATION_OPTIONS, ENGAGEMENT_OPTIONS } from "./studentOptions";
 
@@ -56,6 +57,7 @@ interface StudentFormProps {
 }
 
 export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
+  const t = useT();
   const [fullName, setFullName] = useState("");
   const [program, setProgram] = useState<Student["program"] | null>(null);
   const [training, setTraining] = useState("");
@@ -86,7 +88,7 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
   const trainingOptions = useMemo(
     () =>
       selectedProgramId
-        ? allTrainings.filter((t) => t.programId === selectedProgramId)
+        ? allTrainings.filter((option) => option.programId === selectedProgramId)
         : [],
     [selectedProgramId, allTrainings],
   );
@@ -119,10 +121,10 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="fullName">Full Name</Label>
+        <Label htmlFor="fullName">{t("Full Name")}</Label>
         <Input
           id="fullName"
-          placeholder="Enter full name"
+          placeholder={t("Enter full name")}
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           required
@@ -130,13 +132,13 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label>Program</Label>
+        <Label>{t("Program")}</Label>
         <Select
           value={program}
           onValueChange={handleProgramChange}
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select program" />
+            <SelectValue placeholder={t("Select program")} />
           </SelectTrigger>
           <SelectContent>
             {programOptions.map((p) => (
@@ -149,19 +151,19 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label>Training</Label>
+        <Label>{t("Training")}</Label>
         <Select
           value={training}
           onValueChange={(value) => setTraining(value ?? "")}
           disabled={!program}
         >
           <SelectTrigger>
-            <SelectValue placeholder="Select training" />
+            <SelectValue placeholder={t("Select training")} />
           </SelectTrigger>
           <SelectContent>
-            {trainingOptions.map((t) => (
-              <SelectItem key={t.id} value={t.name}>
-                {t.name}
+            {trainingOptions.map((option) => (
+              <SelectItem key={option.id} value={option.name}>
+                {option.name}
               </SelectItem>
             ))}
           </SelectContent>
@@ -169,10 +171,10 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="phone">Phone Number</Label>
+        <Label htmlFor="phone">{t("Phone Number")}</Label>
         <Input
           id="phone"
-          placeholder="Enter phone number"
+          placeholder={t("Enter phone number")}
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           required
@@ -180,11 +182,11 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t("Email")}</Label>
         <Input
           id="email"
           type="email"
-          placeholder="Enter email"
+          placeholder={t("Enter email")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -193,35 +195,35 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="location">Location</Label>
+          <Label htmlFor="location">{t("Location")}</Label>
           <Input
             id="location"
-            placeholder="City or address"
+            placeholder={t("City or address")}
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="age">Age</Label>
+          <Label htmlFor="age">{t("Age")}</Label>
           <Input
             id="age"
             type="number"
             min={1}
-            placeholder="Age"
+            placeholder={t("Age")}
             value={age}
             onChange={(e) => setAge(e.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          <Label>Education</Label>
+          <Label>{t("Education")}</Label>
           <Select
             value={education}
             onValueChange={(value) => setEducation(value ?? "")}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select education level" />
+              <SelectValue placeholder={t("Select education level")} />
             </SelectTrigger>
             <SelectContent>
               {EDUCATION_OPTIONS.map((option) => (
@@ -234,13 +236,13 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
         </div>
 
         <div className="space-y-2">
-          <Label>Engagement</Label>
+          <Label>{t("Engagement")}</Label>
           <Select
             value={engagement}
             onValueChange={(value) => setEngagement(value ?? "")}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select engagement" />
+              <SelectValue placeholder={t("Select engagement")} />
             </SelectTrigger>
             <SelectContent>
               {ENGAGEMENT_OPTIONS.map((option) => (
@@ -254,11 +256,15 @@ export default function StudentForm({ onSave, onCancel }: StudentFormProps) {
       </div>
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={!program || !training}>
-          Add Student
+        <Button
+          type="submit"
+          disabled={!program || !training}
+          className="bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+        >
+          {t("Add Student")}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
     </form>

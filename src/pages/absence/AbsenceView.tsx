@@ -11,6 +11,7 @@ import {
 import AttendanceLog from "./AttendanceLog";
 import AddAbsenceDialog from "./AddAbsenceDialog";
 import AbsenceBilletModal from "./AbsenceBilletModal";
+import { useT } from "@/lib/i18n";
 import { parseAttendanceFile } from "./importAttendance";
 import { exportAttendance } from "./exportAttendance";
 
@@ -18,6 +19,7 @@ import { exportAttendance } from "./exportAttendance";
 // ticket action that generates (and archives) an absence billet; the archive
 // page under the same sidebar section lists every generated ticket.
 export default function AbsenceView() {
+  const t = useT();
   const [records, setRecords] = useState<AttendanceRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export default function AbsenceView() {
       setError(null);
       await softDeleteAttendance([id]);
       await refresh();
-      setSummary("Attendance record moved to the Trash.");
+      setSummary(t("Attendance record moved to the Trash."));
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -76,7 +78,9 @@ export default function AbsenceView() {
     const result = await parseAttendanceFile(file);
     if (result.records.length === 0) {
       setSummary(
-        "No valid attendance rows found in the selected file. Expected columns: Type, Full Name, Date (Class Name and Time optional).",
+        `${t("No valid attendance rows found in the selected file.")} ${t(
+          "Expected columns: Type, Full Name, Date (Class Name and Time optional).",
+        )}`,
       );
       return;
     }
@@ -85,9 +89,21 @@ export default function AbsenceView() {
       setError(null);
       await insertAttendanceRecords(result.records);
       await refresh();
-      setSummary(
-        `Imported ${result.records.length} record${result.records.length === 1 ? "" : "s"}${result.skipped > 0 ? `, skipped ${result.skipped} row${result.skipped === 1 ? "" : "s"} with missing or invalid data` : ""}.`,
-      );
+      const parts = [
+        result.records.length === 1
+          ? t("Imported 1 record")
+          : t("Imported {count} records", { count: result.records.length }),
+      ];
+      if (result.skipped > 0) {
+        parts.push(
+          result.skipped === 1
+            ? t("skipped 1 row with missing or invalid data")
+            : t("skipped {count} rows with missing or invalid data", {
+                count: result.skipped,
+              }),
+        );
+      }
+      setSummary(`${parts.join(", ")}.`);
     } catch (err) {
       setError(errorMessage(err));
       setSummary(null);
@@ -97,18 +113,20 @@ export default function AbsenceView() {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-semibold">Attendance Logs</h2>
+        <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+          {t("Attendance Logs")}
+        </h2>
         <div className="flex items-center gap-2">
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" />
-            Add Absence
+            {t("Add Absence")}
           </Button>
           <Button
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="h-4 w-4" />
-            Import Excel
+            {t("Import Excel")}
           </Button>
           <Button
             variant="outline"
@@ -118,7 +136,7 @@ export default function AbsenceView() {
             disabled={!records || records.length === 0}
           >
             <Download className="h-4 w-4" />
-            Export Excel
+            {t("Export Excel")}
           </Button>
           <input
             ref={fileInputRef}
@@ -131,7 +149,7 @@ export default function AbsenceView() {
       </div>
 
       {summary && (
-        <p className="mt-4 rounded-md border bg-muted/50 px-3 py-2 text-sm">
+        <p className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
           {summary}
         </p>
       )}

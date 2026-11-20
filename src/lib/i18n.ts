@@ -179,7 +179,20 @@ const FRENCH: Record<string, string> = {
     "Tous les billets d'absence générés depuis le registre de présence.",
   "Search by student, class, subject, teacher or code...":
     "Rechercher par étudiant, classe, matière, enseignant ou code…",
-  "Search by name or class...": "Rechercher par nom ou classe…",
+  "Search by name or class...": "Rechercher par nom ou formation…",
+  "Loading attendance…": "Chargement des présences…",
+  "Full class": "Classe entière",
+  "Generate absence billet for {name}": "Générer un billet d'absence pour {name}",
+  "Edit {name}": "Modifier {name}",
+  "Delete {name}": "Supprimer {name}",
+  "{name} on {date} will move to the Trash, where you can restore it later or delete it permanently.":
+    "{name} du {date} sera déplacé vers la corbeille, où vous pourrez le restaurer plus tard ou le supprimer définitivement.",
+  "Imported 1 record": "1 enregistrement importé",
+  "Imported {count} records": "{count} enregistrements importés",
+  "No valid attendance rows found in the selected file.":
+    "Aucune ligne de présence valide trouvée dans le fichier sélectionné.",
+  "Expected columns: Type, Full Name, Date (Class Name and Time optional).":
+    "Colonnes attendues : Type, Nom complet, Date (Classe et Heure facultatives).",
   "No billet matches your search.": "Aucun billet ne correspond à votre recherche.",
   "No billet has been generated yet.": "Aucun billet n'a encore été généré.",
   "Open Attendance Logs": "Ouvrir les registres de présence",
@@ -188,6 +201,18 @@ const FRENCH: Record<string, string> = {
   "Time From": "Heure de début",
   "Time To": "Heure de fin",
   "Re-print": "Réimprimer",
+  "Absence Tickets": "Billets d'absence",
+  Preview: "Aperçu",
+  Printed: "Imprimé",
+  "1 ticket": "1 billet",
+  "{count} tickets": "{count} billets",
+  "Preview billet for {name}": "Aperçu du billet de {name}",
+  "View billet for {name}": "Afficher le billet de {name}",
+  "Search student, branch, subject, teacher...":
+    "Rechercher (étudiant, filière, matière, enseignant)...",
+  "Loading billets…": "Chargement des billets…",
+  "A5 · “Save as PDF” keeps a copy":
+    "A5 · « Enregistrer au format PDF » conserve une copie",
   billet: "billet",
   billets: "billets",
   "No records match your search.": "Aucun enregistrement ne correspond à votre recherche.",
@@ -210,11 +235,198 @@ const FRENCH: Record<string, string> = {
   "Retry save": "Réessayer l'enregistrement",
   "Print ticket": "Imprimer le billet",
 
+  // ------------------------------------------------------------ planification
+  "Planification view": "Vue Planification",
+  Timetable: "Emploi du temps",
+  "Exam Schedule": "Emploi des examens",
+  "PFE Planning": "Planning PFE",
+  "This week": "Cette semaine",
+  "{count} this week": "{count} cette semaine",
+  training: "formation",
+  trainings: "formations",
+  session: "séance",
+  sessions: "séances",
+  "in this view": "dans cette vue",
+  "+{count} more": "+{count} autres",
+  "{count} teachers": "{count} enseignants",
+  "Open timetable to add sessions": "Ouvrir l'emploi du temps",
+  "Open the timetable to add sessions":
+    "Ouvrez l'emploi du temps pour ajouter des séances",
+  "No trainings in this track yet.":
+    "Aucune formation dans cette filière pour le moment.",
+  "Other programs": "Autres programmes",
+  "Trainings by track. Open a card for its weekly timetable — the standard slot grid, where sessions, teachers and rooms are edited.":
+    "Les formations par filière. Ouvrez une carte pour son emploi du temps hebdomadaire — la grille standard, où se modifient les séances, les enseignants et les salles.",
+  "Loading the training overview…":
+    "Chargement de l'aperçu des formations…",
+  "Previous week": "Semaine précédente",
+  "Next week": "Semaine suivante",
+  "Unknown teacher": "Enseignant inconnu",
+  "Back to Planification": "Retour à la Planification",
+  "Branch timetable": "Emploi du temps de la filière",
+  "Exam schedule — add or edit this branch’s exam sittings.":
+    "Emploi des examens — ajoutez ou modifiez les sessions d'examen de cette filière.",
+  "PFE schedule — defences, internships and their jury panels.":
+    "Planning PFE — soutenances, stages et leurs jurys.",
+  "Weekly timetable — add, move or remove this branch’s sessions.":
+    "Emploi du temps hebdomadaire — ajoutez, déplacez ou supprimez les séances de cette filière.",
+  "All classes": "Toutes les classes",
+  "No class": "Sans classe",
+  "Filter by class": "Filtrer par classe",
+  "Print / PDF": "Imprimer / PDF",
+  "Print this week or save it as a PDF":
+    "Imprimer cette semaine ou l'enregistrer en PDF",
+  "Add session": "Ajouter une séance",
+  "Add first session": "Ajouter la première séance",
+  "Add Session": "Ajouter la séance",
+  "{count} session clashes": "{count} séance en conflit",
+  "{count} sessions clash": "{count} séances en conflit",
+  "with another session this week — a teacher, room or class is double-booked. Flagged cards carry a warning icon.":
+    "avec une autre séance cette semaine — un enseignant, une salle ou une classe est doublement réservé. Les cartes concernées portent une icône d'avertissement.",
+  "No sessions planned for this branch this week.":
+    "Aucune séance prévue pour cette filière cette semaine.",
+  "Use the + in any slot below, or add a session to another week.":
+    "Utilisez le + dans un créneau ci-dessous, ou ajoutez une séance à une autre semaine.",
+  Mon: "Lun",
+  Tue: "Mar",
+  Wed: "Mer",
+  Thu: "Jeu",
+  Fri: "Ven",
+  Sat: "Sam",
+  Sun: "Dim",
+  Jury: "Jury",
+  "This session clashes with another one":
+    "Cette séance est en conflit avec une autre",
+  "Add a session on {date} at {slot}":
+    "Ajouter une séance le {date} à {slot}",
+  "Edit session": "Modifier la séance",
+  "New session": "Nouvelle séance",
+  "Conflict warning": "Avertissement de conflit",
+  "You can still save — this is a warning, not a block.":
+    "Vous pouvez quand même enregistrer — c'est un avertissement, pas un blocage.",
+  "Delete session": "Supprimer la séance",
+  "Delete session?": "Supprimer la séance ?",
+  "Delete Session": "Supprimer la séance",
+  "this session": "cette séance",
+  "This permanently removes {name} on {date} from the {branch} timetable.":
+    "Cela supprime définitivement {name} le {date} de l'emploi du temps de {branch}.",
+  "Sessions without a time window are grouped in the last row.":
+    "Les séances sans horaire sont regroupées dans la dernière ligne.",
+  "Pick a date for this session before saving.":
+    "Choisissez une date pour cette séance avant d'enregistrer.",
+  "another session": "une autre séance",
+  "This teacher": "Cet enseignant",
+  "{name} already teaches “{subject}”{window}.":
+    "{name} enseigne déjà « {subject} »{window}.",
+  "Room {room} is already used by “{subject}”{window}.":
+    "La salle {room} est déjà utilisée par « {subject} »{window}.",
+  "Class {class} already has “{subject}”{window}.":
+    "La classe {class} a déjà « {subject} »{window}.",
+
   // ------------------------------------------------------------- students/teachers
   "Student List": "Liste des étudiants",
   "Add Student": "Ajouter un étudiant",
   "Teacher List": "Liste des enseignants",
   "Add Teacher": "Ajouter un enseignant",
+  "Teacher profile": "Profil de l'enseignant",
+  "Search teachers...": "Rechercher un enseignant...",
+  "No teachers match your search or filters.":
+    "Aucun enseignant ne correspond à votre recherche ou à vos filtres.",
+  "No teachers registered yet.": "Aucun enseignant inscrit pour le moment.",
+  "Edit teacher": "Modifier l'enseignant",
+  "Delete teacher": "Supprimer l'enseignant",
+  "Delete teacher?": "Supprimer l'enseignant ?",
+  "The selected file contains no teacher rows.":
+    "Le fichier sélectionné ne contient aucune ligne d'enseignant.",
+  "Nothing new to import:": "Rien de nouveau à importer :",
+  "1 duplicate": "1 doublon",
+  "{count} duplicates": "{count} doublons",
+  "1 row with missing data": "1 ligne avec des données manquantes",
+  "{count} rows with missing data": "{count} lignes avec des données manquantes",
+  "Added 1 teacher": "1 enseignant ajouté",
+  "Added {count} teachers": "{count} enseignants ajoutés",
+  "skipped 1 row with missing data": "1 ligne ignorée (données manquantes)",
+  "skipped {count} rows with missing data":
+    "{count} lignes ignorées (données manquantes)",
+  "Enter specialty (e.g. Cybersecurity & Networking)":
+    "Saisissez la spécialité (ex. Cybersécurité & Réseaux)",
+  "No trainings yet": "Aucune formation pour le moment",
+  "Job Title": "Intitulé du poste",
+  "Job title": "Intitulé du poste",
+  Company: "Entreprise",
+  "Highest qualification": "Diplôme le plus élevé",
+  Password: "Mot de passe",
+  "Enter password": "Saisissez le mot de passe",
+  "Teachers log in with their full name and this password.":
+    "Les enseignants se connectent avec leur nom complet et ce mot de passe.",
+  "Update Teacher": "Mettre à jour l'enseignant",
+  Duplicate: "Doublon",
+  New: "Nouveau",
+  "1 teacher ready to import": "1 enseignant prêt à importer",
+  "{count} teachers ready to import": "{count} enseignants prêts à importer",
+  ", 1 duplicate will be skipped": ", 1 doublon sera ignoré",
+  ", {count} duplicates will be skipped":
+    ", {count} doublons seront ignorés",
+  ", 1 row ignored for missing data.":
+    ", 1 ligne ignorée pour données manquantes.",
+  ", {count} rows ignored for missing data.":
+    ", {count} lignes ignorées pour données manquantes.",
+  "Student profile": "Profil de l'étudiant",
+  "Loading students…": "Chargement des étudiants…",
+  "Search students...": "Rechercher un étudiant...",
+  Filter: "Filtrer",
+  "Clear filters": "Effacer les filtres",
+  "No students match your search or filters.":
+    "Aucun étudiant ne correspond à votre recherche ou à vos filtres.",
+  "No students registered yet.": "Aucun étudiant inscrit pour le moment.",
+  "Select all visible students": "Sélectionner tous les étudiants visibles",
+  "Select {name}": "Sélectionner {name}",
+  "Edit student": "Modifier l'étudiant",
+  "Delete student": "Supprimer l'étudiant",
+  "Delete student?": "Supprimer l'étudiant ?",
+  "{name} will be moved to the Trash. You can restore them later or permanently delete from there.":
+    "{name} sera déplacé vers la corbeille. Vous pourrez le restaurer plus tard ou le supprimer définitivement depuis celle-ci.",
+  "{count} selected": "{count} sélectionné(s)",
+  "Export selected": "Exporter la sélection",
+  "Delete selected": "Supprimer la sélection",
+  "Clear selection": "Effacer la sélection",
+  "Delete 1 selected student?": "Supprimer l'étudiant sélectionné ?",
+  "Delete {count} selected students?":
+    "Supprimer les {count} étudiants sélectionnés ?",
+  "They will be moved to the Trash. You can restore them later or permanently delete from there.":
+    "Ils seront déplacés vers la corbeille. Vous pourrez les restaurer plus tard ou les supprimer définitivement depuis celle-ci.",
+  "No valid rows found in the selected file.":
+    "Aucune ligne valide dans le fichier sélectionné.",
+  "Imported 1 student": "1 étudiant importé",
+  "Imported {count} students": "{count} étudiants importés",
+  "updated 1 existing record": "1 fiche existante mise à jour",
+  "updated {count} existing records": "{count} fiches existantes mises à jour",
+  "skipped 1 duplicate": "1 doublon ignoré",
+  "skipped {count} duplicates": "{count} doublons ignorés",
+  "skipped 1 row with missing or invalid data":
+    "1 ligne ignorée (données manquantes ou invalides)",
+  "skipped {count} rows with missing or invalid data":
+    "{count} lignes ignorées (données manquantes ou invalides)",
+  "1 row ready to import": "1 ligne prête à importer",
+  "{count} rows ready to import": "{count} lignes prêtes à importer",
+  ", 1 row will be skipped (missing or invalid data).":
+    ", 1 ligne sera ignorée (données manquantes ou invalides).",
+  ", {count} rows will be skipped (missing or invalid data).":
+    ", {count} lignes seront ignorées (données manquantes ou invalides).",
+  "Confirm Import": "Confirmer l'importation",
+  "Enter full name": "Saisissez le nom complet",
+  "Select program": "Sélectionnez un programme",
+  "Select training": "Sélectionnez une formation",
+  "Phone Number": "Numéro de téléphone",
+  "Enter phone number": "Saisissez le numéro de téléphone",
+  "Enter email": "Saisissez l'e-mail",
+  Location: "Localisation",
+  "City or address": "Ville ou adresse",
+  Age: "Âge",
+  Education: "Niveau d'études",
+  "Select education level": "Sélectionnez le niveau d'études",
+  Engagement: "Engagement",
+  "Select engagement": "Sélectionnez un engagement",
 
   // --------------------------------------------------------------------- pay
   "Payment History": "Historique des paiements",
@@ -224,7 +436,31 @@ const FRENCH: Record<string, string> = {
   "Changed By": "Modifié par",
   "Plan Type": "Type de forfait",
   "Payment Date": "Date de paiement",
+  "Payment Method": "Mode de paiement",
+  "Semester / Month": "Semestre / Mois",
+  Period: "Période",
   "Deleted At": "Supprimé le",
+  "Every payment creation, edit and deletion is recorded here, newest first.":
+    "Chaque création, modification et suppression de paiement est enregistrée ici, de la plus récente à la plus ancienne.",
+  "Search by student, change or user…":
+    "Rechercher par étudiant, modification ou utilisateur…",
+  "Filter by action": "Filtrer par action",
+  Creations: "Créations",
+  Updates: "Modifications",
+  Deletions: "Suppressions",
+  Created: "Créé",
+  Updated: "Modifié",
+  Deleted: "Supprimé",
+  "Unknown student": "Étudiant inconnu",
+  "No field details": "Aucun détail de champ",
+  "Loading history…": "Chargement de l'historique…",
+  "No payment activity recorded yet.":
+    "Aucune activité de paiement enregistrée pour le moment.",
+  "Payment history is not available on this database — the payments table has no edit_history column, so only changes made in this session are listed here.":
+    "L'historique des paiements n'est pas disponible sur cette base de données — la table payments n'a pas de colonne edit_history, seules les modifications de cette session sont donc listées ici.",
+  "No records match your search or filters.":
+    "Aucun enregistrement ne correspond à votre recherche ou à vos filtres.",
+  By: "Par",
 
   // ------------------------------------------------------------ events/publications
   Cover: "Couverture",
@@ -389,6 +625,11 @@ const FRENCH: Record<string, string> = {
   "Sign out": "Se déconnecter",
   "Are you sure you want to sign out of your session?":
     "Voulez-vous vraiment vous déconnecter de votre session ?",
+  "Leave the application?": "Quitter l'application ?",
+  "Are you sure you want to leave the Student Manager System?":
+    "Voulez-vous vraiment quitter l'application ?",
+  Stay: "Rester",
+  Leave: "Quitter",
 };
 
 function parseLanguage(value: unknown): Language | null {

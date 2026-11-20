@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listPrograms, listTrainings } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { DEFAULT_TEACHER_PASSWORD } from "@/pages/users/userAccounts";
 
 export interface Teacher {
@@ -41,6 +42,7 @@ export default function TeacherForm({
   onSave,
   onCancel,
 }: TeacherFormProps) {
+  const t = useT();
   const [fullName, setFullName] = useState(initialData?.fullName ?? "");
   const [specialty, setSpecialty] = useState(initialData?.specialty ?? "");
   const [program, setProgram] = useState<string | null>(
@@ -84,9 +86,9 @@ export default function TeacherForm({
     () =>
       selectedProgramId
         ? allTrainings
-            .filter((t) => t.programId === selectedProgramId)
-            .map((t) => t.name)
-        : allTrainings.map((t) => t.name),
+            .filter((option) => option.programId === selectedProgramId)
+            .map((option) => option.name)
+        : allTrainings.map((option) => option.name),
     [selectedProgramId, allTrainings],
   );
 
@@ -123,10 +125,10 @@ export default function TeacherForm({
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="fullName">Full Name</Label>
+        <Label htmlFor="fullName">{t("Full Name")}</Label>
         <Input
           id="fullName"
-          placeholder="Enter full name"
+          placeholder={t("Enter full name")}
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           required
@@ -134,10 +136,10 @@ export default function TeacherForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="specialty">Specialty</Label>
+        <Label htmlFor="specialty">{t("Specialty")}</Label>
         <Input
           id="specialty"
-          placeholder="Enter specialty (e.g. Cybersecurity & Networking)"
+          placeholder={t("Enter specialty (e.g. Cybersecurity & Networking)")}
           value={specialty}
           onChange={(e) => setSpecialty(e.target.value)}
           required
@@ -146,10 +148,10 @@ export default function TeacherForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label>Program</Label>
+          <Label>{t("Program")}</Label>
           <Select value={program} onValueChange={handleProgramChange}>
             <SelectTrigger>
-              <SelectValue placeholder="Select program" />
+              <SelectValue placeholder={t("Select program")} />
             </SelectTrigger>
             <SelectContent>
               {programOptions.map((p) => (
@@ -162,7 +164,7 @@ export default function TeacherForm({
         </div>
 
         <div className="space-y-2">
-          <Label>Training</Label>
+          <Label>{t("Training")}</Label>
           <Select
             value={training}
             onValueChange={(value) => setTraining(value ?? "")}
@@ -172,8 +174,8 @@ export default function TeacherForm({
               <SelectValue
                 placeholder={
                   trainingOptions.length === 0
-                    ? "No trainings yet"
-                    : "Select training"
+                    ? t("No trainings yet")
+                    : t("Select training")
                 }
               />
             </SelectTrigger>
@@ -189,10 +191,10 @@ export default function TeacherForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="phone">Phone Number</Label>
+        <Label htmlFor="phone">{t("Phone Number")}</Label>
         <Input
           id="phone"
-          placeholder="Enter phone number"
+          placeholder={t("Enter phone number")}
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           required
@@ -200,11 +202,11 @@ export default function TeacherForm({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email">{t("Email")}</Label>
         <Input
           id="email"
           type="email"
-          placeholder="Enter email"
+          placeholder={t("Enter email")}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -213,40 +215,40 @@ export default function TeacherForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="jobTitle">Job Title</Label>
+          <Label htmlFor="jobTitle">{t("Job Title")}</Label>
           <Input
             id="jobTitle"
-            placeholder="Job title"
+            placeholder={t("Job title")}
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="company">Company</Label>
+          <Label htmlFor="company">{t("Company")}</Label>
           <Input
             id="company"
-            placeholder="Company"
+            placeholder={t("Company")}
             value={company}
             onChange={(e) => setCompany(e.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="location">Location</Label>
+          <Label htmlFor="location">{t("Location")}</Label>
           <Input
             id="location"
-            placeholder="City or address"
+            placeholder={t("City or address")}
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="education">Education</Label>
+          <Label htmlFor="education">{t("Education")}</Label>
           <Input
             id="education"
-            placeholder="Highest qualification"
+            placeholder={t("Highest qualification")}
             value={education}
             onChange={(e) => setEducation(e.target.value)}
           />
@@ -255,26 +257,30 @@ export default function TeacherForm({
 
       {!initialData && (
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password">{t("Password")}</Label>
           <Input
             id="password"
-            placeholder="Enter password"
+            placeholder={t("Enter password")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
           <p className="text-xs text-muted-foreground">
-            Teachers log in with their full name and this password.
+            {t("Teachers log in with their full name and this password.")}
           </p>
         </div>
       )}
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={!specialty.trim()}>
-          {initialData ? "Update Teacher" : "Add Teacher"}
+        <Button
+          type="submit"
+          disabled={!specialty.trim()}
+          className="bg-zinc-900 text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+        >
+          {initialData ? t("Update Teacher") : t("Add Teacher")}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
     </form>

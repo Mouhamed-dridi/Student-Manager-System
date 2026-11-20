@@ -67,6 +67,7 @@ import type { PlanningEntryDraft } from "@/components/PlanningEntryForm";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useNestedView } from "@/hooks/viewHistory";
+import { useT } from "@/lib/i18n";
 import {
   classNameFor,
   deletePlanning,
@@ -158,13 +159,14 @@ export default function BranchPlanningPage({
   teachers,
   courses,
   initialWeekStart,
-  backLabel = "Back to Branches",
+  backLabel,
   onBack,
   onReload,
   sessionTypes,
   examMode = false,
   pfeMode = false,
 }: BranchPlanningPageProps) {
+  const t = useT();
   const [cursor, setCursor] = useState(() =>
     startOfWeek(initialWeekStart ?? new Date()),
   );
@@ -189,7 +191,7 @@ export default function BranchPlanningPage({
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useNestedView(true, "branch-planning", "Branch timetable", onBack);
+  useNestedView(true, "branch-planning", t("Branch timetable"), onBack);
 
   // Print / "Save as PDF" keeps only the timetable: the body class switches the
   // `@media print` rules on (see src/index.css), so the sidebar, the week
@@ -233,6 +235,13 @@ export default function BranchPlanningPage({
     ),
   ].sort((a, b) => a.localeCompare(b));
   const hasUnclassed = branchSessions.some((entry) => !entry.className?.trim());
+  // Base UI's Select.Value prints the raw `__all` sentinel unless the items
+  // list maps it to a label, so the filter's options are built once, translated.
+  const classFilterItems = [
+    { value: ALL_CLASSES, label: t("All classes") },
+    ...classOptionsForFilter.map((label) => ({ value: label, label })),
+    ...(hasUnclassed ? [{ value: NO_CLASS, label: t("No class") }] : []),
+  ];
 
   const weekDays = Array.from({ length: 7 }, (_, index) =>
     addDays(cursor, index),
@@ -396,7 +405,7 @@ export default function BranchPlanningPage({
   const saveEntry = async (values: PlanningEntryValues) => {
     if (!dialog) return;
     if (!dialog.date) {
-      setError("Pick a date for this session before saving.");
+      setError(t("Pick a date for this session before saving."));
       return;
     }
     try {
@@ -437,16 +446,28 @@ export default function BranchPlanningPage({
 
   const describeConflict = (conflict: PlanningConflict): string => {
     const other = conflict.other;
-    const subject = other.course || other.content || "another session";
+    const subject = other.course || other.content || t("another session");
     const window = other.sessionTime ? ` (${other.sessionTime})` : "";
     if (conflict.kind === "teacher") {
-      const name = teacherById.get(other.teacherId) ?? "This teacher";
-      return `${name} already teaches “${subject}”${window}.`;
+      const name = teacherById.get(other.teacherId) ?? t("This teacher");
+      return t("{name} already teaches “{subject}”{window}.", {
+        name,
+        subject,
+        window,
+      });
     }
     if (conflict.kind === "room") {
-      return `Room ${other.roomName} is already used by “${subject}”${window}.`;
+      return t("Room {room} is already used by “{subject}”{window}.", {
+        room: other.roomName ?? "—",
+        subject,
+        window,
+      });
     }
-    return `Class ${other.className} already has “${subject}”${window}.`;
+    return t("Class {class} already has “{subject}”{window}.", {
+      class: other.className ?? "—",
+      subject,
+      window,
+    });
   };
 
   const conflictMessages = [
@@ -462,22 +483,26 @@ export default function BranchPlanningPage({
         onClick={onBack}
       >
         <ArrowLeft className="h-4 w-4" />
-        {backLabel}
+        {backLabel ?? t("Back to Branches")}
       </Button>
 
-      <h2 className="mt-2 text-2xl font-semibold">{branchName}</h2>
+      <h2 className="mt-2 text-2xl font-semibold text-foreground">
+        {branchName}
+      </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {examMode
-          ? "Exam schedule — add or edit this branch’s exam sittings."
+          ? t("Exam schedule — add or edit this branch’s exam sittings.")
           : pfeMode
-            ? "PFE schedule — defences, internships and their jury panels."
-            : "Weekly timetable — add, move or remove this branch’s sessions."}
+            ? t("PFE schedule — defences, internships and their jury panels.")
+            : t(
+                "Weekly timetable — add, move or remove this branch’s sessions.",
+              )}
       </p>
       {/* The week navigator is screen-only, so the printed sheet names the
           week itself. */}
       <p className="hidden text-xs text-muted-foreground print:block">
         {formatWeekRange(cursor)} · {weekSessions.length}{" "}
-        {weekSessions.length === 1 ? "session" : "sessions"}
+        {weekSessions.length === 1 ? t("session") : t("sessions")}
       </p>
 
       <div className="planning-no-print mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -485,18 +510,18 @@ export default function BranchPlanningPage({
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Previous week"
+            aria-label={t("Previous week")}
             onClick={() => setCursor((current) => addDays(current, -7))}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="min-w-44 text-center text-sm font-medium">
+          <span className="min-w-44 text-center text-sm font-medium text-zinc-700 dark:text-zinc-300">
             {formatWeekRange(cursor)}
           </span>
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Next week"
+            aria-label={t("Next week")}
             onClick={() => setCursor((current) => addDays(current, 7))}
           >
             <ChevronRight className="h-4 w-4" />
@@ -506,50 +531,47 @@ export default function BranchPlanningPage({
             size="sm"
             onClick={() => setCursor(startOfWeek(new Date()))}
           >
-            This week
+            {t("This week")}
           </Button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <Select
             value={classFilter}
+            items={classFilterItems}
             onValueChange={(value) => setClassFilter(value ?? ALL_CLASSES)}
           >
             <SelectTrigger
               size="sm"
-              aria-label="Filter by class"
-              className="w-56"
+              aria-label={t("Filter by class")}
+              className="h-8 w-56 border-zinc-200 bg-zinc-100/80 text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
             >
-              <SelectValue placeholder="All classes" />
+              <SelectValue placeholder={t("All classes")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL_CLASSES}>All classes</SelectItem>
-              {classOptionsForFilter.map((label) => (
-                <SelectItem key={label} value={label}>
-                  {label}
+              {classFilterItems.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
-              {hasUnclassed ? (
-                <SelectItem value={NO_CLASS}>No class</SelectItem>
-              ) : null}
             </SelectContent>
           </Select>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
             {weekSessions.length}{" "}
-            {weekSessions.length === 1 ? "session" : "sessions"}
+            {weekSessions.length === 1 ? t("session") : t("sessions")}
           </span>
           <Button
             variant="outline"
             size="sm"
             onClick={() => window.print()}
-            title="Print this week or save it as a PDF"
+            title={t("Print this week or save it as a PDF")}
           >
             <Printer className="h-4 w-4" />
-            Print / PDF
+            {t("Print / PDF")}
           </Button>
           <Button size="sm" onClick={() => openNew(defaultDate)}>
             <Plus className="h-4 w-4" />
-            Add session
+            {t("Add session")}
           </Button>
         </div>
       </div>
@@ -565,23 +587,29 @@ export default function BranchPlanningPage({
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p>
             <span className="font-medium">
-              {clashingSessions.length}{" "}
-              {clashingSessions.length === 1 ? "session clashes" : "sessions clash"}
+              {clashingSessions.length === 1
+                ? t("{count} session clashes", {
+                    count: clashingSessions.length,
+                  })
+                : t("{count} sessions clash", {
+                    count: clashingSessions.length,
+                  })}
             </span>{" "}
-            with another session this week — a teacher, room or class is
-            double-booked. Flagged cards carry a warning icon.
+            {t(
+              "with another session this week — a teacher, room or class is double-booked. Flagged cards carry a warning icon.",
+            )}
           </p>
         </div>
       )}
 
       {weekSessions.length === 0 ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-4">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-4">
           <div>
             <p className="text-sm font-medium">
-              No sessions planned for this branch this week.
+              {t("No sessions planned for this branch this week.")}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Use the + in any slot below, or add a session to another week.
+              {t("Use the + in any slot below, or add a session to another week.")}
             </p>
           </div>
           <Button
@@ -591,20 +619,20 @@ export default function BranchPlanningPage({
             onClick={() => openNew(defaultDate)}
           >
             <Plus className="h-4 w-4" />
-            Add first session
+            {t("Add first session")}
           </Button>
         </div>
       ) : null}
 
-      <div className="planning-grid-shell mt-4 -mx-4 overflow-x-auto rounded-lg border px-4 sm:mx-0 sm:px-0">
+      <div className="planning-grid-shell mt-4 -mx-4 overflow-x-auto rounded-lg border border-border bg-card px-4 sm:mx-0 sm:px-0">
         <div
           className="planning-grid grid min-w-[900px]"
           style={{
             gridTemplateColumns: `72px repeat(${dayColumns.length}, minmax(0, 1fr))`,
           }}
         >
-          <div className="border-r border-b bg-muted/40 p-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            Time
+          <div className="border-r border-b border-border bg-muted/40 p-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            {t("Time")}
           </div>
           {dayColumns.map((day, index) => {
             const isToday = day.key === todayKey;
@@ -612,12 +640,12 @@ export default function BranchPlanningPage({
               <div
                 key={day.key}
                 className={cn(
-                  "border-r border-b bg-muted/40 p-2 text-center last:border-r-0",
+                  "border-r border-b border-border bg-muted/40 p-2 text-center last:border-r-0",
                   isToday && "bg-accent/60",
                 )}
               >
                 <span className="block text-[10px] tracking-wide text-muted-foreground uppercase">
-                  {WEEKDAY_LABELS[index]}
+                  {t(WEEKDAY_LABELS[index])}
                 </span>
                 <span className="text-sm font-semibold">{day.date.getDate()}</span>
               </div>
@@ -626,7 +654,7 @@ export default function BranchPlanningPage({
 
           {slotRows.map((slot) => (
             <Fragment key={slot}>
-              <div className="border-r border-b p-2 text-[11px] font-medium text-muted-foreground">
+              <div className="border-r border-b border-border p-2 text-[11px] font-medium text-muted-foreground">
                 {slot}
               </div>
               {dayColumns.map((day) => {
@@ -638,7 +666,7 @@ export default function BranchPlanningPage({
                 return (
                   <div
                     key={`${day.key}:${slot}`}
-                    className="group min-h-24 border-r border-b p-1.5 last:border-r-0"
+                    className="group min-h-24 border-r border-b border-border p-1.5 transition-colors last:border-r-0 hover:bg-zinc-100/70 dark:hover:bg-zinc-800/50"
                   >
                     <div className="flex flex-col gap-1.5">
                       {cellSessions.map((entry) => {
@@ -654,9 +682,11 @@ export default function BranchPlanningPage({
                             key={entry.id}
                             type="button"
                             onClick={() => openEdit(entry)}
-                            title={`Edit ${entry.course || entry.sessionType}`}
+                            title={t("Edit {name}", {
+                              name: entry.course || entry.sessionType,
+                            })}
                             className={cn(
-                              "w-full rounded-md border border-l-4 p-1.5 text-left transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+                              "w-full rounded-md border border-l-4 p-1.5 text-left transition-colors hover:bg-zinc-100/70 focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:outline-none dark:hover:bg-white/10 dark:focus-visible:ring-zinc-500",
                               tone.border,
                               tone.bg,
                             )}
@@ -668,7 +698,9 @@ export default function BranchPlanningPage({
                               {entryConflicts.length > 0 ? (
                                 <TriangleAlert
                                   className="h-3.5 w-3.5 shrink-0 text-amber-600"
-                                  aria-label="This session clashes with another one"
+                                  aria-label={t(
+                                    "This session clashes with another one",
+                                  )}
                                 />
                               ) : null}
                             </span>
@@ -679,7 +711,7 @@ export default function BranchPlanningPage({
                                   className="line-clamp-2"
                                   title={juryNames.join(", ")}
                                 >
-                                  Jury: {juryNames.join(", ")}
+                                  {t("Jury")}: {juryNames.join(", ")}
                                 </span>
                               </span>
                             ) : (
@@ -687,7 +719,7 @@ export default function BranchPlanningPage({
                                 <UserRound className="h-3 w-3 shrink-0" />
                                 <span className="truncate">
                                   {teacherById.get(entry.teacherId) ??
-                                    "Unknown teacher"}
+                                    t("Unknown teacher")}
                                 </span>
                               </span>
                             )}
@@ -712,8 +744,11 @@ export default function BranchPlanningPage({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={`Add a session on ${formatLongDate(day.key)} at ${slot}`}
-                      className="planning-no-print mt-1 h-6 w-full opacity-40 transition-opacity group-hover:opacity-100"
+                      aria-label={t("Add a session on {date} at {slot}", {
+                        date: formatLongDate(day.key),
+                        slot,
+                      })}
+                      className="planning-no-print mt-1 h-6 w-full text-zinc-400 opacity-60 transition-opacity hover:text-zinc-900 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-white"
                       onClick={() =>
                         openNew(day.key, slot === NO_TIME_SLOT ? undefined : slot)
                       }
@@ -780,7 +815,7 @@ export default function BranchPlanningPage({
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl sm:p-6 lg:max-w-4xl">
             <DialogHeader>
               <DialogTitle>
-                {dialog.editingId ? "Edit session" : "New session"}
+                {dialog.editingId ? t("Edit session") : t("New session")}
               </DialogTitle>
               <DialogDescription>
                 {branchName} · {formatLongDate(dialog.date)}
@@ -792,7 +827,7 @@ export default function BranchPlanningPage({
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
                 <p className="flex items-center gap-1.5 font-semibold">
                   <TriangleAlert className="h-3.5 w-3.5 text-amber-600" />
-                  Conflict warning
+                  {t("Conflict warning")}
                 </p>
                 <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
                   {conflictMessages.slice(0, 4).map((message) => (
@@ -801,11 +836,14 @@ export default function BranchPlanningPage({
                 </ul>
                 {conflictMessages.length > 4 ? (
                   <p className="mt-1 text-muted-foreground">
-                    +{conflictMessages.length - 4} more.
+                    {t("+{count} more", {
+                      count: conflictMessages.length - 4,
+                    })}
+                    .
                   </p>
                 ) : null}
                 <p className="mt-1 text-muted-foreground">
-                  You can still save — this is a warning, not a block.
+                  {t("You can still save — this is a warning, not a block.")}
                 </p>
               </div>
             ) : null}
@@ -844,7 +882,9 @@ export default function BranchPlanningPage({
               }
               courses={[]}
               classes={formClasses}
-              submitLabel={dialog.editingId ? "Save Changes" : "Add Session"}
+              submitLabel={
+                dialog.editingId ? t("Save Changes") : t("Add Session")
+              }
               showCancel={Boolean(dialog.editingId)}
               onDraftChange={setDraft}
               onSubmit={(values) => void saveEntry(values)}
@@ -866,7 +906,7 @@ export default function BranchPlanningPage({
                 }}
               >
                 <Trash2 className="h-4 w-4" />
-                Delete session
+                {t("Delete session")}
               </Button>
             ) : null}
           </DialogContent>
@@ -879,24 +919,28 @@ export default function BranchPlanningPage({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete session?</AlertDialogTitle>
+            <AlertDialogTitle>{t("Delete session?")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes{" "}
-              {deleteTarget?.course
-                ? `“${deleteTarget.course}”`
-                : "this session"}{" "}
-              on {formatLongDate(deleteTarget?.date)} from the{" "}
-              {branchName} timetable.
+              {t(
+                "This permanently removes {name} on {date} from the {branch} timetable.",
+                {
+                  name: deleteTarget?.course
+                    ? `“${deleteTarget.course}”`
+                    : t("this session"),
+                  date: formatLongDate(deleteTarget?.date),
+                  branch: branchName,
+                },
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (deleteTarget) void removeEntry(deleteTarget);
               }}
             >
-              Delete Session
+              {t("Delete Session")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -904,7 +948,7 @@ export default function BranchPlanningPage({
 
       <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
         <Clock className="h-3.5 w-3.5" />
-        Sessions without a time window are grouped in the last row.
+        {t("Sessions without a time window are grouped in the last row.")}
       </p>
     </div>
   );

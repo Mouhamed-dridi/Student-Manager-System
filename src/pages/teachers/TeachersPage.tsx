@@ -23,8 +23,10 @@ import { parseTeacherFile, type ImportResult } from "./importTeachers";
 import { exportTeachers } from "./exportTeachers";
 import TeacherImportPreview from "./TeacherImportPreview";
 import TeacherListView from "./TeacherListView";
+import { useT } from "@/lib/i18n";
 
 export default function TeachersPage() {
+  const t = useT();
   const [teachers, setTeachers] = useState<Teacher[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("list");
@@ -68,7 +70,7 @@ export default function TeachersPage() {
   useNestedView(
     profile !== null,
     "teacher-profile",
-    "Teacher profile",
+    t("Teacher profile"),
     () => setProfile(null),
   );
 
@@ -124,18 +126,26 @@ export default function TeachersPage() {
     if (newCount === 0 && result.rows.length === 0 && result.missingData === 0) {
       setPendingImport(null);
       setActiveTab("list");
-      setImportSummary("The selected file contains no teacher rows.");
+      setImportSummary(t("The selected file contains no teacher rows."));
       return;
     }
 
     if (newCount === 0) {
-      const parts: string[] = ["Nothing new to import:"];
+      const parts: string[] = [t("Nothing new to import:")];
       const duplicates = result.rows.length;
       if (duplicates > 0)
-        parts.push(`${duplicates} duplicate${duplicates === 1 ? "" : "s"}`);
+        parts.push(
+          duplicates === 1
+            ? t("1 duplicate")
+            : t("{count} duplicates", { count: duplicates }),
+        );
       if (result.missingData > 0)
         parts.push(
-          `${result.missingData} row${result.missingData === 1 ? "" : "s"} with missing data`,
+          result.missingData === 1
+            ? t("1 row with missing data")
+            : t("{count} rows with missing data", {
+                count: result.missingData,
+              }),
         );
       setPendingImport(null);
       setActiveTab("list");
@@ -162,12 +172,22 @@ export default function TeachersPage() {
       setTeachers(await listTeachers());
 
       const summary: string[] = [
-        `Added ${imported.length} teacher${imported.length === 1 ? "" : "s"}`,
+        imported.length === 1
+          ? t("Added 1 teacher")
+          : t("Added {count} teachers", { count: imported.length }),
       ];
       if (duplicates > 0)
-        summary.push(`skipped ${duplicates} duplicate${duplicates === 1 ? "" : "s"}`);
+        summary.push(
+          duplicates === 1
+            ? t("skipped 1 duplicate")
+            : t("skipped {count} duplicates", { count: duplicates }),
+        );
       if (missing > 0)
-        summary.push(`skipped ${missing} row${missing === 1 ? "" : "s"} with missing data`);
+        summary.push(
+          missing === 1
+            ? t("skipped 1 row with missing data")
+            : t("skipped {count} rows with missing data", { count: missing }),
+        );
       setImportSummary(summary.join(", ") + ".");
     } catch (err) {
       setError(errorMessage(err));
@@ -211,20 +231,21 @@ export default function TeachersPage() {
         }}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">Teachers</h2>
+          <h2 className="text-2xl font-semibold">{t("Teachers")}</h2>
           <div className="flex items-center gap-2">
             <SegmentedTabsList>
-              <SegmentedTabsTrigger value="list">Teacher List</SegmentedTabsTrigger>
+              <SegmentedTabsTrigger value="list">{t("Teacher List")}</SegmentedTabsTrigger>
               <SegmentedTabsTrigger value="add" onClick={handleAddNew}>
-                Add Teacher
+                {t("Add Teacher")}
               </SegmentedTabsTrigger>
             </SegmentedTabsList>
             <Button
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
+              className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
             >
               <Upload className="h-4 w-4" />
-              Import Excel
+              {t("Import Excel")}
             </Button>
             <Button
               variant="outline"
@@ -232,9 +253,10 @@ export default function TeachersPage() {
                 if (teachers && teachers.length > 0) exportTeachers(teachers);
               }}
               disabled={!teachers || teachers.length === 0}
+              className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
             >
               <Download className="h-4 w-4" />
-              Export Excel
+              {t("Export Excel")}
             </Button>
             <input
               ref={fileInputRef}
@@ -254,7 +276,7 @@ export default function TeachersPage() {
             </p>
           )}
           {teachers === null ? (
-            <DataLoading label="Loading teachers…" />
+            <DataLoading label={t("Loading teachers…")} />
           ) : (
             <TeacherListView
               teachers={teachers}

@@ -7,6 +7,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useT } from "@/lib/i18n";
 import type { Student } from "./StudentForm";
 
 interface StudentImportPreviewProps {
@@ -22,23 +23,36 @@ export default function StudentImportPreview({
   onConfirm,
   onCancel,
 }: StudentImportPreviewProps) {
+  const t = useT();
+
+  const ready =
+    rows.length === 1
+      ? t("1 row ready to import")
+      : t("{count} rows ready to import", { count: rows.length });
+  const skippedText =
+    skipped > 0
+      ? skipped === 1
+        ? t(", 1 row will be skipped (missing or invalid data).")
+        : t(", {count} rows will be skipped (missing or invalid data).", {
+            count: skipped,
+          })
+      : ".";
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        {rows.length} row{rows.length === 1 ? "" : "s"} ready to import
-        {skipped > 0
-          ? `, ${skipped} row${skipped === 1 ? "" : "s"} will be skipped (missing or invalid data).`
-          : "."}
+        {ready}
+        {skippedText}
       </p>
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Full Name</TableHead>
-            <TableHead>Program</TableHead>
-            <TableHead>Training</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Email</TableHead>
+            <TableHead>{t("Full Name")}</TableHead>
+            <TableHead>{t("Branch")}</TableHead>
+            <TableHead>{t("Program")}</TableHead>
+            <TableHead>{t("Phone")}</TableHead>
+            <TableHead>{t("Email")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -46,7 +60,13 @@ export default function StudentImportPreview({
             <TableRow key={student.id}>
               <TableCell>{student.fullName}</TableCell>
               <TableCell>{student.program}</TableCell>
-              <TableCell>{student.training}</TableCell>
+              <TableCell>
+                {student.training ? (
+                  student.training
+                ) : (
+                  <span className="text-zinc-500">{t("Unassigned")}</span>
+                )}
+              </TableCell>
               <TableCell>{student.phone}</TableCell>
               <TableCell>{student.email}</TableCell>
             </TableRow>
@@ -55,9 +75,14 @@ export default function StudentImportPreview({
       </Table>
 
       <div className="flex gap-2">
-        <Button onClick={onConfirm}>Confirm Import</Button>
+        <Button
+          onClick={onConfirm}
+          className="bg-zinc-900 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200"
+        >
+          {t("Confirm Import")}
+        </Button>
         <Button variant="outline" onClick={onCancel}>
-          Cancel
+          {t("Cancel")}
         </Button>
       </div>
     </div>

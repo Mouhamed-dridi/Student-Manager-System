@@ -72,7 +72,7 @@ export default function StudentsPage() {
   useNestedView(
     profile !== null,
     "student-profile",
-    "Student profile",
+    t("Student profile"),
     () => setProfile(null),
   );
 
@@ -133,7 +133,7 @@ export default function StudentsPage() {
     if (result.students.length === 0) {
       setPendingImport(null);
       setActiveTab("list");
-      setImportSummary("No valid rows found in the selected file.");
+      setImportSummary(t("No valid rows found in the selected file."));
       return;
     }
     setPendingImport(result);
@@ -156,21 +156,33 @@ export default function StudentsPage() {
       await refresh();
 
       const parts: string[] = [
-        `Imported ${summary.added} student${summary.added === 1 ? "" : "s"}`,
+        summary.added === 1
+          ? t("Imported 1 student")
+          : t("Imported {count} students", { count: summary.added }),
       ];
       if (summary.updated > 0) {
         parts.push(
-          `updated ${summary.updated} existing record${summary.updated === 1 ? "" : "s"}`,
+          summary.updated === 1
+            ? t("updated 1 existing record")
+            : t("updated {count} existing records", {
+                count: summary.updated,
+              }),
         );
       }
       if (summary.skipped > 0) {
         parts.push(
-          `skipped ${summary.skipped} duplicate${summary.skipped === 1 ? "" : "s"}`,
+          summary.skipped === 1
+            ? t("skipped 1 duplicate")
+            : t("skipped {count} duplicates", { count: summary.skipped }),
         );
       }
       if (invalid > 0) {
         parts.push(
-          `skipped ${invalid} row${invalid === 1 ? "" : "s"} with missing or invalid data`,
+          invalid === 1
+            ? t("skipped 1 row with missing or invalid data")
+            : t("skipped {count} rows with missing or invalid data", {
+                count: invalid,
+              }),
         );
       }
       setImportSummary(parts.join(", ") + ".");
@@ -227,6 +239,7 @@ export default function StudentsPage() {
             <Button
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
+              className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
             >
               <Upload className="h-4 w-4" />
               {t("Import Excel")}
@@ -237,6 +250,7 @@ export default function StudentsPage() {
                 if (students && students.length > 0) exportStudents(students);
               }}
               disabled={!students || students.length === 0}
+              className="border-zinc-200 bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
             >
               <Download className="h-4 w-4" />
               {t("Export Excel")}
@@ -259,7 +273,7 @@ export default function StudentsPage() {
             </p>
           )}
           {students === null ? (
-            <DataLoading label="Loading students…" />
+            <DataLoading label={t("Loading students…")} />
           ) : (
             <StudentListView
               students={students}
