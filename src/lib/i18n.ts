@@ -91,7 +91,7 @@ const FRENCH: Record<string, string> = {
   Administration: "Administration",
   "Class / Branch": "Classe / Filière",
   Material: "Matière",
-  Materials: "Matières",
+  Materials: "Supports",
   "Assigned Teacher": "Enseignant assigné",
   "Assigned teacher": "Enseignant assigné",
   "Delete": "Supprimer",
@@ -117,6 +117,10 @@ const FRENCH: Record<string, string> = {
     "Gérez votre profil et vos préférences d'affichage.",
   "Display preferences for this deployment.":
     "Préférences d'affichage pour ce déploiement.",
+  "Display preferences for your student workspace.":
+    "Préférences d'affichage de votre espace étudiant.",
+  "English (EN)": "English (EN)",
+  "Français (FR)": "Français (FR)",
   "Your teacher record could not be found. It may have been removed by the administration.":
     "Votre fiche enseignant est introuvable. Elle a peut-être été supprimée par l'administration.",
   "Your student record could not be found. It may have been removed by the administration.":
@@ -234,6 +238,18 @@ const FRENCH: Record<string, string> = {
   "Saved to the Billets archive.": "Enregistré dans les archives des billets.",
   "Retry save": "Réessayer l'enregistrement",
   "Print ticket": "Imprimer le billet",
+
+  // ------------------------------------------------- student absence page
+  "Total Absences": "Total des absences",
+  "Latest Absence": "Dernière absence",
+  Classes: "Classes",
+  "{count} records": "{count} enregistrements",
+  "No absences have been recorded for your account.":
+    "Aucune absence n'a été enregistrée pour votre compte.",
+  "Search by date, time or class…":
+    "Rechercher par date, heure ou classe…",
+  "No results match your search.":
+    "Aucun résultat ne correspond à votre recherche.",
 
   // ------------------------------------------------------------ planification
   "Planification view": "Vue Planification",
@@ -375,6 +391,8 @@ const FRENCH: Record<string, string> = {
   Workshop: "Atelier",
   Hackathon: "Hackathon",
   Talks: "Conférence",
+  Publication: "Publication",
+  "New Training": "Nouvelle formation",
   Money: "Argent",
   Certification: "Certification",
   Gadget: "Gadget",
@@ -408,6 +426,13 @@ const FRENCH: Record<string, string> = {
     "{name} sera masqué de cette liste. La ligne reste dans la base de données.",
   "{name} was deleted.": "{name} a été supprimé.",
   "Loading events…": "Chargement des événements…",
+  "Hackathons, trainings and ceremonies published by the school.":
+    "Hackathons, formations et cérémonies publiés par l'école.",
+  "{count} event": "{count} événement",
+  "{count} events": "{count} événements",
+  "No event has been published yet.":
+    "Aucun événement n'a encore été publié.",
+  "No description provided.": "Aucune description fournie.",
   "Events you create will be listed here, with their cover image, schedule and participants.":
     "Les événements que vous créez seront listés ici, avec leur image de couverture, leur programme et leurs participants.",
   "View Event History": "Voir l'historique des événements",
@@ -520,6 +545,29 @@ const FRENCH: Record<string, string> = {
   "Select engagement": "Sélectionnez un engagement",
 
   // --------------------------------------------------------------------- pay
+  "Total Paid": "Total payé",
+  "Remaining Balance": "Reste à payer",
+  "Last Payment": "Dernier paiement",
+  Paid: "Payé",
+  Pending: "En attente",
+  Receipt: "Reçu",
+  "Payment Receipt": "Reçu de paiement",
+  "Preview and print a receipt ticket for this payment.":
+    "Aperçu et impression d'un reçu pour ce paiement.",
+  "Optimized for 80mm receipt paper":
+    "Optimisé pour papier thermique 80 mm",
+  "Print receipt": "Imprimer le reçu",
+  "Thank you": "Merci",
+  "No payments recorded yet.": "Aucun paiement enregistré pour le moment.",
+  "Track your payments and tuition installments.":
+    "Consultez vos paiements et échéances de scolarité.",
+  Monthly: "Mensuel",
+  Semester: "Semestriel",
+  "One-Time": "Paiement unique",
+  Plan: "Forfait",
+  Method: "Mode",
+  "Recorded at": "Enregistré le",
+  "Issued at": "Émis le",
   "Payment History": "Historique des paiements",
   "Payment Trash": "Corbeille des paiements",
   When: "Date",
@@ -578,8 +626,14 @@ const FRENCH: Record<string, string> = {
   "Publishing…": "Publication…",
   Urgent: "Urgent",
   Warning: "Avertissement",
+  Warnings: "Avertissements",
   "Info / News": "Info / Actualités",
+  Infos: "Infos",
   All: "Tous",
+  "Messages and news published to students.":
+    "Messages et actualités publiés pour les étudiants.",
+  "No announcements match your filter.":
+    "Aucune annonce ne correspond à votre filtre.",
   "Published announcements": "Annonces publiées",
   "Loading announcements…": "Chargement des annonces…",
   "{count} announcements": "{count} annonces",
@@ -604,6 +658,141 @@ const FRENCH: Record<string, string> = {
   "Revenue by Plan": "Revenus par forfait",
   "Students by Program": "Étudiants par programme",
   "Welcome back, {name}": "Bon retour, {name}",
+  "Loading your dashboard…": "Chargement de votre tableau de bord…",
+  "Personalize your dashboard": "Personnaliser le tableau de bord",
+  "All widgets are hidden. Use {action} to bring some back.":
+    "Tous les widgets sont masqués. Utilisez « {action} » pour en réafficher.",
+
+  // ------------------------------------------------------- student dashboard
+  "Enrolled Courses": "Cours inscrits",
+  "Next: {course}": "Suivant : {course}",
+  "No courses scheduled yet": "Aucun cours planifié pour le moment",
+  "Pending Payments": "Paiements en attente",
+  "{amount} outstanding": "{amount} à régler",
+  "Nothing outstanding": "Aucun solde dû",
+  "Attendance Record": "Suivi des présences",
+  "Last entry {date}": "Dernière entrée {date}",
+  "No entries logged yet": "Aucune entrée enregistrée",
+  "Upcoming Exams": "Examens à venir",
+  "Exams ahead for your class": "Examens à venir pour votre classe",
+  "Nothing scheduled. You are all caught up.":
+    "Rien de prévu. Vous êtes à jour.",
+  "Untitled exam": "Examen sans titre",
+  "Recent Announcements": "Annonces récentes",
+  "Notices sent to students": "Avis envoyés aux étudiants",
+  "No announcements yet.": "Aucune annonce pour le moment.",
+  "Course Materials Quick Access": "Accès rapide aux supports",
+  "Files attached to your courses": "Fichiers joints à vos cours",
+  "1 file across your courses": "1 fichier dans vos cours",
+  "{count} files across your courses": "{count} fichiers dans vos cours",
+  "No course materials have been attached yet.":
+    "Aucun support de cours n'a encore été ajouté.",
+  "Customize Dashboard Widgets": "Personnaliser les widgets du tableau de bord",
+  "Choose which cards and charts appear on your dashboard. This preference is saved in this browser.":
+    "Choisissez les cartes et graphiques affichés sur votre tableau de bord. Cette préférence est enregistrée dans ce navigateur.",
+  "All widgets shown": "Tous les widgets sont affichés",
+  "1 widget hidden": "1 widget masqué",
+  "{count} widgets hidden": "{count} widgets masqués",
+  "Save Preferences": "Enregistrer les préférences",
+  "Dismiss notification": "Masquer la notification",
+  "Restore dismissed announcements": "Restaurer les annonces masquées",
+  "No announcements are dismissed.": "Aucune annonce n'est masquée.",
+  "1 announcement dismissed": "1 annonce masquée",
+  "{count} announcements dismissed": "{count} annonces masquées",
+  "Enrolled Courses Progress": "Progression des cours inscrits",
+  "Your class courses and the material attached to them.":
+    "Les cours de votre classe et les supports qui y sont joints.",
+  "Invoices still waiting to be settled.":
+    "Factures restant à régler.",
+  "Attendance entries logged against your name.":
+    "Les présences enregistrées à votre nom.",
+  "Exams ahead for your class.":
+    "Les examens à venir pour votre classe.",
+  "Notices sent to students.": "Les avis envoyés aux étudiants.",
+  "Downloads attached to your courses.":
+    "Les fichiers joints à vos cours.",
+
+  // ------------------------------------------------------- student courses
+  "Assigned to {training} ({program})":
+    "Assigné à {training} ({program})",
+  "All Materials ({count})": "Tous les supports ({count})",
+  "1 material": "1 support",
+  "{count} materials": "{count} supports",
+  "Added {date}": "Ajouté le {date}",
+  "Open {name}": "Ouvrir {name}",
+  "Loading courses…": "Chargement des cours…",
+  "Course details": "Détails du cours",
+  "Back to courses": "Retour aux cours",
+  "This course could not be displayed.":
+    "Ce cours n'a pas pu être affiché.",
+  "An unexpected error occurred.":
+    "Une erreur inattendue s'est produite.",
+  "No courses match this material":
+    "Aucun cours ne correspond à ce support",
+  "Try selecting a different material or view all courses.":
+    "Essayez un autre support ou affichez tous les cours.",
+  "Nothing has been planned for your program and training so far. Please check back later.":
+    "Rien n'a encore été planifié pour votre programme et votre formation. Revenez plus tard.",
+
+  // ------------------------------------------------------- course detail
+  "Taught by": "Enseigné par",
+  Overview: "Aperçu",
+  "Skills you'll gain": "Compétences acquises",
+  "No description has been added for this course yet.":
+    "Aucune description n'a encore été ajoutée pour ce cours.",
+  "Course syllabus": "Programme du cours",
+  "Course media": "Supports de cours",
+  "No materials have been attached to this course yet.":
+    "Aucun support n'a encore été joint à ce cours.",
+  "Reviews are not available for this scheduled course. Only courses added by a teacher can be rated.":
+    "Les avis ne sont pas disponibles pour ce cours planifié. Seuls les cours ajoutés par un enseignant peuvent être notés.",
+  "This part of the course could not be displayed.":
+    "Cette partie du cours n'a pas pu être affichée.",
+  Instructor: "Enseignant",
+  Level: "Niveau",
+  Duration: "Durée",
+  Published: "Publié le",
+  "No course details have been published yet.":
+    "Aucun détail de cours n'a encore été publié.",
+  Beginner: "Débutant",
+  Intermediate: "Intermédiaire",
+  Medium: "Moyen",
+  Video: "Vidéo",
+  "Video & Document": "Vidéo & Document",
+  Mixed: "Mixte",
+  Download: "Télécharger",
+  "Word document": "Document Word",
+  File: "Fichier",
+  "no file attached": "aucun fichier joint",
+  "This material was saved before file uploads were available, so the file itself is not available. Ask your teacher to attach it again.":
+    "Ce support a été enregistré avant la mise en place des téléversements : le fichier lui-même n'est pas disponible. Demandez à votre enseignant de le joindre à nouveau.",
+  "Your browser cannot play this video.":
+    "Votre navigateur ne peut pas lire cette vidéo.",
+  "This file type cannot be previewed in the browser.":
+    "Ce type de fichier ne peut pas être prévisualisé dans le navigateur.",
+
+  // ------------------------------------------------------- course reviews
+  "Ratings & reviews": "Notes & avis",
+  "1 rating": "1 note",
+  "{count} ratings": "{count} notes",
+  "Your rating": "Votre note",
+  "(required)": "(obligatoire)",
+  Comment: "Commentaire",
+  "(optional)": "(facultatif)",
+  "What did you think of this course?":
+    "Qu'avez-vous pensé de ce cours ?",
+  "Post review": "Publier l'avis",
+  "Posting…": "Publication…",
+  "Posted as {name}": "Publié en tant que {name}",
+  "Pick a star rating before posting your review.":
+    "Choisissez une note avant de publier votre avis.",
+  "No reviews yet — be the first to rate this course.":
+    "Aucun avis pour le moment — soyez le premier à noter ce cours.",
+  "No reviews yet.": "Aucun avis pour le moment.",
+  "Loading reviews…": "Chargement des avis…",
+  "{value} out of {max} stars": "{value} sur {max} étoiles",
+  "1 star": "1 étoile",
+  "{count} stars": "{count} étoiles",
 
   // ---------------------------------------------------------------- settings
   General: "Général",
@@ -813,6 +1002,45 @@ const FRENCH: Record<string, string> = {
   "Preferences saved.": "Préférences enregistrées.",
   "Stored as the app-wide language preference.":
     "Enregistré comme préférence de langue de l'application.",
+
+  // ------------------------------------------------ student settings & profile
+  "General Settings": "Paramètres généraux",
+  "Profile photo": "Photo de profil",
+  "Shown in the top bar of the student portal.":
+    "Affichée dans la barre supérieure du portail étudiant.",
+  "Upload photo": "Téléverser une photo",
+  "Personal Information": "Informations personnelles",
+  "Your name is also how you sign in to the student portal.":
+    "Votre nom est également utilisé pour vous connecter au portail étudiant.",
+  "First Name": "Prénom",
+  "First name": "Prénom",
+  "Last Name": "Nom",
+  "Last name": "Nom",
+  "read-only": "lecture seule",
+  "Academic Branch & Class": "Filière académique & Classe",
+  "Academic Branch": "Filière académique",
+  "Admin-managed": "Géré par l'administration",
+  "managed by the administration.": "géré par l'administration.",
+  "Your location": "Votre localisation",
+  "Your age": "Votre âge",
+  "New Student": "Nouvel étudiant",
+  "Second Year": "Deuxième année",
+  "Social media & contact links": "Liens réseaux sociaux & contact",
+  "Optional links to your profiles. Leave a field empty to remove it.":
+    "Liens facultatifs vers vos profils. Laissez un champ vide pour le supprimer.",
+  "Save changes": "Enregistrer les modifications",
+  "Changes saved.": "Modifications enregistrées.",
+  "First name is required.": "Le prénom est obligatoire.",
+  "Age must be a number.": "L'âge doit être un nombre.",
+  "Account Information": "Informations du compte",
+  "Summary of your registered student account.":
+    "Résumé de votre compte étudiant enregistré.",
+  "Account Status": "Statut du compte",
+  Active: "Actif",
+  "Accepted formats: JPG, PNG, or WebP (max 2 MB).":
+    "Formats acceptés : JPG, PNG ou WebP (max. 2 Mo).",
+  "Uploaded to the profilePictuer Storage bucket; the public URL is saved on your profile (user_profiles) and shown across the portal.":
+    "Téléversée dans le bucket de stockage profilePictuer ; l'URL publique est enregistrée sur votre profil et affichée dans le portail.",
 
   // ------------------------------------------------------------------ license
   "Active plan": "Forfait actif",

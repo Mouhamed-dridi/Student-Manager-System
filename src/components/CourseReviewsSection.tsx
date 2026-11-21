@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DataError, DataLoading } from "@/components/DataState";
 import { StarRatingDisplay, StarRatingInput } from "@/components/StarRating";
 import { formatPublished } from "@/lib/courseDisplay";
+import { useT } from "@/lib/i18n";
 import { addCourseReview, errorMessage, listCourseReviews, subscribeToTable } from "@/lib/api";
 import type { CourseReview } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
@@ -39,6 +40,7 @@ function averageOf(reviews: CourseReview[]): number {
 }
 
 function RatingSummary({ reviews }: { reviews: CourseReview[] }) {
+  const t = useT();
   const average = averageOf(reviews);
   const counts = useMemo(() => {
     const map: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -57,7 +59,9 @@ function RatingSummary({ reviews }: { reviews: CourseReview[] }) {
           </span>
           <StarRatingDisplay value={average} />
           <span className="text-xs text-muted-foreground">
-            {reviews.length} rating{reviews.length === 1 ? "" : "s"}
+            {reviews.length === 1
+              ? t("1 rating")
+              : t("{count} ratings", { count: reviews.length })}
           </span>
         </div>
         <div className="flex-1 space-y-1">
@@ -69,11 +73,11 @@ function RatingSummary({ reviews }: { reviews: CourseReview[] }) {
               <div key={star} className="flex items-center gap-2 text-xs">
                 <span className="flex w-9 shrink-0 items-center gap-0.5 text-muted-foreground">
                   {star}
-                  <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                  <Star className="h-3 w-3 fill-zinc-900 text-zinc-900 dark:fill-zinc-100 dark:text-zinc-100" />
                 </span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                   <div
-                    className="h-full rounded-full bg-amber-400"
+                    className="h-full rounded-full bg-zinc-900 dark:bg-zinc-100"
                     style={{ width: `${percent}%` }}
                   />
                 </div>
@@ -94,6 +98,7 @@ export default function CourseReviewsSection({
   studentId,
   studentName,
 }: CourseReviewsSectionProps) {
+  const t = useT();
   const [reviews, setReviews] = useState<CourseReview[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rating, setRating] = useState(0);
@@ -138,7 +143,7 @@ export default function CourseReviewsSection({
   const submit = async () => {
     if (!studentId) return;
     if (rating < 1) {
-      setSubmitError("Pick a star rating before posting your review.");
+      setSubmitError(t("Pick a star rating before posting your review."));
       return;
     }
     setSaving(true);
@@ -164,11 +169,11 @@ export default function CourseReviewsSection({
     <div className="space-y-4">
       <h3 className="flex items-center gap-1.5 text-sm font-medium">
         <MessageSquare className="h-3.5 w-3.5" />
-        Ratings &amp; reviews
+        {t("Ratings & reviews")}
       </h3>
 
       {reviews === null ? (
-        !loadError && <DataLoading label="Loading reviews…" />
+        !loadError && <DataLoading label={t("Loading reviews…")} />
       ) : (
         <RatingSummary reviews={reviews} />
       )}
@@ -178,9 +183,9 @@ export default function CourseReviewsSection({
         <CardContent className="space-y-3">
           <div className="space-y-1">
             <Label>
-              Your rating
+              {t("Your rating")}
               <span className="ml-1 font-normal text-muted-foreground">
-                (required)
+                {t("(required)")}
               </span>
             </Label>
             <StarRatingInput
@@ -191,9 +196,9 @@ export default function CourseReviewsSection({
           </div>
           <div className="space-y-1">
             <Label htmlFor={`${courseId}-comment`}>
-              Comment
+              {t("Comment")}
               <span className="ml-1 font-normal text-muted-foreground">
-                (optional)
+                {t("(optional)")}
               </span>
             </Label>
             <Textarea
@@ -201,7 +206,7 @@ export default function CourseReviewsSection({
               rows={4}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="What did you think of this course?"
+              placeholder={t("What did you think of this course?")}
               disabled={saving}
             />
           </div>
@@ -210,10 +215,10 @@ export default function CourseReviewsSection({
           ) : null}
           <div className="flex items-center gap-3">
             <Button disabled={saving || rating < 1} onClick={submit}>
-              {saving ? "Posting…" : "Post review"}
+              {saving ? t("Posting…") : t("Post review")}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Posted as {studentName || "student"}
+              {t("Posted as {name}", { name: studentName || t("student") })}
             </span>
           </div>
         </CardContent>
@@ -225,8 +230,8 @@ export default function CourseReviewsSection({
       {reviews !== null && reviews.length === 0 && !loadError ? (
         <p className="text-sm text-muted-foreground">
           {studentId
-            ? "No reviews yet — be the first to rate this course."
-            : "No reviews yet."}
+            ? t("No reviews yet — be the first to rate this course.")
+            : t("No reviews yet.")}
         </p>
       ) : null}
 
@@ -236,7 +241,7 @@ export default function CourseReviewsSection({
             <li key={review.id} className="rounded-xl border p-4">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="text-sm font-medium">
-                  {review.studentName || "Student"}
+                  {review.studentName || t("Student")}
                 </span>
                 <StarRatingDisplay value={review.rating} />
                 <span className="text-xs text-muted-foreground">

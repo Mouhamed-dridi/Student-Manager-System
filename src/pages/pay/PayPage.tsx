@@ -195,6 +195,7 @@ export default function PayPage() {
             students.find((s) => s.id === receiptTarget.studentId) ?? undefined
           }
           centerName={centerName}
+          currency={currency}
           open={receiptTarget !== null}
           onClose={() => setReceiptTarget(null)}
         />

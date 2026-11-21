@@ -8,6 +8,7 @@
 // owns persistence.
 
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,6 +24,7 @@ import type {
   DashboardWidget,
   DashboardWidgetPrefs,
 } from "@/lib/dashboardWidgets";
+import { useT } from "@/lib/i18n";
 
 interface CustomizeWidgetsDialogProps<Id extends string> {
   open: boolean;
@@ -30,6 +32,8 @@ interface CustomizeWidgetsDialogProps<Id extends string> {
   preferences: DashboardWidgetPrefs<Id>;
   onOpenChange: (open: boolean) => void;
   onSave: (preferences: DashboardWidgetPrefs<Id>) => void;
+  /** Optional extra block above the footer (e.g. restore dismissed banners). */
+  extraContent?: ReactNode;
 }
 
 export default function CustomizeWidgetsDialog<Id extends string>({
@@ -38,6 +42,7 @@ export default function CustomizeWidgetsDialog<Id extends string>({
   preferences,
   onOpenChange,
   onSave,
+  extraContent,
 }: CustomizeWidgetsDialogProps<Id>) {
   return (
     <Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
@@ -49,6 +54,7 @@ export default function CustomizeWidgetsDialog<Id extends string>({
           preferences={preferences}
           onSave={onSave}
           onCancel={() => onOpenChange(false)}
+          extraContent={extraContent}
         />
       </DialogContent>
     </Dialog>
@@ -60,12 +66,15 @@ function WidgetChecklist<Id extends string>({
   preferences,
   onSave,
   onCancel,
+  extraContent,
 }: {
   widgets: readonly DashboardWidget<Id>[];
   preferences: DashboardWidgetPrefs<Id>;
   onSave: (preferences: DashboardWidgetPrefs<Id>) => void;
   onCancel: () => void;
+  extraContent?: ReactNode;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState<DashboardWidgetPrefs<Id>>(preferences);
 
   const toggle = (id: Id) => {
@@ -79,11 +88,12 @@ function WidgetChecklist<Id extends string>({
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <LayoutDashboard className="h-4 w-4" />
-          Customize Dashboard Widgets
+          {t("Customize Dashboard Widgets")}
         </DialogTitle>
         <DialogDescription>
-          Choose which cards and charts appear on your dashboard. This
-          preference is saved in this browser.
+          {t(
+            "Choose which cards and charts appear on your dashboard. This preference is saved in this browser.",
+          )}
         </DialogDescription>
       </DialogHeader>
 
@@ -111,13 +121,13 @@ function WidgetChecklist<Id extends string>({
               />
               <div className="min-w-0">
                 <p id={labelId} className="text-sm font-medium">
-                  {widget.label}
+                  {t(widget.label)}
                 </p>
                 <p
                   id={descriptionId}
                   className="mt-0.5 text-xs text-muted-foreground"
                 >
-                  {widget.description}
+                  {t(widget.description)}
                 </p>
               </div>
             </div>
@@ -125,15 +135,19 @@ function WidgetChecklist<Id extends string>({
         })}
       </div>
 
+      {extraContent}
+
       <DialogFooter className="items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">
           {hiddenCount === 0
-            ? "All widgets shown"
-            : `${hiddenCount} widget${hiddenCount === 1 ? "" : "s"} hidden`}
+            ? t("All widgets shown")
+            : hiddenCount === 1
+              ? t("1 widget hidden")
+              : t("{count} widgets hidden", { count: hiddenCount })}
         </p>
         <div className="flex flex-col-reverse gap-2 sm:flex-row">
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             onClick={() => {
@@ -141,7 +155,7 @@ function WidgetChecklist<Id extends string>({
               onCancel();
             }}
           >
-            Save Preferences
+            {t("Save Preferences")}
           </Button>
         </div>
       </DialogFooter>

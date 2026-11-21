@@ -8,6 +8,7 @@
 
 import { useId, useState } from "react";
 import { Star } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const STAR_CLASS = "h-4 w-4";
@@ -28,6 +29,7 @@ export function StarRatingDisplay({
   className,
   sizeClass,
 }: StarRatingProps) {
+  const t = useT();
   const percent = Math.max(0, Math.min(100, (value / max) * 100));
   const stars = Array.from({ length: max }, (_, i) => i);
   const row = "flex items-center gap-0.5";
@@ -36,13 +38,20 @@ export function StarRatingDisplay({
     <div
       className={cn("relative inline-flex", className)}
       role="img"
-      aria-label={`${value.toFixed(1)} out of ${max} stars`}
+      aria-label={t("{value} out of {max} stars", {
+        value: value.toFixed(1),
+        max,
+      })}
     >
       <div className={row} aria-hidden="true">
         {stars.map((i) => (
           <Star
             key={i}
-            className={cn(STAR_CLASS, sizeClass, "text-muted-foreground/40")}
+            className={cn(
+              STAR_CLASS,
+              sizeClass,
+              "text-zinc-300 dark:text-zinc-700",
+            )}
           />
         ))}
       </div>
@@ -57,7 +66,11 @@ export function StarRatingDisplay({
             {stars.map((i) => (
               <Star
                 key={i}
-                className={cn(STAR_CLASS, sizeClass, "shrink-0 fill-amber-400 text-amber-400")}
+                className={cn(
+                  STAR_CLASS,
+                  sizeClass,
+                  "shrink-0 fill-zinc-900 text-zinc-900 dark:fill-zinc-100 dark:text-zinc-100",
+                )}
               />
             ))}
           </div>
@@ -83,6 +96,7 @@ export function StarRatingInput({
   className,
   disabled,
 }: StarRatingInputProps) {
+  const t = useT();
   const groupId = useId();
   const [hover, setHover] = useState<number | null>(null);
   const shown = hover ?? value;
@@ -110,15 +124,17 @@ export function StarRatingInput({
             disabled={disabled}
             onChange={() => onChange(n)}
             className="sr-only"
-            aria-label={`${n} ${n === 1 ? "star" : "stars"}`}
+            aria-label={
+              n === 1 ? t("1 star") : t("{count} stars", { count: n })
+            }
           />
           <Star
             aria-hidden="true"
             className={cn(
               "h-7 w-7 transition-colors",
               n <= shown
-                ? "fill-amber-400 text-amber-400"
-                : "text-muted-foreground/40",
+                ? "fill-zinc-900 text-zinc-900 dark:fill-zinc-100 dark:text-zinc-100"
+                : "text-zinc-300 dark:text-zinc-700",
             )}
           />
         </label>

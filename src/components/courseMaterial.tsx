@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { CourseMaterial } from "@/lib/trainings";
+import { useT } from "@/lib/i18n";
 import { materialKind } from "@/lib/courseBuckets";
 
 function materialTypeLabel(type: string): string {
@@ -37,6 +38,7 @@ function downloadUrlFor(url: string, fileName: string): string {
 }
 
 function MaterialActions({ material }: { material: CourseMaterial & { url: string } }) {
+  const t = useT();
   return (
     <div className="mt-3 flex flex-wrap gap-2">
       <Button
@@ -45,7 +47,7 @@ function MaterialActions({ material }: { material: CourseMaterial & { url: strin
         render={<a href={material.url} target="_blank" rel="noreferrer" />}
       >
         <ExternalLink className="h-3.5 w-3.5" />
-        Open
+        {t("Open")}
       </Button>
       <Button
         variant="outline"
@@ -53,13 +55,14 @@ function MaterialActions({ material }: { material: CourseMaterial & { url: strin
         render={<a href={downloadUrlFor(material.url, material.name)} />}
       >
         <Download className="h-3.5 w-3.5" />
-        Download
+        {t("Download")}
       </Button>
     </div>
   );
 }
 
 export function MaterialItem({ material }: { material: CourseMaterial }) {
+  const t = useT();
   const kind = materialKind(material.name, material.type);
   const url = material.url;
   const Icon = kind === "video" ? CirclePlay : FileText;
@@ -73,15 +76,16 @@ export function MaterialItem({ material }: { material: CourseMaterial }) {
           <span className="truncate">{material.name}</span>
         </CardTitle>
         <CardDescription>
-          {materialTypeLabel(material.type)}
-          {!attached ? " · no file attached" : ""}
+          {t(materialTypeLabel(material.type))}
+          {!attached ? ` · ${t("no file attached")}` : ""}
         </CardDescription>
       </CardHeader>
       <CardContent>
         {!attached ? (
           <p className="text-sm text-muted-foreground">
-            This material was saved before file uploads were available, so the
-            file itself is not available. Ask your teacher to attach it again.
+            {t(
+              "This material was saved before file uploads were available, so the file itself is not available. Ask your teacher to attach it again.",
+            )}
           </p>
         ) : kind === "video" ? (
           <>
@@ -91,7 +95,7 @@ export function MaterialItem({ material }: { material: CourseMaterial }) {
               src={url}
               className="aspect-video w-full rounded-lg bg-black"
             >
-              Your browser cannot play this video.
+              {t("Your browser cannot play this video.")}
             </video>
             <MaterialActions material={{ ...material, url }} />
           </>
@@ -107,7 +111,7 @@ export function MaterialItem({ material }: { material: CourseMaterial }) {
         ) : (
           <>
             <p className="text-sm text-muted-foreground">
-              This file type cannot be previewed in the browser.
+              {t("This file type cannot be previewed in the browser.")}
             </p>
             <MaterialActions material={{ ...material, url }} />
           </>

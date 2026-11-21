@@ -5,6 +5,7 @@ import {
   ExternalLink,
   Hourglass,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import NotificationCallouts from "@/components/NotificationCallouts";
 import CustomizeWidgetsDialog from "@/components/dashboard/CustomizeWidgetsDialog";
@@ -29,6 +30,7 @@ import {
   saveWidgetPrefs,
   widgetStatGridClass,
 } from "@/lib/dashboardWidgets";
+import { useI18n } from "@/lib/i18n";
 import { loadScheduledCourses } from "@/lib/trainings";
 import type { CourseMaterial, ScheduledCourseView } from "@/lib/trainings";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,7 @@ import type { Payment } from "@/pages/pay/paymentTypes";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
+import { useViewHistory } from "@/hooks/viewHistory";
 import { loadCurrentStudent } from "./currentStudent";
 import {
   STUDENT_WIDGETS,
@@ -127,7 +130,14 @@ export default function StudentDashboardPage() {
   // layout (src/lib/dashboardWidgets.ts).
   const [prefs, setPrefs] = useState<StudentWidgetPrefs | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  // Hidden announcement banners. Kept here (not inside NotificationCallouts)
+  // so the personalize dialog can restore them.
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<
+    Set<string>
+  >(new Set());
   const [error, setError] = useState<string | null>(null);
+  const { t } = useI18n();
+  const { pushSection } = useViewHistory();
 
   const refresh = useCallback(async (record: Student) => {
     try {
@@ -163,8 +173,10 @@ export default function StudentDashboardPage() {
         .slice(0, 3)
         .map<UpcomingItem>((exam) => ({
           key: `exam-${exam.id}`,
-          title: exam.title || "Untitled exam",
-          detail: [exam.type, exam.duration].filter(Boolean).join(" · ") || "Exam",
+          title: exam.title || t("Untitled exam"),
+          detail:
+            [exam.type, exam.duration].filter(Boolean).join(" · ") ||
+            t("Exam"),
           date: exam.date,
         }));
 
@@ -195,7 +207,7 @@ export default function StudentDashboardPage() {
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -235,17 +247,18 @@ export default function StudentDashboardPage() {
   if (student === null) {
     return (
       <p className="text-sm text-muted-foreground">
-        Your student record could not be found. It may have been removed by the
-        administration.
+        {t(
+          "Your student record could not be found. It may have been removed by the administration.",
+        )}
       </p>
     );
   }
 
   if (student === undefined || !prefs) {
-    return <DataLoading label="Loading your dashboard…" />;
+    return <DataLoading label={t("Loading your dashboard…")} />;
   }
 
-  const firstName = student.fullName.trim().split(/\s+/)[0] || "Student";
+  const firstName = student.fullName.trim().split(/\s+/)[0] || t("Student");
   const kpiCount = [prefs.courses, prefs.payments, prefs.attendance].filter(
     Boolean,
   ).length;
@@ -263,27 +276,35 @@ export default function StudentDashboardPage() {
     0,
   );
   const lastAttendance = (data?.attendance ?? [])[0]?.date;
+  const dismissedCount = dismissedAnnouncements.size;
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Welcome back, {firstName}</h2>
+        <h2 className="text-2xl font-semibold">
+          {t("Welcome back, {name}", { name: firstName })}
+        </h2>
         <PersonalizeDashboardButton onClick={() => setCustomizeOpen(true)} />
       </div>
 
-      <NotificationCallouts publications={data?.announcements ?? []} />
+      <NotificationCallouts
+        publications={data?.announcements ?? []}
+        tone="zinc"
+        dismissedIds={dismissedAnnouncements}
+        onDismiss={(id) =>
+          setDismissedAnnouncements((prev) => new Set(prev).add(id))
+        }
+      />
 
       {error && <DataError message={error} />}
 
       {!data ? (
-        !error && <DataLoading label="Loading your dashboard…" />
+        !error && <DataLoading label={t("Loading your dashboard…")} />
       ) : visibleCount === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-          All widgets are hidden. Use{" "}
-          <span className="font-medium text-foreground">
-            Personalize your dashboard
-          </span>{" "}
-          to bring some back.
+          {t("All widgets are hidden. Use {action} to bring some back.", {
+            action: t("Personalize your dashboard"),
+          })}
         </p>
       ) : (
         <>
@@ -292,41 +313,50 @@ export default function StudentDashboardPage() {
               {prefs.courses && (
                 <DashboardWidgetStat
                   icon={BookOpen}
-                  label="Enrolled Courses"
+                  label={t("Enrolled Courses")}
                   value={String(data.courses.length)}
                   hint={
                     nextCourse
-                      ? `Next: ${nextCourse.name}${
-                          nextCourse.day && nextCourse.time
-                            ? ` · ${nextCourse.day} ${nextCourse.time}`
-                            : ""
-                        }`
-                      : "No courses scheduled yet"
+                      ? t("Next: {course}", {
+                          course: `${nextCourse.name}${
+                            nextCourse.day && nextCourse.time
+                              ? ` · ${nextCourse.day} ${nextCourse.time}`
+                              : ""
+                          }`,
+                        })
+                      : t("No courses scheduled yet")
                   }
+                  onClick={() => pushSection("courses", t("Courses"))}
                 />
               )}
               {prefs.payments && (
                 <DashboardWidgetStat
                   icon={Hourglass}
-                  label="Pending Payments"
+                  label={t("Pending Payments")}
                   value={String(data.pendingPayments.length)}
                   hint={
                     data.pendingPayments.length > 0
-                      ? `${formatCurrency(pendingTotal)} outstanding`
-                      : "Nothing outstanding"
+                      ? t("{amount} outstanding", {
+                          amount: formatCurrency(pendingTotal),
+                        })
+                      : t("Nothing outstanding")
                   }
+                  onClick={() => pushSection("payments", t("My Payment"))}
                 />
               )}
               {prefs.attendance && (
                 <DashboardWidgetStat
                   icon={CalendarCheck}
-                  label="Attendance Record"
+                  label={t("Attendance Record")}
                   value={String(data.attendance.length)}
                   hint={
                     lastAttendance
-                      ? `Last entry ${formatDate(lastAttendance)}`
-                      : "No entries logged yet"
+                      ? t("Last entry {date}", {
+                          date: formatDate(lastAttendance),
+                        })
+                      : t("No entries logged yet")
                   }
+                  onClick={() => pushSection("absence", t("Absence"))}
                 />
               )}
             </div>
@@ -341,12 +371,12 @@ export default function StudentDashboardPage() {
             >
               {prefs.exams && (
                 <DashboardWidgetCard
-                  title="Upcoming Exams"
-                  subtitle="Exams ahead for your class"
+                  title={t("Upcoming Exams")}
+                  subtitle={t("Exams ahead for your class")}
                 >
                   {data.upcoming.length === 0 ? (
                     <DashboardWidgetEmpty>
-                      Nothing scheduled. You are all caught up.
+                      {t("Nothing scheduled. You are all caught up.")}
                     </DashboardWidgetEmpty>
                   ) : (
                     <ul className="divide-y">
@@ -375,12 +405,12 @@ export default function StudentDashboardPage() {
 
               {prefs.announcements && (
                 <DashboardWidgetCard
-                  title="Recent Announcements"
-                  subtitle="Notices sent to students"
+                  title={t("Recent Announcements")}
+                  subtitle={t("Notices sent to students")}
                 >
                   {data.announcements.length === 0 ? (
                     <DashboardWidgetEmpty>
-                      No announcements yet.
+                      {t("No announcements yet.")}
                     </DashboardWidgetEmpty>
                   ) : (
                     <ul className="divide-y">
@@ -403,25 +433,27 @@ export default function StudentDashboardPage() {
 
           {prefs.materials && (
             <DashboardWidgetCard
-              title="Course Materials Quick Access"
+              title={t("Course Materials Quick Access")}
               subtitle={
                 data.materials.length === 0
-                  ? "Files attached to your courses"
-                  : `${data.materials.length} file${
-                      data.materials.length === 1 ? "" : "s"
-                    } across your courses`
+                  ? t("Files attached to your courses")
+                  : data.materials.length === 1
+                    ? t("1 file across your courses")
+                    : t("{count} files across your courses", {
+                        count: data.materials.length,
+                      })
               }
             >
               {data.materials.length === 0 ? (
                 <DashboardWidgetEmpty>
-                  No course materials have been attached yet.
+                  {t("No course materials have been attached yet.")}
                 </DashboardWidgetEmpty>
               ) : (
                 <ul className="grid gap-2 sm:grid-cols-2">
                   {data.materials.map(({ courseName, material }, index) => (
                     <li
                       key={`${courseName}-${material.name}-${index}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border p-3"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900/60"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">
@@ -437,9 +469,9 @@ export default function StudentDashboardPage() {
                           href={material.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-700 underline-offset-4 hover:text-zinc-900 hover:underline dark:text-zinc-300 dark:hover:text-zinc-100"
                         >
-                          Open
+                          {t("Open")}
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       ) : null}
@@ -457,6 +489,33 @@ export default function StudentDashboardPage() {
         widgets={STUDENT_WIDGETS}
         preferences={prefs}
         onOpenChange={setCustomizeOpen}
+        extraContent={
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">
+                {t("Restore dismissed announcements")}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {dismissedCount === 0
+                  ? t("No announcements are dismissed.")
+                  : dismissedCount === 1
+                    ? t("1 announcement dismissed")
+                    : t("{count} announcements dismissed", {
+                        count: dismissedCount,
+                      })}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={dismissedCount === 0}
+              onClick={() => setDismissedAnnouncements(new Set())}
+            >
+              {t("Restore")}
+            </Button>
+          </div>
+        }
         onSave={(next) => {
           setPrefs(next);
           saveWidgetPrefs(dashboardWidgetsKey("student", student.id), next);

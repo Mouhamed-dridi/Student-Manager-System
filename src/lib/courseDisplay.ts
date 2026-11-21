@@ -1,5 +1,12 @@
 // Presentation helpers shared by the course card grid and the course detail
 // view, so both render a course identically (thumbnail fallback + date format).
+//
+// Covers are public Storage objects (cours-covers bucket, teacher uploads are
+// encoded at up to 1200px / quality 0.85) served through getPublicUrl. No
+// render/image transformation is requested, so the original object is always
+// the source — there is no upscaled or re-compressed URL to blur the card.
+
+import courseCoverFallback from "../assets/img/courses/course-cover-fallback.svg";
 
 const trainingThumbnails = import.meta.glob("../assets/img/courses/*.jpg", {
   eager: true,
@@ -18,13 +25,17 @@ function trainingSlug(training: string): string {
     .replace(/['\u2019\s]+/g, "-");
 }
 
-/** Static per-training image used when a course has no uploaded thumbnail. */
-export function thumbnailForTraining(training: string): string | null {
+/**
+ * Static per-training image used when a course has no uploaded thumbnail.
+ * Falls back to the bundled 1600×1000 (16:10) zinc cover so a card never shows
+ * a blank/low-resolution placeholder.
+ */
+export function thumbnailForTraining(training: string): string {
   const suffix = `/${trainingSlug(training)}.jpg`;
   const entry = Object.entries(trainingThumbnails).find(([path]) =>
     path.endsWith(suffix),
   );
-  return entry?.[1] ?? null;
+  return entry?.[1] ?? courseCoverFallback;
 }
 
 /** `published_at` timestamp rendered as "Added Sep 25, 2026". */

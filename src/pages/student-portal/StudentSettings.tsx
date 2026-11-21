@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { AlertCircle, Check, ImagePlus, Trash2 } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faFacebook,
@@ -58,7 +58,10 @@ import {
 import type { Student } from "@/pages/students/StudentForm";
 import { loadCurrentStudent } from "./currentStudent";
 
-const ENGAGEMENT_OPTIONS = ["New Student", "Second Year"];
+const ENGAGEMENT_OPTIONS = [
+  { value: "New Student", labelKey: "New Student" },
+  { value: "Second Year", labelKey: "Second Year" },
+] as const;
 
 /**
  * "Ada Lovelace" -> { first: "Ada", last: "Lovelace" }; extra words stay in the
@@ -153,24 +156,24 @@ export default function StudentSettingsPage() {
         <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
         <p className="mt-4 text-sm text-muted-foreground">
           {t(
-          "Your student record could not be found. It may have been removed by the administration.",
-        )}
+            "Your student record could not be found. It may have been removed by the administration.",
+          )}
         </p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {t("Manage your profile and display preferences.")}
       </p>
 
       <Tabs defaultValue="profile" className="mt-6">
-        <TabsList variant="line">
+        <TabsList variant="line" className="border-b border-zinc-200 dark:border-zinc-800">
           <TabsTrigger value="profile">{t("Profile")}</TabsTrigger>
-          <TabsTrigger value="general">{t("General")}</TabsTrigger>
+          <TabsTrigger value="general">{t("General Settings")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile" className="mt-6">
@@ -178,7 +181,7 @@ export default function StudentSettingsPage() {
         </TabsContent>
 
         <TabsContent value="general" className="mt-6">
-          <GeneralTab />
+          <GeneralTab student={student} />
         </TabsContent>
       </Tabs>
     </div>
@@ -193,8 +196,6 @@ function ProfileTab({
   onSaved: (next: Student) => void;
 }) {
   const { t } = useI18n();
-  // user_profiles is the source for the name/photo in the top bar; the
-  // students row is the fallback for accounts created before that table.
   const profile = useUserProfile("student", student.id);
   const initial = splitFullName(userProfileFullName(profile) || student.fullName);
   const [firstName, setFirstName] = useState(initial.first);
@@ -218,11 +219,6 @@ function ProfileTab({
   const [avatarBusy, setAvatarBusy] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
-  /**
-   * The whole row to write. The upsert replaces it, so every partial save
-   * (photo, links) folds in the current form values instead of blanking the
-   * columns it does not touch.
-   */
   const profileBase = (): UserProfile => ({
     userId: student.id,
     role: "student",
@@ -245,14 +241,12 @@ function ProfileTab({
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    // Clear immediately so picking the same file again still fires change.
     event.target.value = "";
     if (!file) return;
     setAvatarError(null);
     setAvatarBusy(true);
     let uploaded: string | undefined;
     try {
-      // Storage first: the row only ever points at an object that exists.
       uploaded = await uploadProfilePicture(student.id, file);
       const previous = avatar;
       await saveUserProfile({ ...profileBase(), avatarUrl: uploaded });
@@ -260,7 +254,6 @@ function ProfileTab({
         void deleteProfilePicture(previous).catch(() => {});
       }
     } catch (err) {
-      // Do not leave an unreferenced object behind when the row write fails.
       if (uploaded) void deleteProfilePicture(uploaded).catch(() => {});
       setAvatarError(errorMessage(err));
     } finally {
@@ -284,13 +277,13 @@ function ProfileTab({
 
   const handleSaveProfile = async () => {
     if (!firstName.trim()) {
-      setSaveError("First name is required.");
+      setSaveError(t("First name is required."));
       setSaveMessage(null);
       return;
     }
     const parsedAge = age.trim() === "" ? undefined : Math.round(Number(age));
     if (age.trim() !== "" && !Number.isFinite(parsedAge)) {
-      setSaveError("Age must be a number.");
+      setSaveError(t("Age must be a number."));
       setSaveMessage(null);
       return;
     }
@@ -298,14 +291,12 @@ function ProfileTab({
     setSaving(true);
     setSaveError(null);
     setSaveMessage(null);
-    // Keep the name identical to how the student signs in: trimmed, single
-    // spaces. Attendance and reviews snapshot the name at write time, so older
-    // rows keep the old spelling by design (see AGENTS.md).
+
     const fullName = `${firstName.trim()} ${lastName.trim()}`
       .replace(/\s+/g, " ")
       .trim();
-    // Trim each link and turn a blank one into undefined so the column is
-    // written as NULL (a cleared link is removed) rather than an empty string.
+
+    // Trim each link and turn a blank/whitespace-only one into undefined so it is cleared in SQL
     const socialPayload = Object.fromEntries(
       SOCIAL_FIELDS.map(({ key }) => [key, social[key].trim() || undefined]),
     ) as Pick<Student, SocialKey>;
@@ -323,8 +314,7 @@ function ProfileTab({
         engagement: engagement.trim() || undefined,
         ...socialPayload,
       });
-      // Same values in the per-portal profile row, which is what the top bar
-      // and the portal header render from.
+
       await saveUserProfile({
         ...profileBase(),
         firstName: firstName.trim(),
@@ -333,6 +323,7 @@ function ProfileTab({
         whatsappNumber: social.whatsapp.trim() || undefined,
         githubUrl: social.github.trim() || undefined,
       });
+
       const next: Student = {
         ...student,
         fullName,
@@ -342,9 +333,7 @@ function ProfileTab({
         ...socialPayload,
       } as Student;
       onSaved(next);
-      setSaveMessage("Changes saved.");
-      // The portal top bar shows the record loaded by StudentLayout; ask it to
-      // re-read so a new name appears without a reload.
+      setSaveMessage(t("Changes saved."));
       notifyStudentProfileChanged();
     } catch (err) {
       setSaveError(errorMessage(err));
@@ -354,213 +343,257 @@ function ProfileTab({
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Profile photo</CardTitle>
-          <CardDescription>
-            Shown in the top bar of the student portal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-            <UserAvatar
-              name={previewName}
-              src={avatar ?? undefined}
-              fallback="S"
-              className="h-20 w-20 border-2 text-xl"
-            />
-
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={handleFile}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        {/* Left Column: Photo & Personal Information */}
+        <div className="space-y-6">
+          {/* Profile photo */}
+          <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">{t("Profile photo")}</CardTitle>
+              <CardDescription>
+                {t("Shown in the top bar of the student portal.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+                <UserAvatar
+                  name={previewName}
+                  src={avatar ?? undefined}
+                  fallback="S"
+                  className="h-20 w-20 border border-zinc-200 text-xl dark:border-zinc-800"
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={avatarBusy}
-                >
-                  <ImagePlus className="mr-2 h-4 w-4" />
-                  {avatarBusy ? "Uploading…" : "Upload photo"}
-                </Button>
-                {avatar && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleRemoveAvatar}
-                    disabled={avatarBusy}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove
-                  </Button>
-                )}
-              </div>
 
-              <p className="text-xs text-muted-foreground">
-                Uploaded to the profilePictuer Storage bucket; the public URL is
-                saved on your profile (user_profiles) and shown across the
-                portal.
-              </p>
-              {avatarError && (
-                <p className="text-xs text-red-600 dark:text-red-400">
-                  {avatarError}
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleFile}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-zinc-200 text-zinc-900 hover:bg-zinc-50 dark:border-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-900"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={avatarBusy}
+                    >
+                      <ImagePlus className="mr-2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                      {avatarBusy ? t("Saving…") : t("Upload photo")}
+                    </Button>
+                    {avatar && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                        onClick={handleRemoveAvatar}
+                        disabled={avatarBusy}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                        {t("Remove")}
+                      </Button>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    {t("Accepted formats: JPG, PNG, or WebP (max 2 MB).")}
+                  </p>
+                  {avatarError && (
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-800 dark:text-zinc-200">
+                      <AlertCircle className="h-3.5 w-3.5 text-zinc-500" />
+                      {avatarError}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Personal Information & Academic Details */}
+          <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">{t("Personal Information")}</CardTitle>
+              <CardDescription>
+                {t("Your name is also how you sign in to the student portal.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Academic Branch notice */}
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    {t("Academic Branch & Class")}
+                  </span>
+                  <span className="inline-flex rounded-full border border-zinc-200 bg-white px-2.5 py-0.5 text-[10px] font-semibold text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {t("Admin-managed")}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  {student.program}
+                  {student.training ? ` — ${student.training}` : ""}
                 </p>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Personal information</CardTitle>
-          <CardDescription>
-            Your name is also how you sign in to the student portal.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="student-first-name">First Name (Prénom)</Label>
-              <Input
-                id="student-first-name"
-                value={firstName}
-                onChange={(event) => setFirstName(event.target.value)}
-                placeholder="First name"
-                autoComplete="given-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="student-last-name">Last Name (Nom)</Label>
-              <Input
-                id="student-last-name"
-                value={lastName}
-                onChange={(event) => setLastName(event.target.value)}
-                placeholder="Last name"
-                autoComplete="family-name"
-              />
-            </div>
-          </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="student-first-name">{t("First Name")}</Label>
+                  <Input
+                    id="student-first-name"
+                    value={firstName}
+                    onChange={(event) => setFirstName(event.target.value)}
+                    placeholder={t("First name")}
+                    autoComplete="given-name"
+                    className="border-zinc-200 bg-white focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="student-last-name">{t("Last Name")}</Label>
+                  <Input
+                    id="student-last-name"
+                    value={lastName}
+                    onChange={(event) => setLastName(event.target.value)}
+                    placeholder={t("Last name")}
+                    autoComplete="family-name"
+                    className="border-zinc-200 bg-white focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
+                  />
+                </div>
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="student-email">Email (read-only)</Label>
-            <Input
-              id="student-email"
-              value={student.email || "—"}
-              disabled
-              readOnly
-            />
-            <p className="text-xs text-muted-foreground">
-              {student.program}
-              {student.training ? ` — ${student.training}` : ""} · managed by
-              the administration.
-            </p>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="student-location">Location</Label>
-              <Input
-                id="student-location"
-                value={location}
-                onChange={(event) => setLocation(event.target.value)}
-                placeholder="Your location"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="student-age">Age</Label>
-              <Input
-                id="student-age"
-                type="number"
-                min={0}
-                value={age}
-                onChange={(event) => setAge(event.target.value)}
-                placeholder="Your age"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Engagement</Label>
-              <Select
-                value={engagement}
-                onValueChange={(value) => setEngagement(value ?? "")}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select engagement" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ENGAGEMENT_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Social media &amp; contact links</CardTitle>
-          <CardDescription>
-            Optional links to your profiles. Leave a field empty to remove it.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {SOCIAL_FIELDS.map(({ key, label, icon, placeholder }) => (
-            <div key={key} className="space-y-2">
-              <Label htmlFor={`student-${key}`}>{label}</Label>
-              <div className="flex items-stretch overflow-hidden rounded-lg border border-input transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
-                <span
-                  aria-hidden="true"
-                  className="flex items-center border-r border-input bg-muted/60 px-2.5 text-muted-foreground"
-                >
-                  <FontAwesomeIcon icon={icon} className="text-sm" />
-                </span>
+              <div className="space-y-2">
+                <Label htmlFor="student-email">
+                  {t("Email")} ({t("read-only")})
+                </Label>
                 <Input
-                  id={`student-${key}`}
-                  type="url"
-                  inputMode="url"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={social[key]}
-                  onChange={(event) =>
-                    setSocial((prev) => ({ ...prev, [key]: event.target.value }))
-                  }
-                  placeholder={placeholder}
-                  className="rounded-none border-0 bg-transparent focus-visible:ring-0 dark:bg-transparent"
+                  id="student-email"
+                  value={student.email || "—"}
+                  disabled
+                  readOnly
+                  className="border-zinc-200 bg-zinc-50 text-muted-foreground dark:border-zinc-800 dark:bg-zinc-900/40"
                 />
               </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={handleSaveProfile} disabled={saving}>
-          {saving ? t("Saving…") : t("Save Changes")}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="student-location">{t("Location")}</Label>
+                  <Input
+                    id="student-location"
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder={t("Your location")}
+                    className="border-zinc-200 bg-white focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="student-age">{t("Age")}</Label>
+                  <Input
+                    id="student-age"
+                    type="number"
+                    min={0}
+                    value={age}
+                    onChange={(event) => setAge(event.target.value)}
+                    placeholder={t("Your age")}
+                    className="border-zinc-200 bg-white tabular-nums focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t("Engagement")}</Label>
+                  <Select
+                    value={engagement}
+                    onValueChange={(value) => setEngagement(value ?? "")}
+                  >
+                    <SelectTrigger className="w-full border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
+                      <SelectValue placeholder={t("Select engagement")} />
+                    </SelectTrigger>
+                    <SelectContent className="border-zinc-200 dark:border-zinc-800">
+                      {ENGAGEMENT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {t(option.labelKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column: Social Media & Contact Links */}
+        <div className="space-y-6">
+          <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">
+                {t("Social media & contact links")}
+              </CardTitle>
+              <CardDescription>
+                {t("Optional links to your profiles. Leave a field empty to remove it.")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3.5">
+              {SOCIAL_FIELDS.map(({ key, label, icon, placeholder }) => (
+                <div key={key} className="space-y-1.5">
+                  <Label htmlFor={`student-${key}`} className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                    {label}
+                  </Label>
+                  <div className="flex items-stretch overflow-hidden rounded-lg border border-zinc-200 transition-colors focus-within:border-zinc-900 focus-within:ring-1 focus-within:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-within:border-zinc-100 dark:focus-within:ring-zinc-100/10">
+                    <span
+                      aria-hidden="true"
+                      className="flex items-center border-r border-zinc-200 bg-zinc-50 px-3 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+                    >
+                      <FontAwesomeIcon icon={icon} className="text-sm" />
+                    </span>
+                    <Input
+                      id={`student-${key}`}
+                      type="url"
+                      inputMode="url"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={social[key]}
+                      onChange={(event) =>
+                        setSocial((prev) => ({ ...prev, [key]: event.target.value }))
+                      }
+                      placeholder={placeholder}
+                      className="rounded-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
+                    />
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Save Button & Feedback (below the 2-column grid) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Button
+          onClick={handleSaveProfile}
+          disabled={saving}
+          className="w-full sm:w-auto border border-transparent bg-zinc-900 font-medium text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100"
+        >
+          {saving ? t("Saving…") : t("Save changes")}
         </Button>
+
         {saveMessage && (
-          <p className="text-sm text-green-600 dark:text-green-400">
+          <div className="flex w-full sm:w-auto items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-100">
+            <Check className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
             {saveMessage}
-          </p>
+          </div>
         )}
+
         {saveError && (
-          <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>
+          <div className="flex w-full sm:w-auto items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3.5 py-2 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+            <AlertCircle className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+            {saveError}
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function GeneralTab() {
+function GeneralTab({ student }: { student: Student }) {
   const { t } = useI18n();
   const theme = useTheme();
   const darkMode = theme === "dark";
@@ -598,9 +631,6 @@ function GeneralTab() {
     setError(null);
     setStatus(null);
     try {
-      // Dark mode and language are global settings in this deployment (same as
-      // the operator Settings page), so read-modify-write rather than blanking
-      // the other keys.
       const settings = await getSettings();
       await saveSettings({ ...settings, ...patch });
       setStatus("Preferences saved.");
@@ -610,79 +640,123 @@ function GeneralTab() {
   };
 
   const handleDarkMode = (checked: boolean) => {
-    // Apply immediately through the global store; the persisted copy follows.
     setTheme(checked ? "dark" : "light");
     void persist({ darkMode: checked });
   };
 
   const handleLanguage = (value: string) => {
     setLanguage(value);
-    // Apply immediately through the global store, like dark mode.
     applyLanguage(value === "fr" ? "fr" : "en");
     void persist({ language: value });
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("General")}</CardTitle>
-        <CardDescription>
-          {t("Display preferences for this deployment.")}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {loading ? (
-          <DataLoading label={t("Loading preferences…")} />
-        ) : (
-          <>
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label>{t("Dark mode")}</Label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t("Applies the dark theme across the whole app.")}
+    <div className="max-w-2xl space-y-5">
+      {/* Display Preferences */}
+      <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">{t("General Settings")}</CardTitle>
+          <CardDescription>
+            {t("Display preferences for this deployment.")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {loading ? (
+            <DataLoading label={t("Loading preferences…")} />
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label className="text-sm font-medium">{t("Dark mode")}</Label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {t("Applies the dark theme across the whole app.")}
+                  </p>
+                </div>
+                <Switch checked={darkMode} onCheckedChange={handleDarkMode} />
+              </div>
+
+              <Separator className="bg-zinc-200 dark:bg-zinc-800" />
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">{t("Language")}</Label>
+                <Select
+                  value={language ?? ""}
+                  onValueChange={(value) => value && handleLanguage(value)}
+                >
+                  <SelectTrigger className="w-full border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
+                    <SelectValue placeholder={t("Select language")} />
+                  </SelectTrigger>
+                  <SelectContent className="border-zinc-200 dark:border-zinc-800">
+                    {LANGUAGE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(option.label)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {t("Stored as the app-wide language preference.")}
                 </p>
               </div>
-              <Switch checked={darkMode} onCheckedChange={handleDarkMode} />
-            </div>
 
-            <Separator />
+              {status && (
+                <div className="flex items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-100">
+                  <Check className="h-4 w-4 text-zinc-700 dark:text-zinc-300" />
+                  {t(status)}
+                </div>
+              )}
 
-            <div className="space-y-2">
-              <Label>{t("Language")}</Label>
-              <Select
-                value={language ?? ""}
-                onValueChange={(value) => value && handleLanguage(value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t("Select language")} />
-                </SelectTrigger>
-                <SelectContent>
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {t(option.label)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {t("Stored as the app-wide language preference.")}
-              </p>
-            </div>
+              {error && (
+                <div className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3.5 py-2 text-sm text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+                  <AlertCircle className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+                  {error}
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
 
-            {(status || error) && (
-              <p
-                className={
-                  error
-                    ? "text-sm text-red-600 dark:text-red-400"
-                    : "text-sm text-green-600 dark:text-green-400"
-                }
-              >
-                {error ?? t(status ?? "")}
-              </p>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+      {/* Account Info */}
+      <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+        <CardHeader>
+          <CardTitle className="text-base font-semibold">{t("Account Information")}</CardTitle>
+          <CardDescription>
+            {t("Summary of your registered student account.")}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3.5">
+          <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
+            <span className="text-xs font-medium text-muted-foreground">{t("Full Name")}</span>
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {student.fullName}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
+            <span className="text-xs font-medium text-muted-foreground">{t("Academic Branch")}</span>
+            <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {student.program}
+              {student.training ? ` — ${student.training}` : ""}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between border-b border-zinc-200 pb-3 dark:border-zinc-800">
+            <span className="text-xs font-medium text-muted-foreground">{t("Email")}</span>
+            <span className="text-sm text-zinc-700 dark:text-zinc-300">
+              {student.email || "—"}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between pt-0.5">
+            <span className="text-xs font-medium text-muted-foreground">{t("Account Status")}</span>
+            <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+              <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-zinc-200" />
+              {t("Active")}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

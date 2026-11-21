@@ -6,6 +6,6 @@
 import type { Language } from "./i18n";
 
 export const LANGUAGE_OPTIONS: { value: Language; label: string }[] = [
-  { value: "en", label: "English" },
-  { value: "fr", label: "Français" },
+  { value: "en", label: "English (EN)" },
+  { value: "fr", label: "Français (FR)" },
 ];

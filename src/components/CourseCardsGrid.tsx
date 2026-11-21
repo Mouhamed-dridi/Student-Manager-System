@@ -11,7 +11,9 @@ import {
   formatPublished,
   thumbnailForTraining,
 } from "@/lib/courseDisplay";
+import { useT } from "@/lib/i18n";
 import type { ScheduledCourseView } from "@/lib/trainings";
+import { cn } from "@/lib/utils";
 
 interface CourseCardProps {
   course: ScheduledCourseView;
@@ -23,8 +25,10 @@ interface CourseCardProps {
 }
 
 function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCardProps) {
+  const t = useT();
   const thumbnail =
-    course.thumbnail ?? thumbnailForTraining(course.training ?? training ?? "");
+    course.thumbnail?.trim() ||
+    thumbnailForTraining(course.training ?? training ?? "");
   // A JSON-string materials value would make `.length` report the string's
   // character count instead of the number of attachments.
   const materialCount = (Array.isArray(course.materials)
@@ -35,28 +39,30 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
 
   return (
     <Card
-      className={
-        onOpen
-          ? "relative h-full pt-0 transition-shadow hover:ring-foreground/25 focus-within:ring-3 focus-within:ring-ring/50"
-          : "h-full pt-0"
-      }
+      className={cn(
+        "group h-full gap-0 overflow-hidden p-0",
+        onOpen &&
+          "relative transition-shadow hover:ring-foreground/25 focus-within:ring-3 focus-within:ring-ring/50",
+      )}
     >
-      <div className="relative">
+      {/* Fixed 16/10 cover keeps every card in a row the same height; the
+          subtle zoom is hover polish only (the overlay button covers it). */}
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900">
         {thumbnail ? (
           <img
             src={thumbnail}
             alt={className}
             loading="lazy"
-            className="h-40 w-full object-cover"
+            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
           />
         ) : (
-          <div aria-hidden="true" className="h-40 w-full bg-muted" />
+          <div aria-hidden="true" className="h-full w-full bg-zinc-100 dark:bg-zinc-900" />
         )}
         {actions ? (
           <div className="absolute right-2 top-2 z-20 flex gap-1">{actions}</div>
         ) : null}
       </div>
-      <CardContent>
+      <CardContent className="flex-1 p-4">
         <CardTitle>{course.name}</CardTitle>
         {course.description ? (
           <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
@@ -64,7 +70,7 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
           </p>
         ) : null}
       </CardContent>
-      <CardFooter className="flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <CardFooter className="mt-auto flex-wrap gap-x-4 gap-y-1 border-t border-zinc-200/80 bg-zinc-50/60 px-4 py-3 text-xs text-muted-foreground dark:border-zinc-800/80 dark:bg-zinc-900/40">
         {teacherName ? (
           <span className="flex items-center gap-1.5">
             <User className="h-3 w-3" />
@@ -86,11 +92,15 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
         {materialCount > 0 ? (
           <span className="flex items-center gap-1">
             <Paperclip className="h-3 w-3" />
-            {materialCount} material{materialCount === 1 ? "" : "s"}
+            {materialCount === 1
+              ? t("1 material")
+              : t("{count} materials", { count: materialCount })}
           </span>
         ) : null}
         {course.published ? (
-          <span className="ml-auto">Added {formatPublished(course.published)}</span>
+          <span className="ml-auto">
+            {t("Added {date}", { date: formatPublished(course.published) })}
+          </span>
         ) : null}
       </CardFooter>
       {/*
@@ -102,7 +112,7 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
         <button
           type="button"
           onClick={onOpen}
-          aria-label={`Open ${course.name}`}
+          aria-label={t("Open {name}", { name: course.name })}
           className="absolute inset-0 z-10 cursor-pointer rounded-xl outline-none"
         />
       ) : null}

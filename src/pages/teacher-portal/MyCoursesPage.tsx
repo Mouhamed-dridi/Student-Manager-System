@@ -52,7 +52,9 @@ import type {
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { loadCurrentTeacher } from "./currentTeacher";
 
-const THUMBNAIL_MAX_WIDTH = 400;
+// Covers are shown at ~380px in the card grid, so 1200px keeps them sharp on
+// 2x/3x displays while still being a reasonable Storage object.
+const THUMBNAIL_MAX_WIDTH = 1200;
 
 // Course-detail metadata. The values are stored as the same short display
 // strings the columns already hold in Supabase (see the courses block in
@@ -61,8 +63,9 @@ const LEVEL_OPTIONS = ["Beginner", "Intermediate", "Expert"];
 
 const FORMAT_OPTIONS = ["Video", "Document", "Video & Document"];
 
-// Downscales a picked image to a ≤400px-wide JPEG blob that will be uploaded
-// to Supabase Storage (keeps the stored thumbnails small).
+// Downscales a picked image to at most 1200px wide and encodes a high-quality
+// JPEG for Supabase Storage. The card and detail view serve this original
+// object directly (no render/image transform), so it must already be crisp.
 async function fileToThumbnailJpeg(file: File): Promise<Blob> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -90,7 +93,7 @@ async function fileToThumbnailJpeg(file: File): Promise<Blob> {
       (blob) =>
         blob ? resolve(blob) : reject(new Error("Image could not be encoded")),
       "image/jpeg",
-      0.75,
+      0.85,
     ),
   );
 }

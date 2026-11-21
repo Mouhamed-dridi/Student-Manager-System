@@ -19,9 +19,11 @@ import type { Student } from "@/pages/students/StudentForm";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { useNestedView } from "@/hooks/viewHistory";
 import { loadCurrentStudent } from "./currentStudent";
+import { useI18n } from "@/lib/i18n";
 import { Filter } from "lucide-react";
 
 export default function CoursesPage() {
+  const { t } = useI18n();
   // undefined = session record still loading; null = record is gone.
   const [student, setStudent] = useState<Student | null | undefined>(undefined);
   const [courses, setCourses] = useState<ScheduledCourseView[] | null>(null);
@@ -35,8 +37,11 @@ export default function CoursesPage() {
 
   // Course details is a sub-page of Courses: it registers with the shared
   // history stack so the header back arrow closes it like the in-page Back.
-  useNestedView(selected !== null, "course-detail", "Course details", () =>
-    setSelected(null),
+  useNestedView(
+    selected !== null,
+    "course-detail",
+    t("Course details"),
+    () => setSelected(null),
   );
 
   const refresh = useCallback(async (record: Student) => {
@@ -142,12 +147,18 @@ export default function CoursesPage() {
 
   return (
     <div>
+      {/* The detail view owns its own breadcrumb ("Back to courses"), so the
+          listing heading is hidden while a course is open. */}
+      {!selected && (
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold">Courses</h2>
+          <h2 className="text-2xl font-semibold">{t("Courses")}</h2>
           {student && student !== undefined && (
             <p className="mt-1 text-sm text-muted-foreground">
-              Assigned to {student.training || "—"} ({student.program})
+              {t("Assigned to {training} ({program})", {
+                training: student.training || "—",
+                program: student.program || "—",
+              })}
             </p>
           )}
         </div>
@@ -159,9 +170,13 @@ export default function CoursesPage() {
             <select
               value={selectedMaterial}
               onChange={(e) => setSelectedMaterial(e.target.value)}
-              className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3.5 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm text-zinc-900 focus:ring-1 focus:ring-zinc-400 focus:outline-none dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:ring-zinc-600"
             >
-              <option value="">All Materials ({courses?.length ?? 0})</option>
+              <option value="">
+                {t("All Materials ({count})", {
+                  count: courses?.length ?? 0,
+                })}
+              </option>
               {materials.map((m) => (
                 <option key={m.id} value={m.name}>
                   {m.name}
@@ -172,14 +187,16 @@ export default function CoursesPage() {
           </div>
         )}
       </div>
+      )}
 
       {student === null ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Your student record could not be found. It may have been removed by
-          the administration.
+          {t(
+            "Your student record could not be found. It may have been removed by the administration.",
+          )}
         </p>
       ) : student === undefined ? (
-        <DataLoading label="Loading courses…" />
+        <DataLoading label={t("Loading courses…")} />
       ) : (
         <>
           {error && (
@@ -189,7 +206,7 @@ export default function CoursesPage() {
           )}
 
           {filteredCourses === null ? (
-            !error && <DataLoading label="Loading courses…" />
+            !error && <DataLoading label={t("Loading courses…")} />
           ) : selected ? (
             <div className="mt-4">
               {/* Coarse backstop: if the detail view itself throws, keep a way
@@ -202,13 +219,13 @@ export default function CoursesPage() {
                   <Card>
                     <CardContent className="space-y-3 py-6">
                       <p className="text-sm font-medium">
-                        This course could not be displayed.
+                        {t("This course could not be displayed.")}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        {error.message || "An unexpected error occurred."}
+                        {error.message || t("An unexpected error occurred.")}
                       </p>
                       <Button size="sm" onClick={() => setSelected(null)}>
-                        Back to courses
+                        {t("Back to courses")}
                       </Button>
                     </CardContent>
                   </Card>
@@ -219,7 +236,7 @@ export default function CoursesPage() {
                   studentId={student.id}
                   studentName={student.fullName}
                   onBack={() => setSelected(null)}
-                  backLabel="Back to courses"
+                  backLabel={t("Back to courses")}
                 />
               </ErrorBoundary>
             </div>
@@ -228,13 +245,15 @@ export default function CoursesPage() {
               <CardContent className="py-8 text-center">
                 <p className="text-sm font-medium">
                   {selectedMaterial
-                    ? "No courses match this material"
-                    : "No courses scheduled yet"}
+                    ? t("No courses match this material")
+                    : t("No courses scheduled yet")}
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {selectedMaterial
-                    ? "Try selecting a different material or view all courses."
-                    : "Nothing has been planned for your program and training so far. Please check back later."}
+                    ? t("Try selecting a different material or view all courses.")
+                    : t(
+                        "Nothing has been planned for your program and training so far. Please check back later.",
+                      )}
                 </p>
               </CardContent>
             </Card>

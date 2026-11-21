@@ -7,6 +7,10 @@ import type {
   NotificationType,
   Publication,
 } from "@/pages/publications/publicationTypes";
+import { useT } from "@/lib/i18n";
+
+/** `color` keeps the type colours; `zinc` is the monochrome dashboard skin. */
+export type AnnouncementCalloutTone = "color" | "zinc";
 
 const CALLOUT_STYLES: Record<
   NotificationType,
@@ -32,6 +36,16 @@ const CALLOUT_STYLES: Record<
   },
 };
 
+// Strictly monochromatic zinc used by the student workspace: no yellow, orange
+// or blue accents for any notification type.
+const ZINC_STYLES = {
+  container:
+    "bg-zinc-50 border-zinc-200 text-zinc-900 dark:bg-zinc-900/60 dark:border-zinc-800 dark:text-zinc-100",
+  icon: "text-zinc-500 dark:text-zinc-400",
+  badge:
+    "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+};
+
 interface AnnouncementCalloutProps {
   publication: Publication;
   /** Renders a small pill with the notification type label. */
@@ -40,6 +54,8 @@ interface AnnouncementCalloutProps {
   showDate?: boolean;
   /** When provided, renders the dismiss (X) button. */
   onDismiss?: () => void;
+  /** Visual skin; the student dashboard uses `zinc`. */
+  tone?: AnnouncementCalloutTone;
 }
 
 /** A single Notion-style callout block for one announcement. */
@@ -48,9 +64,22 @@ export default function AnnouncementCallout({
   showType = false,
   showDate = false,
   onDismiss,
+  tone = "color",
 }: AnnouncementCalloutProps) {
-  const { container, icon, badge, Icon } =
+  const t = useT();
+  const typeStyle =
     CALLOUT_STYLES[publication.type] ?? CALLOUT_STYLES.info;
+  // Zinc keeps the type's icon but drops its colour, so every banner reads as
+  // the same neutral surface in both light and dark mode.
+  const container = tone === "zinc" ? ZINC_STYLES.container : typeStyle.container;
+  const icon = tone === "zinc" ? ZINC_STYLES.icon : typeStyle.icon;
+  const badge =
+    tone === "zinc"
+      ? publication.type === "warning" || publication.type === "urgent"
+        ? "border-transparent bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 font-medium"
+        : "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 font-medium"
+      : typeStyle.badge;
+  const Icon = typeStyle.Icon;
   return (
     <div
       className={`rounded-lg border p-4 flex items-start gap-3 shadow-sm ${container}`}
@@ -63,7 +92,7 @@ export default function AnnouncementCallout({
             <span
               className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badge}`}
             >
-              {NOTIFICATION_TYPE_LABELS[publication.type] ?? "Info / News"}
+              {t(NOTIFICATION_TYPE_LABELS[publication.type] ?? "Info / News")}
             </span>
           )}
         </div>
@@ -80,10 +109,10 @@ export default function AnnouncementCallout({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Dismiss notification"
+          aria-label={t("Dismiss notification")}
           className="shrink-0"
         >
-          <X className="w-4 h-4 cursor-pointer text-gray-400 hover:text-gray-600" />
+          <X className="w-4 h-4 cursor-pointer text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300" />
         </button>
       )}
     </div>

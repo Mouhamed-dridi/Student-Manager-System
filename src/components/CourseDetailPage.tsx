@@ -29,7 +29,6 @@ import {
   Layers,
   Paperclip,
   Sparkles,
-  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +42,7 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import UserAvatar from "@/components/UserAvatar";
 import { MaterialItem } from "@/components/courseMaterial";
 import { formatPublished, thumbnailForTraining } from "@/lib/courseDisplay";
+import { useT } from "@/lib/i18n";
 import { teacherNamesByIds, toMaterialList, toSkillList } from "@/lib/api";
 import type { ScheduledCourseView } from "@/lib/trainings";
 
@@ -109,11 +109,12 @@ function MetaBadge({
  * stay usable instead of the whole detail view collapsing to a blank page.
  */
 function SafeSection({ children }: { children: ReactNode }) {
+  const t = useT();
   return (
     <ErrorBoundary
       fallback={
         <p className="mt-1.5 text-sm text-muted-foreground">
-          This part of the course could not be displayed.
+          {t("This part of the course could not be displayed.")}
         </p>
       }
     >
@@ -137,11 +138,12 @@ interface CourseDetailPageProps {
 export default function CourseDetailPage({
   course,
   onBack,
-  backLabel = "Back to courses",
+  backLabel,
   actions,
   studentId,
   studentName,
 }: CourseDetailPageProps) {
+  const t = useT();
   const [instructor, setInstructor] = useState<{
     id: string;
     name: string;
@@ -175,7 +177,8 @@ export default function CourseDetailPage({
   const classLabel =
     [course.training, course.program].filter(Boolean).join(" · ") || null;
   const thumbnail =
-    course.thumbnail ?? thumbnailForTraining(course.training ?? "");
+    course.thumbnail?.trim() ||
+    thumbnailForTraining(course.training ?? "");
   // Never assume these are arrays: courses.materials is jsonb that older rows
   // stored double-encoded (a JSON *string*), which is what produced
   // "materials.map is not a function". toMaterialList/toSkillList apply the
@@ -190,18 +193,17 @@ export default function CourseDetailPage({
   const level = levelLabel(course.level);
   const delivery = formatLabel(course.format);
 
+  // The instructor is shown by "Taught by …" and the sidebar card, never as a
+  // duplicate pill in this strip.
   const badges = [
-    instructorName
-      ? { key: "instructor", icon: <User className="h-3 w-3" />, value: instructorName }
-      : null,
     level
-      ? { key: "level", icon: <Gauge className="h-3 w-3" />, value: level }
+      ? { key: "level", icon: <Gauge className="h-3 w-3" />, value: t(level) }
       : null,
     duration
       ? { key: "duration", icon: <Clock className="h-3 w-3" />, value: duration }
       : null,
     delivery
-      ? { key: "format", icon: <Film className="h-3 w-3" />, value: delivery }
+      ? { key: "format", icon: <Film className="h-3 w-3" />, value: t(delivery) }
       : null,
   ].filter(Boolean) as { key: string; icon: ReactNode; value: string }[];
 
@@ -215,7 +217,7 @@ export default function CourseDetailPage({
           className="-ml-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          {backLabel}
+          {backLabel ?? t("Back to courses")}
         </Button>
         {classLabel ? (
           <span className="text-xs text-muted-foreground">{classLabel}</span>
@@ -241,7 +243,7 @@ export default function CourseDetailPage({
           {instructorName ? (
             <p className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <UserAvatar name={instructorName} className="h-7 w-7" />
-              Taught by{" "}
+              {t("Taught by")}{" "}
               <span className="font-medium text-foreground">
                 {instructorName}
               </span>
@@ -269,34 +271,30 @@ export default function CourseDetailPage({
       {/* ---------------------------------------------------------------- body */}
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_300px]">
         <div className="min-w-0 space-y-8">
-          <section>
-            <h3 className="flex items-center gap-1.5 text-sm font-medium">
-              <Sparkles className="h-3.5 w-3.5" />
-              Skills you&rsquo;ll gain
-            </h3>
-            <SafeSection>
-              {skills.length === 0 ? (
-                <p className="mt-1.5 text-sm text-muted-foreground">
-                  No skills have been listed for this course yet.
-                </p>
-              ) : (
+          {skills.length > 0 ? (
+            <section>
+              <h3 className="flex items-center gap-1.5 text-sm font-medium">
+                <Sparkles className="h-3.5 w-3.5" />
+                {t("Skills you'll gain")}
+              </h3>
+              <SafeSection>
                 <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                   {skills.map((skill, i) => (
                     <li
                       key={`${skill}-${i}`}
                       className="flex items-start gap-2 text-sm"
                     >
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500 dark:text-zinc-400" />
                       <span>{skill}</span>
                     </li>
                   ))}
                 </ul>
-              )}
-            </SafeSection>
-          </section>
+              </SafeSection>
+            </section>
+          ) : null}
 
           <section>
-            <h3 className="text-sm font-medium">Overview</h3>
+            <h3 className="text-sm font-medium">{t("Overview")}</h3>
             <SafeSection>
               {course.description ? (
                 <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-line text-muted-foreground">
@@ -304,23 +302,19 @@ export default function CourseDetailPage({
                 </p>
               ) : (
                 <p className="mt-1.5 text-sm text-muted-foreground">
-                  No description has been added for this course yet.
+                  {t("No description has been added for this course yet.")}
                 </p>
               )}
             </SafeSection>
           </section>
 
-          <section>
-            <h3 className="flex items-center gap-1.5 text-sm font-medium">
-              <Layers className="h-3.5 w-3.5" />
-              Course syllabus
-            </h3>
-            <SafeSection>
-              {topics.length === 0 ? (
-                <p className="mt-1.5 text-sm text-muted-foreground">
-                  The syllabus has not been published for this course yet.
-                </p>
-              ) : (
+          {topics.length > 0 ? (
+            <section>
+              <h3 className="flex items-center gap-1.5 text-sm font-medium">
+                <Layers className="h-3.5 w-3.5" />
+                {t("Course syllabus")}
+              </h3>
+              <SafeSection>
                 <ol className="mt-2 space-y-2">
                   {topics.map((topic, i) => (
                     <li key={`${topic}-${i}`} className="flex gap-3 text-sm">
@@ -333,14 +327,14 @@ export default function CourseDetailPage({
                     </li>
                   ))}
                 </ol>
-              )}
-            </SafeSection>
-          </section>
+              </SafeSection>
+            </section>
+          ) : null}
 
           <section>
             <h3 className="flex items-center gap-1.5 text-sm font-medium">
               <Paperclip className="h-3.5 w-3.5" />
-              Course media
+              {t("Course media")}
               <span className="font-normal text-muted-foreground">
                 ({materials.length})
               </span>
@@ -348,7 +342,7 @@ export default function CourseDetailPage({
             <SafeSection>
               {materials.length === 0 ? (
                 <p className="mt-1.5 text-sm text-muted-foreground">
-                  No materials have been attached to this course yet.
+                  {t("No materials have been attached to this course yet.")}
                 </p>
               ) : (
                 <div className="mt-2 space-y-4">
@@ -372,8 +366,9 @@ export default function CourseDetailPage({
               />
             ) : (
               <p className="text-sm text-muted-foreground">
-                Reviews are not available for this scheduled course. Only courses
-                added by a teacher can be rated.
+                {t(
+                  "Reviews are not available for this scheduled course. Only courses added by a teacher can be rated.",
+                )}
               </p>
             )}
           </SafeSection>
@@ -384,7 +379,7 @@ export default function CourseDetailPage({
           {instructorName ? (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Instructor</CardTitle>
+                <CardTitle className="text-sm">{t("Instructor")}</CardTitle>
               </CardHeader>
               <CardContent className="flex items-center gap-3">
                 <UserAvatar name={instructorName} className="h-10 w-10 text-sm" />
@@ -404,36 +399,36 @@ export default function CourseDetailPage({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm">Course details</CardTitle>
+              <CardTitle className="text-sm">{t("Course details")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               {level ? (
                 <p className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Level</span>
-                  <span className="font-medium">{level}</span>
+                  <span className="text-muted-foreground">{t("Level")}</span>
+                  <span className="font-medium">{t(level)}</span>
                 </p>
               ) : null}
               {duration ? (
                 <p className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Duration</span>
+                  <span className="text-muted-foreground">{t("Duration")}</span>
                   <span className="font-medium">{duration}</span>
                 </p>
               ) : null}
               {delivery ? (
                 <p className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Format</span>
-                  <span className="font-medium">{delivery}</span>
+                  <span className="text-muted-foreground">{t("Format")}</span>
+                  <span className="font-medium">{t(delivery)}</span>
                 </p>
               ) : null}
               {materials.length > 0 ? (
                 <p className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Materials</span>
+                  <span className="text-muted-foreground">{t("Materials")}</span>
                   <span className="font-medium">{materials.length}</span>
                 </p>
               ) : null}
               {course.published ? (
                 <p className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">Published</span>
+                  <span className="text-muted-foreground">{t("Published")}</span>
                   <span className="font-medium">
                     {formatPublished(course.published)}
                   </span>
@@ -442,7 +437,7 @@ export default function CourseDetailPage({
               {level || duration || delivery || course.published ? null : (
                 <p className="flex items-center gap-2 text-muted-foreground">
                   <FileText className="h-3.5 w-3.5" />
-                  No course details have been published yet.
+                  {t("No course details have been published yet.")}
                 </p>
               )}
             </CardContent>

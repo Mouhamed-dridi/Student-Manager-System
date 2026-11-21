@@ -37,14 +37,36 @@ export function DashboardWidgetStat({
   label,
   value,
   hint,
+  onClick,
 }: {
   icon: LucideIcon;
   label: string;
   value: ReactNode;
   hint?: ReactNode;
+  /** Makes the whole card a button (Enter/Space included). */
+  onClick?: () => void;
 }) {
   return (
-    <Card>
+    <Card
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
+      className={
+        onClick
+          ? "cursor-pointer transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+          : undefined
+      }
+    >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {label}
