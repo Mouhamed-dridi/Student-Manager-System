@@ -384,7 +384,7 @@ const FRENCH: Record<string, string> = {
   "Every event that has been created. Use Edit to change one, or Events → New Event to add another.":
     "Tous les événements créés. Utilisez Modifier pour en changer un, ou Événements → Nouvel événement pour en ajouter un autre.",
   "Search by title, partner or type…":
-    "Rechercher par titre, partenaire ou type…",
+    "Rechercher par titre, partenaire ou catégorie…",
   "No events match your search.":
     "Aucun événement ne correspond à votre recherche.",
   "{shown} of {total} events shown":
@@ -558,6 +558,7 @@ const FRENCH: Record<string, string> = {
   Dates: "Dates",
   Partners: "Partenaires",
   People: "Participants",
+  Participants: "Participants",
   "No events created yet": "Aucun événement créé pour le moment",
   "New Announcement": "Nouvelle annonce",
   "Notification Type": "Type de notification",
@@ -643,6 +644,139 @@ const FRENCH: Record<string, string> = {
   "Values saved on this center's settings row.":
     "Valeurs enregistrées sur la ligne de paramètres de ce centre.",
   "Last backup": "Dernière sauvegarde",
+
+  // -------------------------------------------------------- backup & restore
+  "Backup": "Sauvegarde",
+  "Restore": "Restauration",
+  "Restore / Import Data": "Restaurer / Importer des données",
+  "Restore mode": "Mode de restauration",
+  "Restore finished": "Restauration terminée",
+  "Restore stopped": "Restauration interrompue",
+  "Start restore": "Lancer la restauration",
+  "Back up and restore": "Sauvegarder et restaurer",
+  "Inspect file": "Inspecter le fichier",
+  "Progress & audit": "Progression et audit",
+  "Action": "Action",
+  "Format": "Format",
+  "Mode": "Mode",
+  "Rows": "Lignes",
+  "Tables": "Tables",
+  "Success": "Réussi",
+  "Partial": "Partiel",
+  "Continue": "Continuer",
+  "Back": "Retour",
+  "JSON": "JSON",
+  "Operator": "Opérateur",
+  "Operators": "Opérateurs",
+  "Attendance": "Présences",
+  "Billets": "Billets",
+  "Payments History": "Historique des paiements",
+  "Center Settings": "Paramètres du centre",
+  "Legacy Settings": "Paramètres hérités",
+  "Settings / Config": "Paramètres / Configuration",
+  "Performed by": "Effectuée par",
+  "Never backed up": "Jamais sauvegardé",
+  "Healthy": "À jour",
+  "Older than 7 days": "Plus de 7 jours",
+  "Full System Backup": "Sauvegarde complète du système",
+  "Export Full System Backup": "Exporter la sauvegarde complète",
+  "Full system backup downloaded": "Sauvegarde complète téléchargée",
+  "Module backups": "Sauvegardes par module",
+  "Backup & Restore History": "Historique des sauvegardes et restaurations",
+  "Recommended for restore": "Recommandé pour la restauration",
+  "SQL script": "Script SQL",
+  "INSERT statements for psql or the SQL editor":
+    "Instructions INSERT pour psql ou l'éditeur SQL",
+  "Download SQL": "Télécharger SQL",
+  "Download Excel": "Télécharger Excel",
+  "Date & time": "Date et heure",
+  "Include deleted (Trash) records": "Inclure les éléments supprimés (corbeille)",
+  "Full replace": "Remplacement complet",
+  "Merge / Upsert": "Fusion / Upsert",
+  "Merge / Upsert (Safe)": "Fusion / Upsert (sûr)",
+  "Full Replace (Overwrite)": "Remplacement complet (écrasement)",
+  "safety": "sécurité",
+  "Skipped:": "Ignorées :",
+  "exported as": "exporté en",
+  "Admin access required": "Accès administrateur requis",
+  "Backup & Export is restricted to operator accounts.":
+    "Sauvegarde & export est réservé aux comptes opérateur.",
+  "Records detected": "Enregistrements détectés",
+  "Target table": "Table cible",
+  "Select table…": "Choisir une table…",
+  "Choose another file": "Choisir un autre fichier",
+  "Drag & drop the backup file here":
+    "Glissez-déposez le fichier de sauvegarde ici",
+  "The original backup skipped:": "La sauvegarde d'origine a ignoré :",
+  "The safety backup could not be written, so nothing was overwritten.":
+    "La sauvegarde de sécurité n'a pas pu être écrite, rien n'a été écrasé.",
+  "Supported files: .json, .sql, .csv or .xlsx.":
+    "Fichiers pris en charge : .json, .sql, .csv ou .xlsx.",
+  "The file is larger than 25 MB.": "Le fichier dépasse 25 Mo.",
+  "This file is not valid JSON.": "Ce fichier n'est pas un JSON valide.",
+  "This JSON file is not a Full System Backup (no tables object).":
+    "Ce fichier JSON n'est pas une sauvegarde complète (objet « tables » absent).",
+  "The backup file lists no tables.":
+    "Le fichier de sauvegarde ne contient aucune table.",
+  "The backup file contains an unsupported table: {table}.":
+    "Le fichier de sauvegarde contient une table non prise en charge : {table}.",
+  "The rows of {table} are not a list of records.":
+    "Les lignes de {table} ne forment pas une liste d'enregistrements.",
+  "The dump targets an unsupported table: {table}.":
+    "Le script cible une table non prise en charge : {table}.",
+  "Malformed SQL dump: unterminated tuple.":
+    "Script SQL mal formé : parenthèse non fermée.",
+  "Malformed SQL dump: column/value mismatch in {table}.":
+    "Script SQL mal formé : colonnes et valeurs incohérentes dans {table}.",
+  "Unterminated string in the SQL dump.":
+    "Chaîne non fermée dans le script SQL.",
+  "Malformed value in the SQL dump.":
+    "Valeur mal formée dans le script SQL.",
+  "No INSERT statements for known tables were found in this file.":
+    "Aucune instruction INSERT pour des tables connues n'a été trouvée dans ce fichier.",
+  "The sheet is empty or has no header row.":
+    "La feuille est vide ou n'a pas de ligne d'en-tête.",
+  "Review the backup, choose how it is written, then follow the restore progress.":
+    "Vérifiez la sauvegarde, choisissez le mode d'écriture, puis suivez la progression.",
+  "Download a complete copy of your center's data as JSON or SQL, export a single module, or restore a previous backup.":
+    "Téléchargez une copie complète des données de votre centre en JSON ou SQL, exportez un module, ou restaurez une sauvegarde précédente.",
+  "One file with every core table: students, teachers, operators, branches, materials, payments, attendance, billets, planning, exams, publications, events and center settings.":
+    "Un seul fichier avec toutes les tables principales : étudiants, enseignants, opérateurs, filières, matières, paiements, présences, billets, planification, examens, publications, événements et paramètres du centre.",
+  "SQL and JSON backups keep trashed rows so a restore can bring them back. Excel exports never include them.":
+    "Les sauvegardes SQL et JSON conservent les lignes de la corbeille pour qu'une restauration puisse les récupérer. Les exports Excel ne les incluent jamais.",
+  "No backup in the last 7 days. Download a fresh Full System Backup before your next changes.":
+    "Aucune sauvegarde depuis 7 jours. Téléchargez une nouvelle sauvegarde complète avant vos prochaines modifications.",
+  "Every module downloads as a SQL script or an Excel workbook. Use these for a single table instead of the full backup.":
+    "Chaque module se télécharge en script SQL ou en classeur Excel. Utilisez-les pour une seule table au lieu de la sauvegarde complète.",
+  "No backup or restore has been recorded on this device yet.":
+    "Aucune sauvegarde ni restauration n'a encore été enregistrée sur cet appareil.",
+  "Restores through the wizard on this page.":
+    "Se restaure avec l'assistant de cette page.",
+  "Best for manual review and SQL console imports.":
+    "Idéal pour une vérification manuelle et les imports via la console SQL.",
+  "Updates rows that already exist and adds the missing ones. Nothing is deleted.":
+    "Met à jour les lignes existantes et ajoute les manquantes. Rien n'est supprimé.",
+  "Deletes the current rows of every table in the file, then writes the backup.":
+    "Supprime les lignes actuelles de chaque table du fichier, puis écrit la sauvegarde.",
+  "When off, trashed rows in the file are skipped instead of being restored.":
+    "Désactivé, les lignes de la corbeille présentes dans le fichier sont ignorées.",
+  "A safety backup of the current data downloads automatically before anything is deleted. This cannot be undone.":
+    "Une sauvegarde de sécurité des données actuelles se télécharge automatiquement avant toute suppression. Cette action est irréversible.",
+  "Reading {name}…": "Lecture de {name}…",
+  "Exported on {date}.": "Exporté le {date}.",
+  "Safety backup downloaded at {date}.":
+    "Sauvegarde de sécurité téléchargée le {date}.",
+  "or click to browse · .json backup (SQL and spreadsheets are still accepted)":
+    "ou cliquez pour parcourir · sauvegarde .json (les fichiers SQL et tableurs restent acceptés)",
+  "{count} rows": "{count} lignes",
+  "{count} tables": "{count} tables",
+  "{count} entries": "{count} entrées",
+  "{count} skipped": "{count} ignorées",
+  "{tables} tables · {rows} rows will be written.":
+    "{tables} tables · {rows} lignes seront écrites.",
+  "{restored} rows restored, {failed} skipped.":
+    "{restored} lignes restaurées, {failed} ignorées.",
+  "Restoring…": "Restauration…",
   "License activated.": "Licence activée.",
   "Personal display preferences for this account.":
     "Préférences d'affichage personnelles pour ce compte.",

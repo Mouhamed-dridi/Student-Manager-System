@@ -191,7 +191,7 @@ export function EventHistoryTable({
               {t("Partners")}
             </TableHead>
             <TableHead className="text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-              {t("People")}
+              {t("Participants")}
             </TableHead>
             <TableHead className="w-24 text-[11px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
               {t("Actions")}

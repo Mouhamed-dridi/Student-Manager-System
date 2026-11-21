@@ -2,9 +2,9 @@ import * as XLSX from "xlsx";
 import {
   countBackupRows,
   listBackupRows,
-  listUserManagementBackupRows,
   type BackupTableName,
 } from "@/lib/api";
+import { t } from "@/lib/i18n";
 
 /**
  * Shared Backup & Export formatting: SQL generation for the per-source and
@@ -20,46 +20,86 @@ export interface BackupSection {
 }
 
 export interface BackupSourceDef {
-  /** File stem inside backup archives, e.g. "absence" → absence-backup-….sql. */
+  /** File stem of a per-module download, e.g. "absence" → absence-backup-….sql. */
   key: string;
+  /** English display label; render it through `t()` so French gets its own. */
   label: string;
-  /** True only for plain tabular sources (SQL + Excel export buttons). */
-  dualExport: boolean;
   /** Real tables written by this source, in SQL-section order. */
   tables: BackupTableName[];
+  /** Table that only exists after its optional migration has been applied. */
+  optional?: boolean;
 }
 
-/** Order defines the card list and the Full Backup fetch order. */
+/** Display label per backup table, shared by cards, previews and history. */
+export const TABLE_LABELS: Record<BackupTableName, string> = {
+  students: "Students",
+  teachers: "Teachers",
+  operators: "Operators",
+  branches: "Branches",
+  branch_materials: "Materials",
+  payments: "Payments",
+  payment_history: "Payments History",
+  attendance: "Attendance",
+  absence_billets: "Billets",
+  planning: "Planning",
+  exams: "Exams",
+  publications: "Publications",
+  events: "Events",
+  center_settings: "Center Settings",
+  settings: "Legacy Settings",
+};
+
+/**
+ * Every table a Full System Backup contains, in restore-safe order (people
+ * first, then their records and finally the center settings row). `operators`
+ * and `payment_history` are part of the contract but do not exist in every
+ * database: they are reported as skipped instead of failing the whole backup.
+ */
+export const FULL_BACKUP_TABLES: BackupTableName[] = [
+  "students",
+  "teachers",
+  "operators",
+  "branches",
+  "branch_materials",
+  "payments",
+  "payment_history",
+  "attendance",
+  "absence_billets",
+  "planning",
+  "exams",
+  "publications",
+  "events",
+  "center_settings",
+];
+
+/** Order defines the module card list. */
 export const BACKUP_SOURCES: BackupSourceDef[] = [
-  { key: "students", label: "Students", dualExport: true, tables: ["students"] },
-  { key: "teachers", label: "Teachers", dualExport: true, tables: ["teachers"] },
-  { key: "payments", label: "Payments", dualExport: true, tables: ["payments"] },
-  { key: "planning", label: "Planning", dualExport: true, tables: ["planning"] },
+  { key: "students", label: "Students", tables: ["students"] },
+  { key: "teachers", label: "Teachers", tables: ["teachers"] },
+  { key: "operators", label: "Operators", tables: ["operators"], optional: true },
   {
-    key: "exams",
-    label: "Exams",
-    // Attachment URLs point at Storage files the export does not move.
-    dualExport: false,
-    tables: ["exams"],
+    key: "branches",
+    label: "Branches",
+    tables: ["branches", "branch_materials"],
+    optional: true,
   },
-  {
-    key: "publications",
-    label: "Publications",
-    dualExport: false,
-    tables: ["publications"],
-  },
-  { key: "absence", label: "Absence", dualExport: true, tables: ["attendance"] },
+  { key: "payments", label: "Payments", tables: ["payments"] },
+  { key: "planning", label: "Planning", tables: ["planning"] },
+  // Attachment URLs point at Storage files the export does not move.
+  { key: "exams", label: "Exams", tables: ["exams"] },
+  { key: "publications", label: "Publications", tables: ["publications"] },
+  { key: "absence", label: "Absence", tables: ["attendance"] },
+  { key: "events", label: "Events", tables: ["events"] },
   {
     key: "user-management",
     label: "User Management",
-    dualExport: true,
     tables: ["students", "teachers"],
   },
   {
     key: "settings-config",
     label: "Settings / Config",
-    dualExport: true,
-    tables: ["settings"],
+    tables: ["center_settings"],
+    optional: true,
   },
 ];
 
@@ -67,28 +107,39 @@ const backupSourceFor = (key: string): BackupSourceDef =>
   BACKUP_SOURCES.find((source) => source.key === key) ?? {
     key,
     label: key,
-    dualExport: false,
     tables: [],
   };
 
 /** Real tables a restore may write to (the upsert targets). */
-export const RESTORE_TABLES: { name: BackupTableName; label: string }[] =
-  BACKUP_SOURCES.flatMap((source) =>
-    source.tables.map((table) => ({
-      name: table,
-      label: source.label,
-    })),
-  ).filter(
-    (entry, index, all) =>
-      all.findIndex((other) => other.name === entry.name) === index,
-  );
+export const RESTORE_TABLES: { name: BackupTableName; label: string }[] = [
+  ...FULL_BACKUP_TABLES,
+  // Legacy dumps may still target the old key/value settings table.
+  "settings" as BackupTableName,
+].map((name) => ({ name, label: TABLE_LABELS[name] }));
 
 const today = () => new Date().toISOString().slice(0, 10);
 
 export const backupFileName = (key: string, ext: "sql" | "xlsx") =>
   `${key}-backup-${today()}.${ext}`;
 
-export const FULL_BACKUP_FILE_NAME = `ssm-full-backup-${today()}.zip`;
+/**
+ * Trash filter: soft-deleted rows keep their place in a backup only while the
+ * "Include deleted records" switch is on. Rows without the flag are kept.
+ */
+export function withoutDeletedRows(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return rows.filter((row) => row.is_deleted !== true);
+}
+
+export function withoutDeletedSections(
+  sections: BackupSection[],
+): BackupSection[] {
+  return sections.map((section) => ({
+    table: section.table,
+    rows: withoutDeletedRows(section.rows),
+  }));
+}
 
 // ------------------------------------------------------------------- fetch
 
@@ -96,18 +147,16 @@ export const FULL_BACKUP_FILE_NAME = `ssm-full-backup-${today()}.zip`;
 export async function fetchSourceSections(
   key: string,
 ): Promise<BackupSection[]> {
-  if (key === "user-management") {
-    const { students, teachers } = await listUserManagementBackupRows();
-    return [
-      { table: "students", rows: students },
-      { table: "teachers", rows: teachers },
-    ];
-  }
   const { tables } = backupSourceFor(key);
-  if (tables.length !== 1) {
+  if (tables.length === 0) {
     throw new Error(`Unknown backup source: ${key}`);
   }
-  return [{ table: tables[0], rows: await listBackupRows(tables[0]) }];
+  return Promise.all(
+    tables.map(async (table) => ({
+      table,
+      rows: await listBackupRows(table),
+    })),
+  );
 }
 
 /** Total row count shown on a card. */
@@ -192,12 +241,9 @@ export function generateSqlDocument(
   return `${parts.join("\n")}\n`;
 }
 
-/**
- * One combined dump for the Full Backup workflow keeps one section per table
- * (it bundles the same per-source documents).
- */
-export function generateFullBackupSections(sections: BackupSection[][]) {
-  return generateSqlDocument("Full backup", sections.flat());
+/** One combined SQL dump, one section per table, for Full System Backup. */
+export function generateFullBackupDocument(sections: BackupSection[]): string {
+  return generateSqlDocument("Full system backup", sections);
 }
 
 // ------------------------------------------------------------- Excel build
@@ -326,7 +372,7 @@ function parseSqlValues(source: string): unknown[] {
       i++;
       let out = "";
       for (;;) {
-        if (i >= n) throw new Error("Unterminated string in the SQL dump.");
+        if (i >= n) throw new Error(t("Unterminated string in the SQL dump."));
         if (source[i] === "'") {
           if (source[i + 1] === "'") {
             out += "'";
@@ -343,7 +389,7 @@ function parseSqlValues(source: string): unknown[] {
       const start = i;
       while (i < n && source[i] !== ",") i++;
       const word = source.slice(start, i).trim();
-      if (word === "") throw new Error("Malformed value in the SQL dump.");
+      if (word === "") throw new Error(t("Malformed value in the SQL dump."));
       if (word === "NULL") value = null;
       else if (/^(TRUE|FALSE)$/i.test(word))
         value = word.toUpperCase() === "TRUE";
@@ -415,7 +461,9 @@ export function parseSqlDump(sqlText: string): RestoredTableGroup[] {
     if (!match) continue;
     const table = match[1] as BackupTableName;
     if (!RESTORE_TABLES.some((entry) => entry.name === table)) {
-      throw new Error(`The dump targets an unsupported table: "${table}".`);
+      throw new Error(
+        t("The dump targets an unsupported table: {table}.", { table }),
+      );
     }
     const columns = match[2]
       .split(",")
@@ -447,13 +495,13 @@ export function parseSqlDump(sqlText: string): RestoredTableGroup[] {
           if (depth === 0) break;
         }
       }
-      if (i >= n) throw new Error("Malformed SQL dump: unterminated tuple.");
+      if (i >= n) throw new Error(t("Malformed SQL dump: unterminated tuple."));
       const tuple = tuplesSource.slice(tupleStart + 1, i);
       i++;
       const values = parseSqlValues(tuple);
       if (values.length !== columns.length) {
         throw new Error(
-          `Malformed SQL dump: column/value mismatch in ${table}.`,
+          t("Malformed SQL dump: column/value mismatch in {table}.", { table }),
         );
       }
       const row: Record<string, unknown> = {};
@@ -467,6 +515,91 @@ export function parseSqlDump(sqlText: string): RestoredTableGroup[] {
   }
 
   return Array.from(groups, ([table, rows]) => ({ table, rows }));
+}
+
+// ------------------------------------------------------------- JSON backup
+
+export interface ParsedFullBackup {
+  /** `generated_at` stamped by the export, when the file carries one. */
+  generatedAt: string | null;
+  /** Whether the file was written with trash rows included. */
+  includeDeleted: boolean | null;
+  groups: RestoredTableGroup[];
+  /** Tables the exporting database did not have. */
+  skipped: { table: string; message: string }[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isKnownBackupTable = (name: string): name is BackupTableName =>
+  RESTORE_TABLES.some((entry) => entry.name === name);
+
+/**
+ * Reads the JSON document written by Full System Backup:
+ * `{ app, kind, tables: { students: [...], ... }, skipped: [...] }`.
+ * Unknown tables are rejected (never guessed) and each value must be a list of
+ * objects, so a hand-edited file cannot silently write garbage.
+ */
+export function parseFullBackupJson(text: string): ParsedFullBackup {
+  let document: unknown;
+  try {
+    document = JSON.parse(text);
+  } catch {
+    throw new Error(t("This file is not valid JSON."));
+  }
+  if (!isRecord(document) || !isRecord(document.tables)) {
+    throw new Error(
+      t("This JSON file is not a Full System Backup (no tables object)."),
+    );
+  }
+  const tables = document.tables;
+  const names = Object.keys(tables);
+  if (names.length === 0) {
+    throw new Error(t("The backup file lists no tables."));
+  }
+  const groups: RestoredTableGroup[] = [];
+  for (const name of names) {
+    if (!isKnownBackupTable(name)) {
+      throw new Error(
+        t("The backup file contains an unsupported table: {table}.", {
+          table: name,
+        }),
+      );
+    }
+    const rows = tables[name];
+    if (!Array.isArray(rows) || !rows.every(isRecord)) {
+      throw new Error(
+        t("The rows of {table} are not a list of records.", { table: name }),
+      );
+    }
+    groups.push({
+      table: name,
+      rows: rows as Record<string, unknown>[],
+    });
+  }
+  // Keep the canonical order so parent tables restore before their children.
+  groups.sort(
+    (a, b) =>
+      RESTORE_TABLES.findIndex((entry) => entry.name === a.table) -
+      RESTORE_TABLES.findIndex((entry) => entry.name === b.table),
+  );
+  const skippedRaw = Array.isArray(document.skipped) ? document.skipped : [];
+  return {
+    generatedAt:
+      typeof document.generated_at === "string" ? document.generated_at : null,
+    includeDeleted:
+      typeof document.include_deleted === "boolean"
+        ? document.include_deleted
+        : null,
+    groups,
+    skipped: skippedRaw
+      .filter(isRecord)
+      .map((entry) => ({
+        table: String(entry.table ?? "?"),
+        message: String(entry.message ?? ""),
+      })),
+  };
 }
 
 // ------------------------------------------------------------ spreadsheet

@@ -170,7 +170,7 @@ function LayoutShell() {
                 />
               </button>
               {expanded && (
-                <div className="mt-1 space-y-1">
+                <div className="mt-0.5 space-y-0.5">
                   {item.children.map((child) => (
                     <button
                       key={child.key}
@@ -179,7 +179,7 @@ function LayoutShell() {
                         onNavigate?.();
                       }}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors",
+                        "flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium whitespace-nowrap transition-colors",
                         active === child.key
                           ? "bg-accent text-accent-foreground"
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",

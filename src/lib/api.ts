@@ -5679,15 +5679,20 @@ export async function updateTeacherAvatar(
 export type BackupTableName =
   | "students"
   | "teachers"
+  | "operators"
   | "payments"
+  | "payment_history"
   | "exams"
   | "publications"
   | "attendance"
-  | "settings"
+  | "absence_billets"
   | "planning"
   | "branches"
   | "branch_materials"
-  | "absence_billets";
+  | "events"
+  | "center_settings"
+  /** Legacy key/value settings table; kept so old dumps still restore. */
+  | "settings";
 
 /**
  * Raw rows for the admin Backup & Export page. Deliberately unfiltered: a
@@ -5697,57 +5702,29 @@ export type BackupTableName =
 export async function listBackupRows(
   table: BackupTableName,
 ): Promise<Record<string, unknown>[]> {
-  const { data, error } = await withTimeout(supabase.from(table).select("*"));
+  // center_settings is a single pinned row: back it up as exactly that row.
+  const query =
+    table === "center_settings"
+      ? supabase.from(table).select("*").eq("id", CENTER_SETTINGS_ID)
+      : supabase.from(table).select("*");
+  const { data, error } = await withTimeout(query);
   if (error) throw new Error(error.message);
   return (data ?? []) as Record<string, unknown>[];
-}
-
-/** Tables the operator's full-database JSON / CSV export downloads. */
-export const CENTER_EXPORT_TABLES: BackupTableName[] = [
-  "students",
-  "teachers",
-  "branches",
-  "branch_materials",
-  "absence_billets",
-];
-
-export interface CenterExportSnapshot {
-  generatedAt: string;
-  tables: { table: BackupTableName; rows: Record<string, unknown>[] }[];
-  /** Tables this database does not have yet (optional migrations). */
-  skipped: { table: BackupTableName; message: string }[];
-}
-
-/**
- * Fetches every table of the full-database export in one pass. A table that does
- * not exist yet (branches / branch_materials / absence_billets are optional
- * migrations) is reported in `skipped` instead of failing the whole backup.
- */
-export async function fetchCenterExportSnapshot(): Promise<CenterExportSnapshot> {
-  const results = await Promise.allSettled(
-    CENTER_EXPORT_TABLES.map((table) => listBackupRows(table)),
-  );
-  const tables: CenterExportSnapshot["tables"] = [];
-  const skipped: CenterExportSnapshot["skipped"] = [];
-  results.forEach((result, index) => {
-    const table = CENTER_EXPORT_TABLES[index];
-    if (result.status === "fulfilled") {
-      tables.push({ table, rows: result.value });
-    } else {
-      const reason = result.reason as unknown;
-      skipped.push({ table, message: errorMessage(reason) });
-    }
-  });
-  return { generatedAt: new Date().toISOString(), tables, skipped };
 }
 
 /** Exact row count for a backup card, read without transferring any rows. */
 export async function countBackupRows(
   table: BackupTableName,
 ): Promise<number> {
-  const { count, error } = await withTimeout(
-    supabase.from(table).select("*", { count: "exact", head: true }),
-  );
+  // Settings / Config counts row 1 of center_settings, never the whole table.
+  const query =
+    table === "center_settings"
+      ? supabase
+          .from(table)
+          .select("*", { count: "exact", head: true })
+          .eq("id", CENTER_SETTINGS_ID)
+      : supabase.from(table).select("*", { count: "exact", head: true });
+  const { count, error } = await withTimeout(query);
   if (error) throw new Error(error.message);
   return count ?? 0;
 }
@@ -5792,30 +5769,21 @@ export async function upsertBackupRows(
 }
 
 /**
- * Login-account rows for the Backup & Export "User Management" source. User
- * management has no table of its own — it is the login slice of the people
- * tables — so the backup combines both under one source. Columns are selected
- * explicitly (never `select *`) so schema drift cannot break the query, and
- * rows are unfiltered to keep trash-deleted accounts in backups.
+ * "Full Replace" restore: empties the table, then writes the backup rows.
+ * The delete uses `id is not null`, which PostgREST accepts on every table in
+ * the backup (uuid and integer primary keys alike) and which Supabase's
+ * "DELETE needs a filter" guard accepts. Callers download a safety backup
+ * first, so this never runs without a way back.
  */
-export async function listUserManagementBackupRows(): Promise<{
-  students: Record<string, unknown>[];
-  teachers: Record<string, unknown>[];
-}> {
-  const [std, tch] = await Promise.all([
-    withTimeout(
-      supabase.from("students").select("id, full_name, password, blocked"),
-    ),
-    withTimeout(
-      supabase
-        .from("teachers")
-        .select("id, full_name, password, blocked, specialty"),
-    ),
-  ]);
-  if (std.error) throw new Error(std.error.message);
-  if (tch.error) throw new Error(tch.error.message);
-  return {
-    students: (std.data ?? []) as Record<string, unknown>[],
-    teachers: (tch.data ?? []) as Record<string, unknown>[],
-  };
+export async function replaceBackupTable(
+  table: BackupTableName,
+  rows: Record<string, unknown>[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ restored: number; failed: number }> {
+  const { error } = await withTimeout(
+    supabase.from(table).delete().not("id", "is", null),
+  );
+  if (error) throw new Error(error.message);
+  return upsertBackupRows(table, rows, onProgress);
 }
+
