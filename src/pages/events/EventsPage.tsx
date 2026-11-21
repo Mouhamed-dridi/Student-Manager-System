@@ -37,7 +37,6 @@ export default function EventsPage({
   const [prevEvent, setPrevEvent] = useState(initialEvent);
   const { pushSection } = useViewHistory();
   const t = useT();
-
   // Adjust state during render if a new initialEvent is handed in
   if (initialEvent !== prevEvent) {
     setPrevEvent(initialEvent);
@@ -79,10 +78,11 @@ export default function EventsPage({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold">Events</h2>
+        <h2 className="text-2xl font-semibold">{t("Events")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Create center events, workshops, hackathons, and talks, or manage
-          published ones from Event History.
+          {t(
+            "Create center events, workshops, hackathons, and talks, or manage published ones from Event History.",
+          )}
         </p>
       </div>
 
@@ -93,15 +93,15 @@ export default function EventsPage({
           className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
         >
           <Plus className="h-4 w-4" />
-          Create event
+          {t("Create event")}
         </button>
         <button
           type="button"
-          onClick={() => pushSection("event-history", "Event History")}
+          onClick={() => pushSection("event-history", t("Event History"))}
           className="inline-flex items-center gap-2 rounded-xl border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-foreground"
         >
           <History className="h-4 w-4" />
-          View Event History
+          {t("View Event History")}
         </button>
       </div>
     </div>

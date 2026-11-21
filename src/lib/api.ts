@@ -640,6 +640,7 @@ export async function restoreStudents(ids: string[]): Promise<void> {
 export interface AccountInfo {
   id: string;
   fullName: string;
+  email: string;
   password?: string;
   blocked?: boolean;
   program: string;
@@ -652,16 +653,17 @@ export async function listStudentAccounts(): Promise<AccountInfo[]> {
   const builder = capabilities.students
     ? supabase
         .from("students")
-        .select("id, full_name, password, blocked, programs(code), trainings(name)")
+        .select("id, full_name, email, password, blocked, programs(code), trainings(name)")
         .or("is_deleted.is.false,is_deleted.is.null")
     : supabase
         .from("students")
-        .select("id, full_name, password, blocked, programs(code), trainings(name)");
+        .select("id, full_name, email, password, blocked, programs(code), trainings(name)");
   const { data, error } = await withTimeout(builder);
   if (error) throw new Error(error.message);
   let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     fullName: (r.full_name as string) ?? "",
+    email: (r.email as string | null) ?? "",
     password: (r.password as string) ?? undefined,
     blocked: r.blocked === true,
     program: ((r.programs as { code: string } | null)?.code ?? "") as Student["program"],
@@ -879,16 +881,17 @@ export async function listTeacherAccounts(): Promise<AccountInfo[]> {
   const builder = capabilities.teachers
     ? supabase
         .from("teachers")
-        .select("id, full_name, password, blocked, specialty")
+        .select("id, full_name, email, password, blocked, specialty")
         .or("is_deleted.is.false,is_deleted.is.null")
     : supabase
         .from("teachers")
-        .select("id, full_name, password, blocked, specialty");
+        .select("id, full_name, email, password, blocked, specialty");
   const { data, error } = await withTimeout(builder);
   if (error) throw new Error(error.message);
   let accounts = (data ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as string,
     fullName: (r.full_name as string) ?? "",
+    email: (r.email as string | null) ?? "",
     password: (r.password as string) ?? undefined,
     blocked: r.blocked === true,
     program: "",

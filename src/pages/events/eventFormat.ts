@@ -45,18 +45,24 @@ export function asLink(value: string): string | null {
  * midnight by `new Date()`, which renders as the *previous* day in a
  * negative-offset timezone, so the parts are built into a local date instead.
  */
-export function formatDay(value: string): string {
+export function formatDay(value: string, locale?: string): string {
   if (!value) return "—";
   const [y, m, d] = value.split("-").map(Number);
   if (!y || !m || !d) return value;
-  return new Date(y, m - 1, d).toLocaleDateString();
+  return new Date(y, m - 1, d).toLocaleDateString(locale);
 }
 
-/** One 24h "HH:mm" clock value rendered in the visitor's locale. */
-function formatClock(hours: string, minutes: string): string {
+/**
+ * One 24h "HH:mm" clock value rendered in the given locale. Passing no locale
+ * keeps the browser default, which is what the non-i18n screens expect.
+ */
+function formatClock(hours: string, minutes: string, locale?: string): string {
   const date = new Date();
   date.setHours(Number(hours), Number(minutes), 0, 0);
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return date.toLocaleTimeString(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /**
@@ -67,15 +73,15 @@ function formatClock(hours: string, minutes: string): string {
  * single `"HH:mm"`. Both are read here, so the history table and the teacher
  * detail page render the window instead of "Invalid Date".
  */
-export function formatTime(value: string): string {
+export function formatTime(value: string, locale?: string): string {
   if (!value) return "—";
   const match = value.match(
     /(\d{1,2}):(\d{2})(?:\s*[-–]\s*(\d{1,2}):(\d{2}))?/,
   );
   if (!match) return value;
-  const start = formatClock(match[1], match[2]);
+  const start = formatClock(match[1], match[2], locale);
   if (!match[3] || !match[4]) return start;
-  return `${start} – ${formatClock(match[3], match[4])}`;
+  return `${start} – ${formatClock(match[3], match[4], locale)}`;
 }
 
 /** Splits the stored `event_time` text back into the form's three fields. */
@@ -111,8 +117,12 @@ export function composeEventTime(
 }
 
 /** "start – end", collapsing to a single day when both are the same. */
-export function formatDateRange(startsOn: string, endsOn: string): string {
-  const start = formatDay(startsOn);
+export function formatDateRange(
+  startsOn: string,
+  endsOn: string,
+  locale?: string,
+): string {
+  const start = formatDay(startsOn, locale);
   if (!endsOn || endsOn === startsOn) return start;
-  return `${start} – ${formatDay(endsOn)}`;
+  return `${start} – ${formatDay(endsOn, locale)}`;
 }

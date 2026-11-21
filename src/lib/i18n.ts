@@ -380,6 +380,40 @@ const FRENCH: Record<string, string> = {
   Gadget: "Gadget",
   Other: "Autre",
 
+  // ----------------------------------------------------------- event history
+  "Every event that has been created. Use Edit to change one, or Events → New Event to add another.":
+    "Tous les événements créés. Utilisez Modifier pour en changer un, ou Événements → Nouvel événement pour en ajouter un autre.",
+  "Search by title, partner or type…":
+    "Rechercher par titre, partenaire ou type…",
+  "No events match your search.":
+    "Aucun événement ne correspond à votre recherche.",
+  "{shown} of {total} events shown":
+    "{shown} sur {total} événements affichés",
+  event: "événement",
+  events: "événements",
+  participant: "participant",
+  participants: "participants",
+  organizer: "organisateur",
+  organizers: "organisateurs",
+  member: "membre",
+  members: "membres",
+  Unknown: "Inconnu",
+  "Organizers: {names}": "Organisateurs : {names}",
+  "Members: {names}": "Membres : {names}",
+  "Organizers and members are stored as ids; names are resolved live.":
+    "Les organisateurs et les membres sont stockés sous forme d'identifiants ; les noms sont résolus en direct.",
+  "Delete event": "Supprimer l'événement",
+  "Delete event?": "Supprimer l'événement ?",
+  "{name} will be hidden from this list. The row is kept in the database.":
+    "{name} sera masqué de cette liste. La ligne reste dans la base de données.",
+  "{name} was deleted.": "{name} a été supprimé.",
+  "Loading events…": "Chargement des événements…",
+  "Events you create will be listed here, with their cover image, schedule and participants.":
+    "Les événements que vous créez seront listés ici, avec leur image de couverture, leur programme et leurs participants.",
+  "View Event History": "Voir l'historique des événements",
+  "Create center events, workshops, hackathons, and talks, or manage published ones from Event History.":
+    "Créez des événements, ateliers, hackathons et conférences pour le centre, ou gérez les événements publiés depuis l'historique des événements.",
+
   // ------------------------------------------------------------- students/teachers
   "Student List": "Liste des étudiants",
   "Add Student": "Ajouter un étudiant",

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   CalendarDays,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,7 +41,8 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatPersonName } from "@/lib/format";
-import { useT } from "@/lib/i18n";
+import { useI18n, useT } from "@/lib/i18n";
+import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { asLink, formatDateRange, formatTime } from "./eventFormat";
 
 interface EventHistoryPageProps {
@@ -60,11 +62,15 @@ interface EventHistoryTableProps {
   studentName: (id: string) => string;
   onEdit: (event: AppEvent) => void;
   onDelete: (event: AppEvent) => void;
+  /** `en-US` / `fr-FR`, so the schedule column follows the app language. */
+  locale?: string;
+  /** Bottom summary bar rendered inside the table card. */
+  summary?: ReactNode;
 }
 
 /**
  * `events.type` is free text with no CHECK, so the known creator options get a
- * dictionary key while anything else is title-cased as stored.
+ * dictionary key while anything else keeps its stored shape.
  */
 const EVENT_TYPE_KEYS: Record<string, string> = {
   event: "Event",
@@ -80,7 +86,12 @@ function eventTypeLabel(
 ): string {
   const raw = (type ?? "").trim();
   if (!raw) return "—";
-  return translate(EVENT_TYPE_KEYS[raw.toLowerCase()] ?? formatPersonName(raw));
+  const known = EVENT_TYPE_KEYS[raw.toLowerCase()];
+  if (known) return translate(known);
+  // Only re-case values that were stored fully lower/upper case, so a custom
+  // type such as "AI Summit" keeps its acronym instead of "Ai Summit".
+  const uniformCase = raw === raw.toLowerCase() || raw === raw.toUpperCase();
+  return uniformCase ? formatPersonName(raw) : raw;
 }
 
 /** Normalized key so the filter pills match regardless of stored casing. */
@@ -88,12 +99,12 @@ function typeKeyOf(type: string | null | undefined): string {
   return (type ?? "").trim().toLowerCase();
 }
 
-/** Monochrome pill shared by the table cell and the filter bar. */
+/** Monochrome zinc pill shared by the table cell and the filter bar. */
 function typePillClass(selected = false): string {
   return cn(
-    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+    "inline-flex items-center rounded-full border font-medium whitespace-nowrap transition-colors",
     selected
-      ? "border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+      ? "border-transparent bg-zinc-900 text-white dark:bg-white dark:text-zinc-950"
       : "border-zinc-200 bg-zinc-100 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   );
 }
@@ -105,6 +116,8 @@ export function EventHistoryTable({
   studentName,
   onEdit,
   onDelete,
+  locale,
+  summary,
 }: EventHistoryTableProps) {
   const t = useT();
 
@@ -196,67 +209,74 @@ export function EventHistoryTable({
                   <img
                     src={event.coverUrl}
                     alt=""
-                    className="h-10 w-16 rounded object-cover"
+                    className="h-10 w-16 rounded-md object-cover"
                   />
                 ) : (
-                  <div className="flex h-10 w-16 items-center justify-center rounded bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
+                  <div className="flex h-10 w-16 items-center justify-center rounded-md bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-500">
                     <ImagePlus className="h-4 w-4" />
                   </div>
                 )}
               </TableCell>
-              <TableCell className="font-medium text-zinc-900 dark:text-zinc-100">
-                {event.title}
+              <TableCell
+                title={event.title}
+                className="font-medium text-zinc-900 dark:text-zinc-100"
+              >
+                <div className="max-w-[18rem] truncate">{event.title}</div>
               </TableCell>
               <TableCell>
-                <span className={typePillClass()}>
+                <span className={cn(typePillClass(), "h-6 px-2 text-[11px]")}>
                   {eventTypeLabel(event.type, t)}
                 </span>
               </TableCell>
               <TableCell className="whitespace-nowrap text-zinc-600 dark:text-zinc-300">
-                {formatDateRange(event.startsOn, event.endsOn)}
+                {formatDateRange(event.startsOn, event.endsOn, locale)}
               </TableCell>
               <TableCell className="whitespace-nowrap text-zinc-600 dark:text-zinc-300">
-                {formatTime(event.eventTime)}
+                {formatTime(event.eventTime, locale)}
               </TableCell>
               <TableCell
                 title={partnersLabel(event.partners)}
                 className="max-w-[18rem] text-zinc-700 dark:text-zinc-300"
               >
-                {event.partners?.length ? (
-                  event.partners.map((partner, index) => {
-                    const href = asLink(partner.link);
-                    // A partner with no name is a legacy row that stored a bare
-                    // link, so fall back to showing the URL as the label.
-                    const label = partner.name
-                      ? formatPersonName(partner.name)
-                      : partner.link;
-                    return (
-                      <Fragment key={`${partner.name}-${partner.link}-${index}`}>
-                        {index > 0 && ", "}
-                        {href ? (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={partner.link}
-                            className="font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
-                          >
-                            {label}
-                          </a>
-                        ) : (
-                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                            {label}
-                          </span>
-                        )}
-                      </Fragment>
-                    );
-                  })
-                ) : (
-                  <span className="text-zinc-400 dark:text-zinc-600">—</span>
-                )}
+                <div className="truncate">
+                  {event.partners?.length ? (
+                    event.partners.map((partner, index) => {
+                      const href = asLink(partner.link);
+                      // A partner with no name is a legacy row that stored a
+                      // bare link, so fall back to showing the URL as the label.
+                      const label = partner.name
+                        ? formatPersonName(partner.name)
+                        : partner.link;
+                      return (
+                        <Fragment
+                          key={`${partner.name}-${partner.link}-${index}`}
+                        >
+                          {index > 0 && ", "}
+                          {href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={partner.link}
+                              className="font-medium text-zinc-900 underline-offset-2 hover:underline dark:text-zinc-100"
+                            >
+                              {label}
+                            </a>
+                          ) : (
+                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                              {label}
+                            </span>
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  ) : (
+                    <span className="text-zinc-400 dark:text-zinc-600">—</span>
+                  )}
+                </div>
               </TableCell>
               <TableCell
-                className="text-xs text-zinc-600 dark:text-zinc-400"
+                className="text-xs whitespace-nowrap text-zinc-600 dark:text-zinc-400"
                 title={peopleDetail(event)}
               >
                 {event.organizers.length + event.members.length === 0
@@ -313,6 +333,11 @@ export function EventHistoryTable({
           ))}
         </TableBody>
       </Table>
+      {summary && (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-zinc-200 px-4 py-2.5 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+          {summary}
+        </div>
+      )}
     </div>
   );
 }
@@ -326,7 +351,8 @@ export default function EventHistoryPage({
   onEdit,
   notice,
 }: EventHistoryPageProps) {
-  const t = useT();
+  const { t, language } = useI18n();
+  const locale = language === "fr" ? "fr-FR" : "en-US";
   const [events, setEvents] = useState<AppEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -354,6 +380,10 @@ export default function EventHistoryPage({
     return subscribeToTable("events", refresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Realtime is the primary sync; this covers a socket that dropped while the
+  // tab was in the background, like the other operator pages.
+  useRefetchOnFocus(refresh);
 
   useEffect(() => {
     listTeachers()
@@ -428,10 +458,13 @@ export default function EventHistoryPage({
     });
   }, [events, query, typeFilter, t]);
 
-  const totalPeople = (events ?? []).reduce(
+  // The summary bar reflects the rows on screen, so filtering never leaves a
+  // participant count that belongs to hidden events.
+  const visiblePeople = filteredEvents.reduce(
     (sum, event) => sum + event.organizers.length + event.members.length,
     0,
   );
+  const filtered = filteredEvents.length !== (events ?? []).length;
 
   return (
     <div className="text-zinc-900 dark:text-zinc-100">
@@ -484,12 +517,12 @@ export default function EventHistoryPage({
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <div className="relative w-full max-w-sm">
               <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
-              <input
+              <Input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={t("Search by title, partner or type…")}
                 aria-label={t("Search by title, partner or type…")}
-                className="h-9 w-full rounded-lg border border-zinc-200 bg-white pr-3 pl-9 text-sm text-zinc-900 transition-colors outline-none placeholder:text-zinc-400 focus:border-zinc-500 focus:ring-0 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-zinc-400"
+                className="h-9 border-zinc-200 bg-white pr-3 pl-9 text-sm text-zinc-900 placeholder:text-zinc-400 focus-visible:border-zinc-500 focus-visible:ring-0 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus-visible:border-zinc-400"
               />
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -499,7 +532,7 @@ export default function EventHistoryPage({
                 onClick={() => setTypeFilter("all")}
                 className={cn(
                   typePillClass(typeFilter === "all"),
-                  "px-3 py-1 transition-colors",
+                  "h-8 px-3 text-xs",
                 )}
               >
                 {t("All")}
@@ -512,7 +545,7 @@ export default function EventHistoryPage({
                   onClick={() => setTypeFilter(option.value)}
                   className={cn(
                     typePillClass(typeFilter === option.value),
-                    "px-3 py-1 transition-colors",
+                    "h-8 px-3 text-xs",
                   )}
                 >
                   {option.label}
@@ -533,23 +566,45 @@ export default function EventHistoryPage({
                 studentName={studentName}
                 onEdit={onEdit}
                 onDelete={(event) => void handleDelete(event)}
+                locale={locale}
+                summary={
+                  <>
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                      {filtered
+                        ? t("{shown} of {total} events shown", {
+                            shown: filteredEvents.length,
+                            total: events.length,
+                          })
+                        : `${events.length} ${
+                            events.length === 1 ? t("event") : t("events")
+                          }`}
+                    </span>
+                    <span aria-hidden className="text-zinc-300 dark:text-zinc-700">
+                      ·
+                    </span>
+                    <span>
+                      {visiblePeople}{" "}
+                      {visiblePeople === 1
+                        ? t("participant")
+                        : t("participants")}
+                    </span>
+                    <span
+                      aria-hidden
+                      className="hidden text-zinc-300 sm:inline dark:text-zinc-700"
+                    >
+                      ·
+                    </span>
+                    <span className="hidden sm:inline">
+                      {t(
+                        "Organizers and members are stored as ids; names are resolved live.",
+                      )}
+                    </span>
+                  </>
+                }
               />
             )}
           </div>
-
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-            <CalendarDays className="h-3.5 w-3.5" />
-            {filteredEvents.length !== events.length
-              ? `${t("{shown} of {total} events shown", {
-                  shown: filteredEvents.length,
-                  total: events.length,
-                })} · `
-              : ""}
-            {events.length} {events.length === 1 ? t("event") : t("events")},{" "}
-            {totalPeople}{" "}
-            {totalPeople === 1 ? t("participant") : t("participants")}.{" "}
-            {t("Organizers and members are stored as ids; names are resolved live.")}
-          </p>
         </>
       )}
     </div>
