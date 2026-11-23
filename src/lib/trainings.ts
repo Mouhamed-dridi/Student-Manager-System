@@ -1,4 +1,5 @@
 import { listTeacherCourses } from "@/lib/api";
+import { normalizeCourseName } from "@/lib/courseDisplay";
 
 export const PROGRAMS = ["BTP", "BTS", "CAP"] as const;
 
@@ -133,13 +134,13 @@ export interface ScheduledCourseView extends ScheduledCourse, CourseDetails {
 
 // Teacher-created courses are scoped to the teacher's class. Prefer matching
 // by the real foreign keys (program_id/training_id); fall back to the joined
-const norm = (s: string | undefined | null) =>
-  (s ?? "").trim().toLocaleLowerCase();
-
-// A course belongs to a student's class when either their UUID FKs agree
-// (both sides non-null) or the resolved program/training NAME text agrees
-// (trimmed, case-insensitive) — guarding against whitespace/case drift in the
-// joined programs(code)/trainings(name) strings.
+// program/training NAME text, normalized so case, accents and punctuation do
+// not hide a course ("Réseaux & Sécurité" vs "reseaux-securite").
+//
+// A course belongs to a student's class when their UUID FKs agree (both sides
+// non-null) or the resolved names agree. A missing name on either side is
+// treated as unknown rather than a mismatch: a legacy course row whose program
+// FK was never backfilled still reaches the student whose training matches.
 function courseInClass(
   c: TeacherCourseRecord,
   program: string,
@@ -156,9 +157,12 @@ function courseInClass(
   ) {
     return true;
   }
-  return (
-    norm(c.program) === norm(program) && norm(c.training) === norm(training)
-  );
+  const courseTraining = normalizeCourseName(c.training);
+  const wantedTraining = normalizeCourseName(training);
+  if (!wantedTraining || courseTraining !== wantedTraining) return false;
+  const courseProgram = normalizeCourseName(c.program);
+  const wantedProgram = normalizeCourseName(program);
+  return !wantedProgram || !courseProgram || courseProgram === wantedProgram;
 }
 
 // Seeded entries carry no id/teacherId; teacher-created ones do.
@@ -173,13 +177,11 @@ export async function loadScheduledCourses(
 ): Promise<ScheduledCourseView[]> {
   const seeded: ScheduledCourseView[] =
     COURSES[program as Program]?.[training] ?? [];
-  const addedRows =
-    assignment?.programId && assignment.trainingId
-      ? await listTeacherCourses({
-          programId: assignment.programId,
-          trainingId: assignment.trainingId,
-        })
-      : await listTeacherCourses();
+  // Fetch the whole shared `courses` table and filter here. A server-side
+  // program_id/training_id filter silently hides legacy teacher rows whose FKs
+  // are NULL even when their joined names match the student's class — the
+  // teacher's Cours module lists those rows, so the student must see them too.
+  const addedRows = await listTeacherCourses();
   // TeacherCourseRecord and ScheduledCourseView declare the same field set, so
   // a live course row carries straight across. This used to be an explicit
   // destructure-and-rebuild allow-list, which silently dropped any field added

@@ -33,6 +33,138 @@ export type PlanningSessionType = (typeof PLANNING_SESSION_TYPES)[number];
 export type PlanningTab = "timetable" | "exams" | "pfe";
 
 /**
+ * The three kinds of entry the teacher Planning page can log. They are a view
+ * over `session_type`, not a second column: a category is derived from the
+ * stored type so the operator Planification tabs, the student planning and the
+ * branch grid keep working unchanged.
+ */
+export type PlanningCategory = "course" | "exam" | "pfe";
+
+export const PLANNING_CATEGORIES = ["course", "exam", "pfe"] as const;
+
+/** Exam kinds the teacher entry form offers (stored as `session_type`). */
+export const PLANNING_EXAM_ENTRY_TYPES = ["DS", "Exam", "TP"] as const;
+
+/**
+ * PFE milestones, stored on the existing PFE session types: supervision maps
+ * to `PFE`, the pre-defence to `STAGE` and the final defence to `Soutenance`.
+ * Reusing the stored vocabulary keeps the operator tabs and badges meaningful.
+ */
+export const PLANNING_PFE_ENTRY_TYPES = ["PFE", "STAGE", "Soutenance"] as const;
+
+/** Which category an entry belongs to, from its stored session type. */
+export function planningCategoryFor(
+  sessionType: PlanningSessionType | null | undefined,
+): PlanningCategory {
+  if (
+    sessionType &&
+    (PLANNING_EXAM_SESSION_TYPES as readonly string[]).includes(sessionType)
+  ) {
+    return "exam";
+  }
+  if (
+    sessionType &&
+    (PLANNING_PFE_SESSION_TYPES as readonly string[]).includes(sessionType)
+  ) {
+    return "pfe";
+  }
+  return "course";
+}
+
+/** English i18n key for a category badge (`COURSE`, `EXAM`, `PFE`). */
+export function planningCategoryKey(category: PlanningCategory): string {
+  switch (category) {
+    case "exam":
+      return "Exam";
+    case "pfe":
+      return "PFE";
+    default:
+      return "Course";
+  }
+}
+
+/** The session types the entry form offers for a category. */
+export function planningEntryTypesForCategory(
+  category: PlanningCategory,
+): readonly PlanningSessionType[] {
+  switch (category) {
+    case "exam":
+      return PLANNING_EXAM_ENTRY_TYPES;
+    case "pfe":
+      return PLANNING_PFE_ENTRY_TYPES;
+    default:
+      return PLANNING_TIMETABLE_SESSION_TYPES;
+  }
+}
+
+/** Session type pre-selected when the teacher switches category. */
+export function defaultPlanningSessionType(
+  category: PlanningCategory,
+): PlanningSessionType {
+  return planningEntryTypesForCategory(category)[0];
+}
+
+/**
+ * English i18n key for a stored session type. The dictionary is keyed by the
+ * English copy, so this is also the label shown to the user.
+ */
+export function planningSessionTypeKey(
+  sessionType: PlanningSessionType,
+): string {
+  switch (sessionType) {
+    case "PFE":
+      return "Supervision";
+    case "STAGE":
+      return "Pre-defense";
+    case "Soutenance":
+      return "Final defense";
+    case "TP":
+      return "Graded practical";
+    case "Exam":
+      return "Exam";
+    case "DS":
+      return "DS";
+    case "TD":
+      return "TD";
+    case "Principale":
+      return "Principale";
+    case "SYNTHESE":
+      return "SYNTHESIS";
+    case "Online":
+      return "Online";
+    default:
+      return "In-class";
+  }
+}
+
+function normalizeClock(value: string): string {
+  const match = value.match(/^(\d{1,2}):(\d{2})/);
+  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
+}
+
+/** Splits a stored "08:30 - 10:00" back into two time inputs. */
+export function parseSessionTime(value?: string): {
+  start: string;
+  end: string;
+} {
+  const range = value?.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+  if (range) {
+    return { start: normalizeClock(range[1]), end: normalizeClock(range[2]) };
+  }
+  const single = value?.match(/(\d{1,2}:\d{2})/);
+  return { start: single ? normalizeClock(single[1]) : "", end: "" };
+}
+
+/** Joins two time inputs into the stored display window. */
+export function formatSessionTime(
+  start: string,
+  end: string,
+): string | undefined {
+  if (start && end) return `${start} - ${end}`;
+  return start || end || undefined;
+}
+
+/**
  * The three sub-navigation tabs of the operator Planification section. Each tab
  * is defined by the `planning.session_type` values it shows, so the tab bar,
  * the session counts and the branch grid can never disagree.
@@ -181,6 +313,10 @@ export interface PlanningRecord {
    * (supervisor, president, examiner). Absent on every other session kind.
    */
   juryTeacherIds?: string[];
+  /** Daily lesson material: public Storage/link URL (`planning.material_url`). */
+  materialUrl?: string;
+  /** Display name of the attached material (`planning.material_name`). */
+  materialName?: string;
 }
 
 /** One selectable class: the label shown in the form plus the FKs the entry stores. */
@@ -204,6 +340,9 @@ export interface PlanningEntryValues {
   content: string;
   /** Optional operator note (`planning.notes`); omitted by other callers. */
   notes?: string;
+  /** Daily lesson material attached to a Course & Materials entry. */
+  materialUrl?: string;
+  materialName?: string;
   /**
    * Operator only: the teacher the session belongs to after saving. The teacher
    * portal never sets it, so its entries always stay on the signed-in teacher.

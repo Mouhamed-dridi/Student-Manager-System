@@ -52,21 +52,53 @@ export function parseDateKey(key: string | null | undefined): Date | null {
   return new Date(year, month - 1, day);
 }
 
-/** "2026-10-21" -> "21 Oct 2026"; anything unparsable is returned as typed. */
-export function formatLongDate(key: string | null | undefined): string {
+/**
+ * "2026-10-21" -> "21 Oct 2026"; anything unparsable is returned as typed.
+ * Pass a locale ("fr-FR"/"en-US") for a localized month; without one the
+ * historical English short-month format is kept for existing callers.
+ */
+export function formatLongDate(
+  key: string | null | undefined,
+  locale?: string,
+): string {
   const date = parseDateKey(key);
   if (!date) return key?.trim() ? key : "—";
+  if (locale) {
+    return date.toLocaleDateString(locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }
   return `${date.getDate()} ${MONTH_LABELS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-/** Short label for the 7 cards of the week, e.g. "Mon 21". */
-export function formatDayLabel(date: Date): string {
+/** Short label for the 7 cards of the week, e.g. "Mon 21" / "lun. 21". */
+export function formatDayLabel(date: Date, locale?: string): string {
+  if (locale) {
+    return date.toLocaleDateString(locale, {
+      weekday: "short",
+      day: "numeric",
+    });
+  }
   return `${WEEKDAY_LABELS[(date.getDay() + 6) % 7]} ${date.getDate()}`;
 }
 
 /** "20 – 26 Oct 2026" (or "28 Sep – 4 Oct 2026" across a month boundary). */
-export function formatWeekRange(start: Date): string {
+export function formatWeekRange(start: Date, locale?: string): string {
   const end = addDays(start, 6);
+  if (locale) {
+    const startLabel = start.toLocaleDateString(locale, {
+      day: "numeric",
+      month: "short",
+    });
+    const endLabel = end.toLocaleDateString(locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+    return `${startLabel} – ${endLabel}`;
+  }
   const startLabel = `${start.getDate()} ${start.getMonth() === end.getMonth() ? "" : MONTH_LABELS[start.getMonth()] + " "}`;
   return `${startLabel}– ${end.getDate()} ${MONTH_LABELS[end.getMonth()]} ${end.getFullYear()}`;
 }

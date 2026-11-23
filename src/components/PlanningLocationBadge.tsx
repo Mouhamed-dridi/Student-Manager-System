@@ -1,5 +1,6 @@
 import { Video } from "lucide-react";
 import { PlanningRoomBadge } from "@/components/PlanningRoomBadge";
+import { cn } from "@/lib/utils";
 import {
   ONLINE_SESSION_LOCATION,
   type PlanningSessionType,
@@ -15,15 +16,23 @@ import {
 export function PlanningLocationBadge({
   room,
   sessionType,
+  monochrome = false,
 }: {
   room?: string | null;
   sessionType?: PlanningSessionType | null;
+  /** Strict zinc rendering, for the teacher page's monochrome views. */
+  monochrome?: boolean;
 }) {
   if (sessionType === "Online") {
     return (
       <span
         title={`Online session on ${ONLINE_SESSION_LOCATION}`}
-        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300"
+        className={cn(
+          "inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold",
+          monochrome
+            ? "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-400"
+            : "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+        )}
       >
         <Video className="h-3 w-3 shrink-0" />
         {ONLINE_SESSION_LOCATION}

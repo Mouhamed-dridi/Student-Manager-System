@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
+import { AlertCircle, Check, ImagePlus, Trash2 } from "lucide-react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faGithub,
@@ -124,7 +124,7 @@ export default function TeacherSettingsPage() {
   }
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <h2 className="text-2xl font-semibold">{t("Settings")}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         {t("Manage your profile and display preferences.")}
@@ -185,6 +185,7 @@ function SocialLinksCard({
   lastName: string;
   avatarUrl?: string;
 }) {
+  const { t } = useI18n();
   const [links, setLinks] = useState<TeacherSocialLinks>(() => {
     // Database first; the localStorage mirror only fills gaps for accounts
     // whose links were saved before user_profiles existed.
@@ -237,7 +238,7 @@ function SocialLinksCard({
       } catch {
         // Local mirror only — the database copy already succeeded.
       }
-      setMessage("Links saved.");
+      setMessage(t("Links saved."));
     } catch (err) {
       setLinkError(errorMessage(err));
     } finally {
@@ -246,21 +247,26 @@ function SocialLinksCard({
   };
 
   return (
-    <Card>
+    <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
       <CardHeader>
-        <CardTitle>Social links</CardTitle>
+        <CardTitle className="text-base font-semibold">{t("Social links")}</CardTitle>
         <CardDescription>
-          Optional links to your professional profiles.
+          {t("Optional links to your profiles. Leave a field empty to remove it.")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {SOCIAL_FIELDS.map(({ key, label, icon, placeholder }) => (
           <div key={key} className="space-y-2">
-            <Label htmlFor={`teacher-${key}`}>{label}</Label>
-            <div className="flex items-stretch overflow-hidden rounded-lg border border-input transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30">
+            <Label
+              htmlFor={`teacher-${key}`}
+              className="text-xs font-medium text-zinc-700 dark:text-zinc-300"
+            >
+              {label}
+            </Label>
+            <div className="flex items-stretch overflow-hidden rounded-lg border border-zinc-200 transition-colors focus-within:border-zinc-900 focus-within:ring-1 focus-within:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-within:border-zinc-100 dark:focus-within:ring-zinc-100/10">
               <span
                 aria-hidden="true"
-                className="flex items-center border-r border-input bg-muted/60 px-2.5 text-muted-foreground"
+                className="flex items-center border-r border-zinc-200 bg-zinc-50 px-3 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
               >
                 <FontAwesomeIcon icon={icon} className="text-sm" />
               </span>
@@ -273,29 +279,38 @@ function SocialLinksCard({
                 value={links[key]}
                 onChange={(event) => handleChange(key, event.target.value)}
                 placeholder={placeholder}
-                className="rounded-none border-0 bg-transparent focus-visible:ring-0 dark:bg-transparent"
+                className="rounded-none border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
               />
             </div>
           </div>
         ))}
 
         <p className="text-xs text-muted-foreground">
-          Stored on your profile (user_profiles) and mirrored in this browser.
+          {t("Visible on your profile to students and colleagues.")}
         </p>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save Links"}
+        <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="w-full border border-transparent bg-zinc-900 font-medium text-white hover:bg-zinc-800 lg:w-auto dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100"
+          >
+            {saving ? t("Saving…") : t("Save Links")}
           </Button>
           {message && (
-            <p className="text-sm text-green-600 dark:text-green-400">
+            <div className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm text-zinc-900 lg:w-auto dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-100">
+              <Check className="h-4 w-4 shrink-0 text-zinc-700 dark:text-zinc-300" />
               {message}
-            </p>
+            </div>
           )}
           {linkError && (
-            <p className="text-sm text-red-600 dark:text-red-400">
+            <div
+              role="alert"
+              className="flex w-full items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3.5 py-2 text-sm text-zinc-800 lg:w-auto dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            >
+              <AlertCircle className="h-4 w-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
               {linkError}
-            </p>
+            </div>
           )}
         </div>
       </CardContent>
@@ -390,7 +405,7 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
 
   const handleSaveProfile = async () => {
     if (!firstName.trim()) {
-      setSaveError("First name is required.");
+      setSaveError(t("First name is required."));
       setSaveMessage(null);
       return;
     }
@@ -420,7 +435,7 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
       });
-      setSaveMessage("Changes saved.");
+      setSaveMessage(t("Changes saved."));
       // The navbar and header show the record loaded by TeacherLayout; ask it to
       // re-read so a new name appears without a reload.
       notifyTeacherProfileChanged();
@@ -432,12 +447,14 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
+    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+      {/* Left column on desktop: photo + personal information */}
+      <div className="space-y-6">
+      <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <CardHeader>
-          <CardTitle>Profile photo</CardTitle>
+          <CardTitle className="text-base font-semibold">{t("Profile photo")}</CardTitle>
           <CardDescription>
-            Shown in the top bar of the teacher portal.
+            {t("Shown in the top bar of the teacher portal.")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -446,11 +463,11 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
               name={previewName}
               src={avatar ?? undefined}
               fallback="T"
-              className="h-20 w-20 border-2 text-xl"
+              className="h-20 w-20 border border-zinc-200 text-xl dark:border-zinc-800"
             />
 
             <div className="min-w-0 flex-1 space-y-3">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -461,91 +478,108 @@ function ProfileTab({ teacher }: { teacher: Teacher }) {
                 <Button
                   type="button"
                   variant="outline"
+                  className="w-full border-zinc-200 text-zinc-900 hover:bg-zinc-50 lg:w-auto dark:border-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-900"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={avatarBusy}
                 >
-                  <ImagePlus className="mr-2 h-4 w-4" />
-                  {avatarBusy ? "Uploading…" : "Upload photo"}
+                  <ImagePlus className="mr-2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                  {avatarBusy ? t("Uploading…") : t("Upload photo")}
                 </Button>
                 {avatar && (
                   <Button
                     type="button"
                     variant="ghost"
+                    className="w-full text-zinc-600 hover:bg-zinc-100 lg:w-auto dark:text-zinc-400 dark:hover:bg-zinc-900"
                     onClick={handleRemoveAvatar}
                     disabled={avatarBusy}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove
+                    <Trash2 className="mr-2 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                    {t("Remove")}
                   </Button>
                 )}
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Uploaded to the profilePictuer Storage bucket; the public URL is
-                saved on your profile (user_profiles) and shown across the
-                portal.
+                {t("Accepted formats: JPG, PNG, or WebP (max 2 MB).")}
               </p>
               {avatarError && (
-                <p className="text-xs text-red-600 dark:text-red-400">
-                  {avatarError}
-                </p>
+                <div
+                  role="alert"
+                  className="flex items-start gap-1.5 text-xs text-zinc-800 dark:text-zinc-200"
+                >
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-500" />
+                  <span className="min-w-0">{avatarError}</span>
+                </div>
               )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <CardHeader>
-          <CardTitle>Personal information</CardTitle>
+          <CardTitle className="text-base font-semibold">{t("Personal Information")}</CardTitle>
           <CardDescription>
-            Your name is also how you sign in to the teacher portal.
+            {t("Your name is also how you sign in to the teacher portal.")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="teacher-first-name">First Name (Prénom)</Label>
+              <Label htmlFor="teacher-first-name">{t("First Name")}</Label>
               <Input
                 id="teacher-first-name"
                 value={firstName}
                 onChange={(event) => setFirstName(event.target.value)}
-                placeholder="First name"
+                placeholder={t("First name")}
                 autoComplete="given-name"
+                className="border-zinc-200 bg-white focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="teacher-last-name">Last Name (Nom)</Label>
+              <Label htmlFor="teacher-last-name">{t("Last Name")}</Label>
               <Input
                 id="teacher-last-name"
                 value={lastName}
                 onChange={(event) => setLastName(event.target.value)}
-                placeholder="Last name"
+                placeholder={t("Last name")}
                 autoComplete="family-name"
+                className="border-zinc-200 bg-white focus-visible:ring-zinc-900/10 dark:border-zinc-800 dark:bg-zinc-900/50 dark:focus-visible:ring-zinc-100/10"
               />
             </div>
           </div>
 
           <Separator />
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={handleSaveProfile} disabled={saving}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+            <Button
+              onClick={handleSaveProfile}
+              disabled={saving}
+              className="w-full border border-transparent bg-zinc-900 font-medium text-white hover:bg-zinc-800 lg:w-auto dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100"
+            >
               {saving ? t("Saving…") : t("Save Changes")}
             </Button>
             {saveMessage && (
-              <p className="text-sm text-green-600 dark:text-green-400">
+              <div className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3.5 py-2 text-sm text-zinc-900 lg:w-auto dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-100">
+                <Check className="h-4 w-4 shrink-0 text-zinc-700 dark:text-zinc-300" />
                 {saveMessage}
-              </p>
+              </div>
             )}
             {saveError && (
-              <p className="text-sm text-red-600 dark:text-red-400">
+              <div
+                role="alert"
+                className="flex w-full items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3.5 py-2 text-sm text-zinc-800 lg:w-auto dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+              >
+                <AlertCircle className="h-4 w-4 shrink-0 text-zinc-600 dark:text-zinc-400" />
                 {saveError}
-              </p>
+              </div>
             )}
           </div>
         </CardContent>
       </Card>
+      </div>
 
+      {/* Right column on desktop: social links; third card on mobile */}
       <SocialLinksCard
         key={teacher.id}
         teacherId={teacher.id}
@@ -667,15 +701,21 @@ function GeneralTab() {
             </div>
 
             {(status || error) && (
-              <p
+              <div
+                role={error ? "alert" : "status"}
                 className={
                   error
-                    ? "text-sm text-red-600 dark:text-red-400"
-                    : "text-sm text-green-600 dark:text-green-400"
+                    ? "flex items-center gap-2 text-sm text-zinc-800 dark:text-zinc-200"
+                    : "flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300"
                 }
               >
-                {error ?? t(status ?? "")}
-              </p>
+                {error ? (
+                  <AlertCircle className="h-4 w-4 shrink-0 text-zinc-500" />
+                ) : (
+                  <Check className="h-4 w-4 shrink-0 text-zinc-700 dark:text-zinc-300" />
+                )}
+                <span className="min-w-0">{error ?? t(status ?? "")}</span>
+              </div>
             )}
           </>
         )}

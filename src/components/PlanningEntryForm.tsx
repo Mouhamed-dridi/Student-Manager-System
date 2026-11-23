@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
-import { Video } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  ClipboardList,
+  GraduationCap,
+  Loader2,
+  Paperclip,
+  Video,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,15 +20,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useI18n } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import {
   DEFAULT_PLANNING_CLASSROOM,
+  defaultPlanningSessionType,
+  formatSessionTime,
   isPlanningSessionType,
   ONLINE_SESSION_LOCATION,
+  parseSessionTime,
+  planningCategoryFor,
+  planningEntryTypesForCategory,
+  planningSessionTypeKey,
   planningSlotKey,
   PLANNING_CLASSROOMS,
   PLANNING_SESSION_TYPES,
 } from "@/pages/teacher-portal/planning";
 import type {
+  PlanningCategory,
   PlanningClassOption,
   PlanningEntryValues,
   PlanningRecord,
@@ -40,26 +58,6 @@ import type {
 
 const NO_CLASS = "__none";
 const CUSTOM_TIME = "__custom";
-
-function normalizeClock(value: string): string {
-  const match = value.match(/^(\d{1,2}):(\d{2})/);
-  return match ? `${match[1].padStart(2, "0")}:${match[2]}` : "";
-}
-
-/** Splits a stored "08:30 - 10:00" back into two time inputs. */
-function parseSessionTime(value?: string): { start: string; end: string } {
-  const range = value?.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-  if (range) {
-    return { start: normalizeClock(range[1]), end: normalizeClock(range[2]) };
-  }
-  const single = value?.match(/(\d{1,2}:\d{2})/);
-  return { start: single ? normalizeClock(single[1]) : "", end: "" };
-}
-
-function formatSessionTime(start: string, end: string): string | undefined {
-  if (start && end) return `${start} - ${end}`;
-  return start || end || undefined;
-}
 
 /** The live form state, reported so a caller can check for timetable clashes. */
 export interface PlanningEntryDraft {
@@ -118,7 +116,31 @@ export interface PlanningEntryFormProps {
   onDateChange?: (date: string) => void;
   /** Landscape grid when the dialog is wide enough, single column otherwise. */
   layout?: PlanningEntryLayout;
+  /**
+   * Teacher entry dialog: adds the Course & Materials / Exam / PFE switcher,
+   * narrows the session types per category, relabels the notes field and offers
+   * the daily lesson material attachment. Operator forms keep the full list.
+   */
+  showCategory?: boolean;
+  /**
+   * Uploads a daily lesson material and resolves to its public URL and display
+   * name. Only the teacher page passes it, because the upload is namespaced by
+   * the signed-in teacher's id.
+   */
+  onUploadMaterial?: (
+    file: File,
+  ) => Promise<{ url: string; name: string }>;
 }
+
+const CATEGORY_OPTIONS: {
+  value: PlanningCategory;
+  label: string;
+  icon: typeof BookOpen;
+}[] = [
+  { value: "course", label: "Course & Materials", icon: BookOpen },
+  { value: "exam", label: "Exam Planning", icon: ClipboardList },
+  { value: "pfe", label: "PFE Planning", icon: GraduationCap },
+];
 
 export default function PlanningEntryForm({
   initial,
@@ -141,7 +163,19 @@ export default function PlanningEntryForm({
   date,
   onDateChange,
   layout = "stack",
+  showCategory = false,
+  onUploadMaterial,
 }: PlanningEntryFormProps) {
+  const { t } = useI18n();
+  // A category is a view over the stored session type, so an old row opens on
+  // the right tab without a second column.
+  const [category, setCategory] = useState<PlanningCategory>(() =>
+    planningCategoryFor(initial?.sessionType),
+  );
+  const [materialUrl, setMaterialUrl] = useState(initial?.materialUrl ?? "");
+  const [materialName, setMaterialName] = useState(initial?.materialName ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [teacherId, setTeacherId] = useState(
     initial?.teacherId ?? defaultTeacherId ?? "",
   );
@@ -206,16 +240,75 @@ export default function PlanningEntryForm({
         .length
     : 0;
 
+  const categoryTypes = showCategory
+    ? planningEntryTypesForCategory(category)
+    : PLANNING_SESSION_TYPES;
+  const contentLabel = !showCategory
+    ? t("Topic / course details")
+    : t(
+        category === "exam"
+          ? "Exam notes"
+          : category === "pfe"
+            ? "Jury / supervision notes"
+            : "Topic / course details",
+      );
+  const contentPlaceholder = !showCategory
+    ? t("e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks")
+    : t(
+        category === "exam"
+          ? "e.g. DS on Chapter 4 — closed book, calculators allowed"
+          : category === "pfe"
+            ? "e.g. Mid-project review with the supervisor and the jury"
+            : "e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks",
+      );
+
+  const changeCategory = (next: PlanningCategory) => {
+    setCategory(next);
+    // Keep a stored type that already belongs to the chosen category (editing a
+    // DS stays a DS), otherwise start from that category's first kind.
+    if (planningCategoryFor(sessionType) !== next) {
+      const nextType = defaultPlanningSessionType(next);
+      setSessionType(nextType);
+      // Online is the only type with a platform location; switching away from
+      // it restores a real classroom so the room select is never locked empty.
+      if (nextType === "Online") {
+        setRoomName(ONLINE_SESSION_LOCATION);
+      } else if (roomName === ONLINE_SESSION_LOCATION) {
+        setRoomName(DEFAULT_PLANNING_CLASSROOM);
+      }
+    }
+  };
+
+  const handleMaterialUpload = async (file: File | null) => {
+    if (!file || !onUploadMaterial) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const uploaded = await onUploadMaterial(file);
+      setMaterialUrl(uploaded.url);
+      setMaterialName(uploaded.name);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const timeInvalid = Boolean(startTime && endTime && endTime < startTime);
   const teacherMissing = Boolean(teacherOptions && !teacherId);
   const contentMissing = requireContent && content.trim() === "";
-  const valid = !contentMissing && !timeInvalid && !teacherMissing;
+  const valid =
+    !contentMissing && !timeInvalid && !teacherMissing && !uploading;
 
   const isGrid = layout === "grid";
   // In the grid, every cell is a column of its own; `space-y-1.5` keeps the
   // label, control and hint tight enough for three rows to fit a landscape
   // dialog without scrolling.
-  const fieldClass = isGrid ? "min-w-0 space-y-1.5" : "space-y-2";
+  const fieldClass = isGrid ? "min-w-0 space-y-1.5" : "min-w-0 space-y-2";
+  // Long option labels must truncate inside the trigger instead of widening
+  // the card past its right border.
+  const controlClass =
+    "w-full min-w-0 max-w-full box-border [&_[data-slot=select-value]]:min-w-0";
 
   // Optional: the operator branch timetable watches the draft to warn about
   // an overlapping teacher, room or class before the session is saved.
@@ -238,57 +331,92 @@ export default function PlanningEntryForm({
   ]);
 
   return (
-    <div className={isGrid ? "space-y-3" : "space-y-4"}>
+    <div className={isGrid ? "space-y-3" : "min-w-0 space-y-4"}>
+      {showCategory ? (
+        <div
+          role="group"
+          aria-label={t("Planning category")}
+          className="grid w-full min-w-0 grid-cols-3 gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100 p-[3px] dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          {CATEGORY_OPTIONS.map((option) => {
+            const active = option.value === category;
+            const Icon = option.icon;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={active}
+                onClick={() => changeCategory(option.value)}
+                className={cn(
+                  "inline-flex min-h-9 min-w-0 items-center justify-center gap-1.5 rounded-md px-1.5 py-1.5 text-[11px] leading-tight font-medium transition-colors",
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 text-center">
+                  {t(option.label)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div
         className={
           isGrid
             ? "grid grid-cols-1 items-start gap-x-4 gap-y-3 md:grid-cols-2 lg:grid-cols-3"
-            : "space-y-4"
+            : "min-w-0 space-y-4"
         }
       >
         {onDateChange ? (
           <div className={fieldClass}>
-            <Label htmlFor="log-date">Date</Label>
+            <Label htmlFor="log-date">{t("Date")}</Label>
             <Input
               id="log-date"
               type="date"
+              className={controlClass}
               value={date ?? ""}
               onChange={(event) => onDateChange(event.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Changing the date moves the session.
+              {t("Changing the date moves the session.")}
             </p>
           </div>
         ) : null}
 
         {lockClass ? (
           <div className={fieldClass}>
-            <Label>Class / Branch</Label>
-            <div className="flex h-8 items-center rounded-lg border bg-muted/40 px-2.5 text-sm">
-              <span className="truncate">{className || "No class"}</span>
+            <Label>{t("Class / Branch")}</Label>
+            <div className="flex h-8 min-w-0 items-center rounded-lg border bg-muted/40 px-2.5 text-sm">
+              <span className="truncate">{className || t("No class")}</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Fixed by the branch this timetable belongs to.
+              {t("Fixed by the branch this timetable belongs to.")}
             </p>
           </div>
         ) : (
           <div className={fieldClass}>
-            <Label>Class</Label>
+            <Label>{t("Class")}</Label>
             <Select
               value={className || NO_CLASS}
               onValueChange={(value) =>
                 setClassName(value === NO_CLASS ? "" : (value ?? ""))
               }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className={controlClass}>
                 <SelectValue
                   placeholder={
-                    classes.length > 0 ? "Select class" : "No class assigned"
+                    classes.length > 0
+                      ? t("Select class")
+                      : t("No class assigned")
                   }
                 />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_CLASS}>No class</SelectItem>
+                <SelectItem value={NO_CLASS}>{t("No class")}</SelectItem>
                 {classes.map((c) => (
                   <SelectItem key={c.label} value={c.label}>
                     {c.label}
@@ -300,16 +428,16 @@ export default function PlanningEntryForm({
         )}
 
         <div className={fieldClass}>
-          <Label>{subjects ? "Subject" : "Course"}</Label>
+          <Label>{t(subjects ? "Subject" : "Course")}</Label>
           <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
-            <SelectTrigger className="w-full">
+            <SelectTrigger className={controlClass}>
               <SelectValue
                 placeholder={
                   subjectOptions.length > 0
                     ? subjects
-                      ? "Select subject"
-                      : "Select course"
-                    : "No courses available"
+                      ? t("Select subject")
+                      : t("Select course")
+                    : t("No courses available")
                 }
               />
             </SelectTrigger>
@@ -325,13 +453,13 @@ export default function PlanningEntryForm({
 
         {effectiveTeacherOptions ? (
           <div className={fieldClass}>
-            <Label>Teacher</Label>
+            <Label>{t("Teacher")}</Label>
             <Select
               value={teacherId}
               onValueChange={(value) => setTeacherId(value ?? "")}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select teacher" />
+              <SelectTrigger className={controlClass}>
+                <SelectValue placeholder={t("Select teacher")} />
               </SelectTrigger>
               <SelectContent>
                 {effectiveTeacherOptions.map((option) => (
@@ -343,20 +471,42 @@ export default function PlanningEntryForm({
             </Select>
             <p className="text-xs text-muted-foreground">
               {qualifiedIds.length > 0
-                ? `${linkedTeacherCount} ${
-                    linkedTeacherCount === 1 ? "teacher is" : "teachers are"
-                  } linked to ${course}. Changing this moves the session to that teacher's planning.`
+                ? t(
+                    linkedTeacherCount === 1
+                      ? "{count} teacher is linked to {course}. Changing this moves the session to that teacher's planning."
+                      : "{count} teachers are linked to {course}. Changing this moves the session to that teacher's planning.",
+                    { count: linkedTeacherCount, course },
+                  )
                 : teacherQualifier && course
-                  ? `No teacher is linked to ${course} yet — showing all teachers.`
-                  : "Changing this moves the session to that teacher's planning."}
+                  ? t(
+                      "No teacher is linked to {course} yet — showing all teachers.",
+                      { course },
+                    )
+                  : t(
+                      "Changing this moves the session to that teacher's planning.",
+                    )}
             </p>
           </div>
         ) : null}
 
         <div className={fieldClass}>
-          <Label>Session Type</Label>
+          <Label>
+            {t(
+              showCategory
+                ? category === "exam"
+                  ? "Exam Type"
+                  : category === "pfe"
+                    ? "PFE Milestone"
+                    : "Session Type"
+                : "Session Type",
+            )}
+          </Label>
           <Select
             value={sessionType}
+            items={categoryTypes.map((type) => ({
+              value: type,
+              label: t(planningSessionTypeKey(type)),
+            }))}
             onValueChange={(value) => {
               if (!isPlanningSessionType(value)) return;
               setSessionType(value);
@@ -369,13 +519,13 @@ export default function PlanningEntryForm({
               }
             }}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className={controlClass}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PLANNING_SESSION_TYPES.map((type) => (
+              {categoryTypes.map((type) => (
                 <SelectItem key={type} value={type}>
-                  {type}
+                  {t(planningSessionTypeKey(type))}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -384,25 +534,27 @@ export default function PlanningEntryForm({
 
         {sessionType === "Online" ? (
           <div className={fieldClass}>
-            <Label>Location</Label>
-            <div className="flex h-8 items-center gap-1.5 rounded-lg border bg-muted/40 px-2.5 text-sm">
-              <Video className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+            <Label>{t("Session location")}</Label>
+            <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2.5 text-sm">
+              <Video className="h-3.5 w-3.5 shrink-0 text-zinc-600 dark:text-zinc-400" />
               <span className="truncate">{ONLINE_SESSION_LOCATION}</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Online sessions meet on {ONLINE_SESSION_LOCATION}, so no
-              classroom is assigned.
+              {t(
+                "Online sessions meet on {platform}, so no classroom is assigned.",
+                { platform: ONLINE_SESSION_LOCATION },
+              )}
             </p>
           </div>
         ) : (
           <div className={fieldClass}>
-            <Label>Classroom / Room</Label>
+            <Label>{t("Classroom / Room")}</Label>
             <Select
               value={roomName}
               onValueChange={(value) => setRoomName(value ?? "")}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select classroom" />
+              <SelectTrigger className={controlClass}>
+                <SelectValue placeholder={t("Select classroom")} />
               </SelectTrigger>
               <SelectContent>
                 {roomOptions.map((room) => (
@@ -413,13 +565,15 @@ export default function PlanningEntryForm({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Shown as a badge next to the session time in every planning view.
+              {t(
+                "Shown as a badge next to the session time in every planning view.",
+              )}
             </p>
           </div>
         )}
 
         <div className={fieldClass}>
-          <Label>Time</Label>
+          <Label>{t("Time")}</Label>
           {timeSlots && timeSlots.length > 0 ? (
             <Select
               value={slotValue}
@@ -433,8 +587,8 @@ export default function PlanningEntryForm({
                 }
               }}
             >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a time slot" />
+              <SelectTrigger className={controlClass}>
+                <SelectValue placeholder={t("Select a time slot")} />
               </SelectTrigger>
               <SelectContent>
                 {timeSlots.map((slot) => (
@@ -442,76 +596,170 @@ export default function PlanningEntryForm({
                     {slot}
                   </SelectItem>
                 ))}
-                <SelectItem value={CUSTOM_TIME}>Custom times…</SelectItem>
+                <SelectItem value={CUSTOM_TIME}>
+                  {t("Custom times…")}
+                </SelectItem>
               </SelectContent>
             </Select>
           ) : null}
           {!timeSlots || slotValue === CUSTOM_TIME ? (
-            <div className="flex items-center gap-2">
+            <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2.5">
               <Input
                 id="log-start-time"
                 type="time"
-                className="min-w-0 flex-1"
-                aria-label="Session start time"
+                className="w-full min-w-0"
+                aria-label={t("Session start time")}
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
               />
-              <span className="text-sm text-muted-foreground">to</span>
+              <span className="text-sm text-muted-foreground">{t("to")}</span>
               <Input
                 id="log-end-time"
                 type="time"
-                className="min-w-0 flex-1"
-                aria-label="Session end time"
+                className="w-full min-w-0"
+                aria-label={t("Session end time")}
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
           ) : null}
           {timeInvalid ? (
-            <p className="text-xs text-destructive">
-              End time must be after the start time.
-            </p>
+            <div
+              role="alert"
+              className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100"
+            >
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>{t("End time must be after the start time.")}</span>
+            </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Optional. Pick a slot, or use custom times for any other window.
+              {t(
+                "Optional. Pick a slot, or use custom times for any other window.",
+              )}
             </p>
           )}
         </div>
 
         <div
           className={
-            isGrid ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-2" : "space-y-2"
+            isGrid ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-2" : "min-w-0 space-y-2"
           }
         >
-          <Label htmlFor="log-content">Topic / course details</Label>
+          <Label htmlFor="log-content">{contentLabel}</Label>
           <Textarea
             id="log-content"
             rows={isGrid ? 3 : undefined}
-            placeholder="e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks"
+            className="w-full min-w-0 max-w-full box-border"
+            placeholder={contentPlaceholder}
             value={content}
             onChange={(e) => setContent(e.target.value)}
             required
           />
         </div>
 
+        {showCategory && category === "course" ? (
+          <div
+            className={
+              isGrid
+                ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
+                : "min-w-0 space-y-2"
+            }
+          >
+            <Label htmlFor="log-material">{t("Lesson material")}</Label>
+            <Input
+              id="log-material"
+              type="url"
+              className="w-full min-w-0 max-w-full box-border"
+              placeholder={t(
+                "https://… link to the slides, PDF or resource used in class",
+              )}
+              value={materialUrl}
+              onChange={(e) => {
+                setMaterialUrl(e.target.value);
+                // A pasted link replaces the uploaded file: drop its name so
+                // the badge falls back to the URL instead of a wrong filename.
+                setMaterialName("");
+              }}
+            />
+            {onUploadMaterial ? (
+              <Input
+                id="log-material-file"
+                type="file"
+                disabled={uploading}
+                className="w-full min-w-0 max-w-full box-border"
+                aria-label={t("Upload a lesson material")}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0] ?? null;
+                  void handleMaterialUpload(picked);
+                }}
+              />
+            ) : null}
+            {uploading ? (
+              <p className="flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                {t("Uploading…")}
+              </p>
+            ) : materialUrl ? (
+              <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-2.5 py-1.5 dark:border-zinc-700 dark:bg-zinc-800/80">
+                <span className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    {materialName || materialUrl}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  aria-label={t("Remove material")}
+                  className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  onClick={() => {
+                    setMaterialUrl("");
+                    setMaterialName("");
+                    setUploadError(null);
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : null}
+            {uploadError ? (
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100"
+              >
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0">{uploadError}</span>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Optional. Students see this material on their schedule for that day.",
+                )}
+              </p>
+            )}
+          </div>
+        ) : null}
+
         {showNotes ? (
           <div
             className={
               isGrid
                 ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
-                : "space-y-2"
+                : "min-w-0 space-y-2"
             }
           >
-            <Label htmlFor="log-notes">Comment / internal note</Label>
+            <Label htmlFor="log-notes">{t("Comment / internal note")}</Label>
             <Textarea
               id="log-notes"
               rows={isGrid ? 2 : undefined}
-              placeholder="Administrative note, e.g. exam room change or a reminder…"
+              className="w-full min-w-0 max-w-full box-border"
+              placeholder={t(
+                "Administrative note, e.g. exam room change or a reminder…",
+              )}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Optional. Internal only — students never see this.
+              {t("Optional. Internal only — students never see this.")}
             </p>
           </div>
         ) : null}
@@ -521,12 +769,12 @@ export default function PlanningEntryForm({
         className={
           isGrid
             ? "flex flex-wrap items-center justify-end gap-2 border-t pt-3"
-            : "flex justify-end gap-2"
+            : "flex items-center justify-end gap-3 pt-2"
         }
       >
         {showCancel ? (
           <Button variant="outline" size="sm" onClick={onCancel}>
-            Cancel
+            {t("Cancel")}
           </Button>
         ) : null}
         <Button
@@ -557,6 +805,16 @@ export default function PlanningEntryForm({
               // database without the notes migration keeps saving sessions.
               ...(showNotes && (notes.trim() || initial?.notes)
                 ? { notes: notes.trim() }
+                : {}),
+              // Teacher dialog: the material follows the category, so switching
+              // an entry to Exam/PFE clears a previously attached course file.
+              ...(showCategory
+                ? {
+                    materialUrl:
+                      category === "course" ? materialUrl.trim() : "",
+                    materialName:
+                      category === "course" ? materialName.trim() : "",
+                  }
                 : {}),
               ...(teacherOptions ? { teacherId: teacherId || undefined } : {}),
             });

@@ -40,9 +40,9 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
   return (
     <Card
       className={cn(
-        "group h-full gap-0 overflow-hidden p-0",
+        "group h-full gap-0 overflow-hidden border-zinc-200 bg-white p-0 dark:border-zinc-800 dark:bg-zinc-950",
         onOpen &&
-          "relative transition-shadow hover:ring-foreground/25 focus-within:ring-3 focus-within:ring-ring/50",
+          "relative transition-shadow hover:ring-2 hover:ring-zinc-400/40 focus-within:ring-2 focus-within:ring-zinc-400/40 dark:hover:ring-zinc-600/50 dark:focus-within:ring-zinc-600/50",
       )}
     >
       {/* Fixed 16/10 cover keeps every card in a row the same height; the
@@ -90,7 +90,7 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
           </span>
         ) : null}
         {materialCount > 0 ? (
-          <span className="flex items-center gap-1">
+          <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
             <Paperclip className="h-3 w-3" />
             {materialCount === 1
               ? t("1 material")
@@ -98,7 +98,7 @@ function CourseCard({ course, training, actions, onOpen, teacherName }: CourseCa
           </span>
         ) : null}
         {course.published ? (
-          <span className="ml-auto">
+          <span className="ml-auto inline-flex items-center rounded-full border border-zinc-200 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
             {t("Added {date}", { date: formatPublished(course.published) })}
           </span>
         ) : null}

@@ -38,6 +38,21 @@ export function thumbnailForTraining(training: string): string {
   return entry?.[1] ?? courseCoverFallback;
 }
 
+/**
+ * Case-, accent- and punctuation-insensitive key for course/support and class
+ * names, so a filter or a class comparison does not depend on how the row was
+ * typed ("Réseaux & Sécurité" === "reseaux-securite"). Never empty when the
+ * input has at least one letter or digit.
+ */
+export function normalizeCourseName(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 /** `published_at` timestamp rendered as "Added Sep 25, 2026". */
 export function formatPublished(published: string): string {
   return new Date(published).toLocaleDateString(undefined, {

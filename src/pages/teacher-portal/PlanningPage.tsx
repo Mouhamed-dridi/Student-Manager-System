@@ -7,6 +7,7 @@ import {
   FileText,
   LayoutGrid,
   List,
+  Paperclip,
   Pencil,
   Plus,
   Search,
@@ -38,7 +39,7 @@ import { Input } from "@/components/ui/input";
 import { DataError, DataLoading } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
-import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
+import { useI18n } from "@/lib/i18n";
 import {
   classNameFor,
   deletePlanning,
@@ -48,10 +49,17 @@ import {
   listTeacherCourses,
   teacherCourseAssignment,
   updatePlanning,
+  uploadCourseMaterial,
 } from "@/lib/api";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import { cn } from "@/lib/utils";
+import {
+  planningCategoryFor,
+  planningCategoryKey,
+  planningSessionTypeKey,
+} from "./planning";
 import type {
+  PlanningCategory,
   PlanningClassOption,
   PlanningEntryValues,
   PlanningRecord,
@@ -117,9 +125,74 @@ function Segmented<T extends string>({
   );
 }
 
+type PlanningFilter = "all" | PlanningCategory;
+
+/** Filter pills of the toolbar: all three entry kinds, or one of them. */
+const FILTER_OPTIONS: { value: PlanningFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "course", label: "Courses" },
+  { value: "exam", label: "Exams" },
+  { value: "pfe", label: "PFE" },
+];
+
+/**
+ * The category pill on every logged entry (`COURSE`, `EXAM`, `PFE`). Strictly
+ * zinc: the category is the only emphasis, so a dense week stays readable
+ * without a colour per session kind.
+ */
+function PlanningCategoryPill({
+  category,
+}: {
+  category: PlanningCategory;
+}) {
+  const { t } = useI18n();
+  return (
+    <span className="inline-flex shrink-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-600 uppercase dark:border-zinc-700 dark:text-zinc-400">
+      {t(planningCategoryKey(category))}
+    </span>
+  );
+}
+
+/** Paperclip badge shown when a Course & Materials entry carries a file/link. */
+function PlanningMaterialBadge({ entry }: { entry: PlanningRecord }) {
+  const { t } = useI18n();
+  if (!entry.materialUrl) return null;
+  return (
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+      <Paperclip className="h-3 w-3 shrink-0" />
+      <span className="truncate">
+        {entry.materialName || t("Material attached")}
+      </span>
+    </span>
+  );
+}
+
+/** Same badge as a link, for the linear view where the card body is not a button. */
+function PlanningMaterialLink({ entry }: { entry: PlanningRecord }) {
+  const { t } = useI18n();
+  if (!entry.materialUrl) return null;
+  return (
+    <a
+      href={entry.materialUrl}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+    >
+      <Paperclip className="h-3 w-3 shrink-0" />
+      <span className="truncate">
+        {entry.materialName || t("Lesson material")}
+      </span>
+    </a>
+  );
+}
+
 /** "Tuesday, Oct 20" — the year is only added for the all-sessions list. */
-function dayHeading(dateKey: string, withYear: boolean): string {
-  return new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, {
+function dayHeading(
+  dateKey: string,
+  withYear: boolean,
+  locale: string,
+): string {
+  return new Date(`${dateKey}T00:00:00`).toLocaleDateString(locale, {
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -205,6 +278,8 @@ interface DayDialogProps {
   onSave: (values: PlanningEntryValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
+  /** Uploads a daily lesson material for the Course & Materials tab. */
+  onUploadMaterial: (file: File) => Promise<{ url: string; name: string }>;
 }
 
 function DayDialog({
@@ -216,7 +291,9 @@ function DayDialog({
   onSave,
   onDeleteRequest,
   onClose,
+  onUploadMaterial,
 }: DayDialogProps) {
+  const { t, language } = useI18n();
   const [formOpen, setFormOpen] = useState(
     entries.length === 0 || Boolean(initialEditingId),
   );
@@ -228,18 +305,21 @@ function DayDialog({
     ? (entries.find((e) => e.id === editingId) ?? null)
     : null;
 
-  const longDate = new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const longDate = new Date(`${date}T00:00:00`).toLocaleDateString(
+    language === "fr" ? "fr-FR" : "en-US",
+    {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    },
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent className="box-border w-[calc(100vw-2rem)] max-w-lg overflow-hidden p-6 sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Planning entry</DialogTitle>
+          <DialogTitle>{t("Planning entry")}</DialogTitle>
           <DialogDescription>{longDate}</DialogDescription>
         </DialogHeader>
 
@@ -249,8 +329,10 @@ function DayDialog({
             initial={editing ?? undefined}
             courses={courses}
             classes={classes}
-            submitLabel={editingId ? "Save Changes" : "Add Entry"}
+            submitLabel={editingId ? t("Save Changes") : t("Add Entry")}
             showCancel={!!editingId}
+            showCategory
+            onUploadMaterial={onUploadMaterial}
             onSubmit={(values) => onSave(values, editingId)}
             onCancel={() => {
               setEditingId(null);
@@ -264,17 +346,21 @@ function DayDialog({
                 <li key={e.id} className="rounded-md border p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-sm font-medium">
-                          {e.course || "—"}
-                        </p>
-                        <PlanningSessionTypeBadge
-                          sessionType={e.sessionType}
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <PlanningCategoryPill
+                          category={planningCategoryFor(e.sessionType)}
                         />
+                        <span className="truncate text-sm font-medium">
+                          {e.course || t("Logged session")}
+                        </span>
+                        <span className="text-[10px] font-medium text-muted-foreground">
+                          {t(planningSessionTypeKey(e.sessionType))}
+                        </span>
                       </div>
                       {(e.sessionTime ||
                         e.className ||
                         e.roomName ||
+                        e.materialUrl ||
                         e.sessionType === "Online") && (
                         <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                           {e.sessionTime && (
@@ -287,6 +373,7 @@ function DayDialog({
                             <PlanningLocationBadge
                               room={e.roomName}
                               sessionType={e.sessionType}
+                              monochrome
                             />
                           )}
                           {e.className && (
@@ -295,6 +382,7 @@ function DayDialog({
                               {e.className}
                             </span>
                           )}
+                          <PlanningMaterialBadge entry={e} />
                         </p>
                       )}
                     </div>
@@ -308,15 +396,17 @@ function DayDialog({
                         }}
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                        Edit
+                        {t("Edit")}
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        aria-label={`Delete entry ${e.course || ""}`.trim()}
+                        aria-label={t("Delete entry {course}", {
+                          course: e.course || "",
+                        }).trim()}
                         onClick={() => onDeleteRequest(e)}
                       >
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                       </Button>
                     </span>
                   </div>
@@ -336,7 +426,7 @@ function DayDialog({
               }}
             >
               <Plus className="h-4 w-4" />
-              Add Entry
+              {t("Add Entry")}
             </Button>
           </div>
         )}
@@ -346,6 +436,8 @@ function DayDialog({
 }
 
 export default function PlanningPage() {
+  const { t, language } = useI18n();
+  const locale = language === "fr" ? "fr-FR" : "en-US";
   // undefined = session record still loading; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   const [entries, setEntries] = useState<PlanningRecord[] | null>(null);
@@ -354,6 +446,7 @@ export default function PlanningPage() {
   const [cursor, setCursor] = useState(() => startOfWeek(new Date()));
   const [view, setView] = useState<PlanningView>("grid");
   const [scope, setScope] = useState<PlanningScope>("week");
+  const [filter, setFilter] = useState<PlanningFilter>("all");
   const [query, setQuery] = useState("");
   const [dialog, setDialog] = useState<{
     date: string;
@@ -395,10 +488,11 @@ export default function PlanningPage() {
   if (teacher === null) {
     return (
       <div>
-        <h2 className="text-2xl font-semibold">Planning</h2>
+        <h2 className="text-2xl font-semibold">{t("Planning")}</h2>
         <p className="mt-4 text-sm text-muted-foreground">
-          Your teacher record could not be found. It may have been removed by
-          the administration.
+          {t(
+            "Your teacher record could not be found. It may have been removed by the administration.",
+          )}
         </p>
       </div>
     );
@@ -407,8 +501,8 @@ export default function PlanningPage() {
   if (teacher === undefined || entries === null) {
     return (
       <div>
-        <h2 className="text-2xl font-semibold">Planning</h2>
-        <DataLoading label="Loading planning…" />
+        <h2 className="text-2xl font-semibold">{t("Planning")}</h2>
+        <DataLoading label={t("Loading planning…")} />
       </div>
     );
   }
@@ -430,6 +524,21 @@ export default function PlanningPage() {
 
   const myEntries = entries.filter((p) => p.teacherId === teacher.id);
 
+  // The category pills narrow the week, the linear view and the export at once,
+  // so what is on screen is exactly what a teacher hands out.
+  const visibleEntries =
+    filter === "all"
+      ? myEntries
+      : myEntries.filter(
+          (p) => planningCategoryFor(p.sessionType) === filter,
+        );
+
+  const materialUploader = (file: File) =>
+    uploadCourseMaterial(file, file.name, teacher.id).then((url) => ({
+      url,
+      name: file.name,
+    }));
+
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(cursor);
     d.setDate(cursor.getDate() + i);
@@ -438,7 +547,7 @@ export default function PlanningPage() {
   const weekKeys = weekDays.map(dateKeyOf);
   const weekKeySet = new Set(weekKeys);
 
-  const weekEntries = myEntries
+  const weekEntries = visibleEntries
     .filter((p) => weekKeySet.has(p.date))
     .sort(
       (a, b) =>
@@ -475,7 +584,7 @@ export default function PlanningPage() {
   const listSource =
     scope === "week"
       ? weekEntries
-      : [...myEntries].sort(
+      : [...visibleEntries].sort(
           (a, b) =>
             b.date.localeCompare(a.date) ||
             (a.sessionTime ?? "99:99").localeCompare(
@@ -527,13 +636,27 @@ export default function PlanningPage() {
       ? `${shortFmt.format(weekStart)} – ${fullFmt.format(weekEnd)}`
       : `${fullFmt.format(weekStart)} – ${fullFmt.format(weekEnd)}`;
 
-  const exportHeaders = ["Date", "Time", "Class", "Course", "Topic covered"];
+  const exportHeaders = [
+    t("Date"),
+    t("Time"),
+    t("Category"),
+    t("Class"),
+    t("Course"),
+    t("Session Type"),
+    t("Topic covered"),
+    t("Lesson material"),
+  ];
   const exportRows = weekEntries.map((p) => [
     p.date,
     p.sessionTime ?? "",
+    t(planningCategoryKey(planningCategoryFor(p.sessionType))),
     p.className ?? "",
     p.course ?? "",
+    t(planningSessionTypeKey(p.sessionType)),
     p.content,
+    p.materialUrl
+      ? [p.materialName, p.materialUrl].filter(Boolean).join(" — ")
+      : "",
   ]);
   const fileStem = `planning-${weekKeys[0]}`;
 
@@ -548,29 +671,35 @@ export default function PlanningPage() {
   };
 
   const exportPdf = () => {
-    const doc = new jsPDF();
+    // Landscape: the category and the attached material add two columns, so the
+    // portrait page would squeeze the topic into an unreadable strip.
+    const doc = new jsPDF({ orientation: "landscape" });
     doc.setFontSize(14);
-    doc.text(`Planning — ${rangeLabel}`, 14, 16);
+    doc.text(`${t("Planning")} — ${rangeLabel}`, 14, 16);
     autoTable(doc, {
       startY: 22,
       head: [exportHeaders],
       body: exportRows,
       styles: { fontSize: 9, cellPadding: 2 },
       columnStyles: {
-        0: { cellWidth: 22 },
-        1: { cellWidth: 24 },
-        2: { cellWidth: 45 },
-        3: { cellWidth: 40 },
+        0: { cellWidth: 24 },
+        1: { cellWidth: 26 },
+        2: { cellWidth: 24 },
+        3: { cellWidth: 46 },
+        4: { cellWidth: 44 },
+        5: { cellWidth: 26 },
       },
     });
     doc.save(`${fileStem}.pdf`);
   };
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold">Planning</h2>
+    // Full-height column so the week grid eats the rest of the viewport
+    // instead of collapsing to its content height in the top third.
+    <div className="flex min-h-[calc(100vh-5rem)] w-full min-w-0 flex-col">
+      <h2 className="text-2xl font-semibold">{t("Planning")}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Click any day to log what was studied with your class.
+        {t("Click any day to log what was studied with your class.")}
       </p>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
@@ -578,7 +707,7 @@ export default function PlanningPage() {
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Previous week"
+            aria-label={t("Previous week")}
             onClick={() => stepWeek(-1)}
           >
             <ChevronLeft className="h-4 w-4" />
@@ -589,40 +718,51 @@ export default function PlanningPage() {
           <Button
             variant="outline"
             size="icon-sm"
-            aria-label="Next week"
+            aria-label={t("Next week")}
             onClick={() => stepWeek(1)}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
-        <Segmented
-          label="Planning view"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "grid", label: "Grid View", icon: LayoutGrid },
-            { value: "list", label: "Linear View", icon: List },
-          ]}
-        />
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={weekEntries.length === 0}
-            onClick={exportExcel}
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            Export as Excel
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={weekEntries.length === 0}
-            onClick={exportPdf}
-          >
-            <FileText className="h-4 w-4" />
-            Export as PDF
-          </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            label={t("Filter by category")}
+            value={filter}
+            onChange={setFilter}
+            options={FILTER_OPTIONS.map((option) => ({
+              value: option.value,
+              label: t(option.label),
+            }))}
+          />
+          <Segmented
+            label={t("Planning view")}
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "grid", label: t("Grid View"), icon: LayoutGrid },
+              { value: "list", label: t("Linear View"), icon: List },
+            ]}
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={weekEntries.length === 0}
+              onClick={exportExcel}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {t("Export as Excel")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={weekEntries.length === 0}
+              onClick={exportPdf}
+            >
+              <FileText className="h-4 w-4" />
+              {t("Export as PDF")}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -633,58 +773,120 @@ export default function PlanningPage() {
       )}
 
       {view === "grid" ? (
-        <div className="mt-4 -mx-4 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-          <div className="grid min-w-[760px] grid-cols-7 gap-2">
-          {weekDays.map((d, i) => {
-            const key = weekKeys[i];
-            const dayEntries = byDate.get(key) ?? [];
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setDialog({ date: key })}
-                className="flex min-h-56 flex-col items-stretch gap-1.5 rounded-md border p-2 text-left transition-colors hover:bg-accent/50"
-              >
-                <span className="pb-1 text-center">
-                  <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {WEEKDAYS[i]}
-                  </span>
-                  <span className="text-base font-semibold">{d.getDate()}</span>
-                </span>
-                {dayEntries.map((e) => (
-                  <span key={e.id} className="block rounded bg-accent px-1.5 py-1">
-                    {(e.sessionTime || e.roomName || e.sessionType === "Online") && (
-                      <span className="flex flex-wrap items-center gap-1 text-[10px] font-medium text-accent-foreground">
-                        <Clock className="h-3 w-3 shrink-0" />
-                        {e.sessionTime && (
-                          <span className="truncate">{e.sessionTime}</span>
+        <div className="mt-4 flex min-h-0 flex-1 flex-col pb-1">
+          <div className="grid flex-1 grid-cols-1 items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            {weekDays.map((d, i) => {
+              const key = weekKeys[i];
+              const dayEntries = byDate.get(key) ?? [];
+              const isToday = key === todayKey;
+              return (
+                <div
+                  key={key}
+                  className={cn(
+                    "flex h-full min-h-[540px] min-w-0 flex-col justify-between rounded-lg border p-3.5",
+                    isToday
+                      ? "border-zinc-900 dark:border-zinc-100"
+                      : "border-zinc-200 dark:border-zinc-800",
+                  )}
+                >
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setDialog({ date: key })}
+                      className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-center transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      <span
+                        className={cn(
+                          "block text-[11px] font-semibold tracking-wide uppercase",
+                          isToday
+                            ? "text-zinc-900 dark:text-zinc-100"
+                            : "text-muted-foreground",
                         )}
-                        <PlanningLocationBadge
-                          room={e.roomName}
-                          sessionType={e.sessionType}
-                        />
+                      >
+                        {t(WEEKDAYS[i])} {d.getDate()}
                       </span>
-                    )}
-                    {e.className && (
-                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Users className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{e.className}</span>
+                    </button>
+                    {isToday ? (
+                      <span className="shrink-0 rounded-full border border-zinc-900 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase dark:border-zinc-100">
+                        {t("Today")}
                       </span>
-                    )}
-                    <span className="mt-1 flex items-center justify-between gap-1">
-                      <span className="block truncate text-xs font-medium text-accent-foreground">
-                        {e.course || "Logged session"}
-                      </span>
-                      <PlanningSessionTypeBadge sessionType={e.sessionType} />
-                    </span>
-                    <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
-                      {e.content}
-                    </span>
-                  </span>
-                ))}
-              </button>
-            );
-          })}
+                    ) : null}
+                  </div>
+                  <div className="my-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+                    {dayEntries.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() =>
+                          setDialog({ date: key, editingId: e.id })
+                        }
+                        className="block w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                      >
+                        <span className="flex flex-wrap items-center gap-1">
+                          <PlanningCategoryPill
+                            category={planningCategoryFor(e.sessionType)}
+                          />
+                          <span className="text-[10px] font-medium text-muted-foreground">
+                            {t(planningSessionTypeKey(e.sessionType))}
+                          </span>
+                        </span>
+                        {(e.sessionTime ||
+                          e.roomName ||
+                          e.sessionType === "Online") && (
+                          <span className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                            {e.sessionTime && (
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{e.sessionTime}</span>
+                              </span>
+                            )}
+                            <PlanningLocationBadge
+                              room={e.roomName}
+                              sessionType={e.sessionType}
+                              monochrome
+                            />
+                          </span>
+                        )}
+                        {e.className && (
+                          <span className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground">
+                            <Users className="mt-0.5 h-3 w-3 shrink-0" />
+                            <span className="min-w-0 break-words">
+                              {e.className}
+                            </span>
+                          </span>
+                        )}
+                        <span className="mt-1 block text-xs font-medium break-words">
+                          {e.course || t("Logged session")}
+                        </span>
+                        {e.content ? (
+                          <span className="mt-0.5 block text-xs break-words whitespace-pre-wrap text-muted-foreground">
+                            {e.content}
+                          </span>
+                        ) : null}
+                        {e.materialUrl ? (
+                          <span className="mt-1.5 block">
+                            <PlanningMaterialBadge entry={e} />
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                    {dayEntries.length === 0 ? (
+                      <p className="rounded-md border border-dashed border-zinc-200 px-2 py-3 text-center text-[11px] text-muted-foreground dark:border-zinc-800">
+                        {t("No sessions")}
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDialog({ date: key })}
+                    aria-label={t("Add an entry on {date}", { date: key })}
+                    className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-200 py-2 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+                  >
+                    <Plus className="h-4 w-4 shrink-0" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -692,17 +894,17 @@ export default function PlanningPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Segmented
-                label="Linear view scope"
+                label={t("Linear view scope")}
                 value={scope}
                 onChange={setScope}
                 options={[
-                  { value: "week", label: "Current Week" },
-                  { value: "all", label: "All Sessions" },
+                  { value: "week", label: t("Current Week") },
+                  { value: "all", label: t("All Sessions") },
                 ]}
               />
               <span className="text-xs text-muted-foreground">
                 {listEntries.length}{" "}
-                {listEntries.length === 1 ? "session" : "sessions"}
+                {t(listEntries.length === 1 ? "session" : "sessions")}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -711,14 +913,14 @@ export default function PlanningPage() {
                 <Input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search course, class or topic…"
-                  aria-label="Search planning entries"
+                  placeholder={t("Search course, class or topic…")}
+                  aria-label={t("Search planning entries")}
                   className="w-64 pl-8"
                 />
               </div>
               <Button size="sm" onClick={() => setDialog({ date: addEntryDate })}>
                 <Plus className="h-4 w-4" />
-                Add Entry
+                {t("Add Entry")}
               </Button>
             </div>
           </div>
@@ -726,10 +928,10 @@ export default function PlanningPage() {
           {listGroups.length === 0 ? (
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               {searchTerm
-                ? "No sessions match your search."
+                ? t("No sessions match your search.")
                 : scope === "week"
-                  ? "No sessions logged this week."
-                  : "No sessions logged yet."}
+                  ? t("No sessions logged this week.")
+                  : t("No sessions logged yet.")}
             </div>
           ) : (
             <div className="space-y-5">
@@ -740,23 +942,31 @@ export default function PlanningPage() {
                       type="button"
                       onClick={() => setDialog({ date: group.date })}
                       className="text-sm font-semibold hover:underline"
-                      title="Add an entry to this day"
+                      title={t("Add an entry to this day")}
                     >
-                      {dayHeading(group.date, scope === "all")}
+                      {dayHeading(group.date, scope === "all", locale)}
                     </button>
                     <span className="text-xs text-muted-foreground">
                       {group.entries.length}{" "}
-                      {group.entries.length === 1 ? "entry" : "entries"}
+                      {t(group.entries.length === 1 ? "entry" : "entries")}
                     </span>
                   </div>
                   <ul className="space-y-2">
                     {group.entries.map((entry) => (
                       <li key={entry.id} className="rounded-lg border p-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1 space-y-1">
+                          <div className="min-w-0 flex-1 space-y-1.5">
                             <div className="flex flex-wrap items-center gap-2">
+                              <PlanningCategoryPill
+                                category={planningCategoryFor(
+                                  entry.sessionType,
+                                )}
+                              />
+                              <span className="text-[10px] font-medium text-muted-foreground">
+                                {t(planningSessionTypeKey(entry.sessionType))}
+                              </span>
                               {entry.sessionTime ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
                                   <Clock className="h-3 w-3 shrink-0" />
                                   {entry.sessionTime}
                                 </span>
@@ -764,23 +974,18 @@ export default function PlanningPage() {
                               <PlanningLocationBadge
                                 room={entry.roomName}
                                 sessionType={entry.sessionType}
+                                monochrome
                               />
-                              <PlanningSessionTypeBadge
-                                sessionType={entry.sessionType}
-                              />
-                              <span className="text-sm font-medium">
-                                {entry.course || "Logged session"}
+                              <span className="min-w-0 truncate text-sm font-medium">
+                                {entry.className || entry.course
+                                  ? `${entry.className ?? ""}${entry.className && entry.course ? " · " : ""}${entry.course ?? ""}`
+                                  : t("Logged session")}
                               </span>
                             </div>
-                            {entry.className ? (
-                              <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Users className="h-3 w-3 shrink-0" />
-                                {entry.className}
-                              </p>
-                            ) : null}
                             <p className="whitespace-pre-wrap text-sm text-muted-foreground">
                               {entry.content}
                             </p>
+                            <PlanningMaterialLink entry={entry} />
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <Button
@@ -794,15 +999,17 @@ export default function PlanningPage() {
                               }
                             >
                               <Pencil className="h-3.5 w-3.5" />
-                              Edit
+                              {t("Edit")}
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              aria-label={`Delete entry ${entry.course ?? ""}`.trim()}
+                              aria-label={t("Delete entry {course}", {
+                                course: entry.course ?? "",
+                              }).trim()}
                               onClick={() => setDeleteTarget(entry)}
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <Trash2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                             </Button>
                           </div>
                         </div>
@@ -824,6 +1031,7 @@ export default function PlanningPage() {
           courses={courses}
           classes={classes}
           initialEditingId={dialog.editingId}
+          onUploadMaterial={materialUploader}
           onSave={async (values, editingId) => {
             try {
               setError(null);
@@ -860,15 +1068,21 @@ export default function PlanningPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete entry?</AlertDialogTitle>
+            <AlertDialogTitle>{t("Delete entry?")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove the logged entry of{" "}
-              {deleteTarget?.date}
-              {deleteTarget?.course ? ` for “${deleteTarget.course}”` : ""}.
+              {deleteTarget?.course
+                ? t(
+                    "This will permanently remove the logged entry of {date} for “{course}”.",
+                    { date: deleteTarget.date, course: deleteTarget.course },
+                  )
+                : t(
+                    "This will permanently remove the logged entry of {date}.",
+                    { date: deleteTarget?.date ?? "" },
+                  )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("Cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={async () => {
                 if (!deleteTarget) return;
@@ -882,7 +1096,7 @@ export default function PlanningPage() {
                 setDeleteTarget(null);
               }}
             >
-              Delete Entry
+              {t("Delete Entry")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

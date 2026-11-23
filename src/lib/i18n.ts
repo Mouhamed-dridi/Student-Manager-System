@@ -73,7 +73,7 @@ const FRENCH: Record<string, string> = {
   Email: "E-mail",
   Phone: "Téléphone",
   Date: "Date",
-  Time: "Heure",
+  Time: "Horaire",
   Type: "Type",
   Status: "Statut",
   Details: "Détails",
@@ -338,6 +338,125 @@ const FRENCH: Record<string, string> = {
     "La salle {room} est déjà utilisée par « {subject} »{window}.",
   "Class {class} already has “{subject}”{window}.":
     "La classe {class} a déjà « {subject} »{window}.",
+
+  // ------------------------------------------------- planning entry modal
+  "Planning entry": "Saisie du planning",
+  Course: "Cours",
+  "Session Type": "Type de séance",
+  "Classroom / Room": "Salle",
+  "Session location": "Lieu de la séance",
+  "Topic / course details": "Sujet / détails du cours",
+  to: "à",
+  "Add Entry": "Ajouter",
+  "Select class": "Sélectionner une classe",
+  "No class assigned": "Aucune classe assignée",
+  "Select course": "Sélectionner un cours",
+  "Select subject": "Sélectionner une matière",
+  "No courses available": "Aucun cours disponible",
+  "Select teacher": "Sélectionner un enseignant",
+  "Select classroom": "Sélectionner une salle",
+  "Select a time slot": "Sélectionner un créneau",
+  "Custom times…": "Horaires personnalisés…",
+  "Session start time": "Heure de début de la séance",
+  "Session end time": "Heure de fin de la séance",
+  "Changing the date moves the session.":
+    "Changer la date déplace la séance.",
+  "Fixed by the branch this timetable belongs to.":
+    "Fixé par la filière à laquelle appartient cet emploi du temps.",
+  "End time must be after the start time.":
+    "L'heure de fin doit être postérieure à l'heure de début.",
+  "Optional. Pick a slot, or use custom times for any other window.":
+    "Facultatif. Choisissez un créneau ou des horaires personnalisés pour toute autre plage.",
+  "e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks":
+    "ex. Chapitre 3 : Protocoles de routage IP, ou TP 2 : Hooks React",
+  "Comment / internal note": "Commentaire / note interne",
+  "Administrative note, e.g. exam room change or a reminder…":
+    "Note administrative, ex. changement de salle d'examen ou un rappel…",
+  "Optional. Internal only — students never see this.":
+    "Facultatif. Interne uniquement — les étudiants ne le voient jamais.",
+  "Shown as a badge next to the session time in every planning view.":
+    "Affiché sous forme de badge à côté de l'horaire dans toutes les vues du planning.",
+  "Online sessions meet on {platform}, so no classroom is assigned.":
+    "Les séances en ligne se tiennent sur {platform}, aucune salle n'est donc assignée.",
+  "{count} teacher is linked to {course}. Changing this moves the session to that teacher's planning.":
+    "{count} enseignant est lié à {course}. Le modifier déplace la séance dans le planning de cet enseignant.",
+  "{count} teachers are linked to {course}. Changing this moves the session to that teacher's planning.":
+    "{count} enseignants sont liés à {course}. Le modifier déplace la séance dans le planning de cet enseignant.",
+  "No teacher is linked to {course} yet — showing all teachers.":
+    "Aucun enseignant n'est encore lié à {course} — tous les enseignants sont affichés.",
+  "Changing this moves the session to that teacher's planning.":
+    "Le modifier déplace la séance dans le planning de cet enseignant.",
+  "Delete entry {course}": "Supprimer la séance {course}",
+  "Delete entry?": "Supprimer la séance ?",
+  "Delete Entry": "Supprimer",
+  "This will permanently remove the logged entry of {date}.":
+    "Cela supprimera définitivement l'entrée du {date}.",
+  "This will permanently remove the logged entry of {date} for “{course}”.":
+    "Cela supprimera définitivement l'entrée du {date} pour « {course} ».",
+
+  // --------------------------------------- planning categories & daily material
+  "Planning category": "Catégorie de planification",
+  Category: "Catégorie",
+  "Course & Materials": "Cours & supports",
+  "Exam Planning": "Planification d'examen",
+  "Exam Type": "Type d'examen",
+  "PFE Milestone": "Jalon PFE",
+  "Exam notes": "Notes d'examen",
+  "Jury / supervision notes": "Notes du jury / suivi",
+  "e.g. DS on Chapter 4 — closed book, calculators allowed":
+    "ex. DS sur le chapitre 4 — documents interdits, calculatrice autorisée",
+  "e.g. Mid-project review with the supervisor and the jury":
+    "ex. Revue de mi-projet avec le superviseur et le jury",
+  "Lesson material": "Support du cours",
+  "Material attached": "Support joint",
+  "https://… link to the slides, PDF or resource used in class":
+    "https://… lien vers les diapositives, le PDF ou la ressource utilisée en cours",
+  "Upload a lesson material": "Téléverser un support de cours",
+  "Remove material": "Supprimer le support",
+  "Optional. Students see this material on their schedule for that day.":
+    "Facultatif. Les étudiants voient ce support dans leur emploi du temps ce jour-là.",
+  "Filter by category": "Filtrer par catégorie",
+  PFE: "PFE",
+  Exam: "Examen",
+  "Logged session": "Séance enregistrée",
+  "Grid View": "Vue grille",
+  "Linear View": "Vue linéaire",
+  "Planning view": "Vue du planning",
+  "Linear view scope": "Périmètre de la vue linéaire",
+  "Current Week": "Semaine en cours",
+  "All Sessions": "Toutes les séances",
+  "Export as Excel": "Exporter en Excel",
+  "Export as PDF": "Exporter en PDF",
+  "Search course, class or topic…":
+    "Rechercher un cours, une classe ou un sujet…",
+  "Search planning entries": "Rechercher dans le planning",
+  "No sessions match your search.":
+    "Aucune séance ne correspond à votre recherche.",
+  "No sessions logged this week.":
+    "Aucune séance enregistrée cette semaine.",
+  "No sessions logged yet.": "Aucune séance enregistrée pour le moment.",
+  Today: "Aujourd'hui",
+  "No sessions": "Aucune séance",
+  "Add an entry to this day": "Ajouter une entrée à ce jour",
+  "Add an entry on {date}": "Ajouter une entrée le {date}",
+  "Topic covered": "Sujet traité",
+  entry: "entrée",
+  entries: "entrées",
+  "Click any day to log what was studied with your class.":
+    "Cliquez sur un jour pour consigner ce qui a été étudié avec votre classe.",
+  "Loading planning…": "Chargement du planning…",
+
+  // --------------------------------------- planning session types (i18n labels)
+  "In-class": "En présentiel",
+  Online: "En ligne",
+  Supervision: "Suivi PFE",
+  "Pre-defense": "Pré-soutenance",
+  "Final defense": "Soutenance PFE",
+  "Graded practical": "TP noté",
+  DS: "DS",
+  TD: "TD",
+  Principale: "Principale",
+  SYNTHESIS: "SYNTHÈSE",
 
   // ------------------------------------------------------------------- events
   "Create New Event": "Nouvel événement",
@@ -716,6 +835,9 @@ const FRENCH: Record<string, string> = {
   "Assigned to {training} ({program})":
     "Assigné à {training} ({program})",
   "All Materials ({count})": "Tous les supports ({count})",
+  "All supports": "Tous les supports",
+  "Filter by support": "Filtrer par support",
+  "Show all courses": "Afficher tous les cours",
   "1 material": "1 support",
   "{count} materials": "{count} supports",
   "Added {date}": "Ajouté le {date}",
@@ -729,10 +851,22 @@ const FRENCH: Record<string, string> = {
     "Une erreur inattendue s'est produite.",
   "No courses match this material":
     "Aucun cours ne correspond à ce support",
+  "No courses match this support":
+    "Aucun cours ne correspond à ce support",
   "Try selecting a different material or view all courses.":
     "Essayez un autre support ou affichez tous les cours.",
   "Nothing has been planned for your program and training so far. Please check back later.":
     "Rien n'a encore été planifié pour votre programme et votre formation. Revenez plus tard.",
+
+  // ------------------------------------------------------- student planning
+  "Weekly schedule": "Emploi du temps hebdomadaire",
+  "Your class": "Votre classe",
+  "Loading your week…": "Chargement de votre semaine…",
+  "Nothing scheduled this week.": "Rien de planifié cette semaine.",
+  "{count} item this week": "{count} séance cette semaine",
+  "{count} items this week": "{count} séances cette semaine",
+  "Exams appear on their scheduled day and are also listed under Exams.":
+    "Les examens apparaissent le jour prévu et figurent aussi dans Examens.",
 
   // ------------------------------------------------------- course detail
   "Taught by": "Enseigné par",
@@ -1041,6 +1175,17 @@ const FRENCH: Record<string, string> = {
     "Formats acceptés : JPG, PNG ou WebP (max. 2 Mo).",
   "Uploaded to the profilePictuer Storage bucket; the public URL is saved on your profile (user_profiles) and shown across the portal.":
     "Téléversée dans le bucket de stockage profilePictuer ; l'URL publique est enregistrée sur votre profil et affichée dans le portail.",
+
+  // ------------------------------------------------ teacher settings & profile
+  "Shown in the top bar of the teacher portal.":
+    "Affichée dans la barre supérieure du portail enseignant.",
+  "Your name is also how you sign in to the teacher portal.":
+    "Votre nom est également utilisé pour vous connecter au portail enseignant.",
+  "Social links": "Liens sociaux",
+  "Visible on your profile to students and colleagues.":
+    "Visible sur votre profil par les étudiants et vos collègues.",
+  "Save Links": "Enregistrer les liens",
+  "Links saved.": "Liens enregistrés.",
 
   // ------------------------------------------------------------------ license
   "Active plan": "Forfait actif",

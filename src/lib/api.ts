@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { getRole } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
 import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
+import { normalizeCourseName } from "@/lib/courseDisplay";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import {
@@ -4212,6 +4213,9 @@ interface PlanningRow {
   notes?: string | null;
   /** PFE/STAGE/Soutenance jury panel; absent on every other session kind. */
   jury_teacher_ids?: string[] | null;
+  /** Daily lesson material attached by the teacher (Course & Materials). */
+  material_url?: string | null;
+  material_name?: string | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -4234,6 +4238,8 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
       row.jury_teacher_ids && row.jury_teacher_ids.length > 0
         ? row.jury_teacher_ids
         : undefined,
+    materialUrl: row.material_url ?? undefined,
+    materialName: row.material_name ?? undefined,
   };
 }
 
@@ -4274,31 +4280,61 @@ function hasPlanningScopeColumns(): Promise<boolean> {
 }
 
 /**
- * The signed-in student's weekly schedule. Sessions are matched on the stable
- * class scope (`program_id` + `training_id`) so a renamed program or training
- * cannot hide them; databases without those columns fall back to the
+ * The signed-in student's weekly schedule. Rows are matched on the stable class
+ * scope (`program_id` + `training_id`) or on the normalized
  * "CODE · Training" label in `class_name`.
+ *
+ * The whole table is fetched and filtered here instead of using an `.eq` on
+ * either column: a server-side FK filter hides teacher entries that were saved
+ * before the scope migration (NULL FKs, matching label), and a server-side
+ * label filter is byte-exact, so a stray space, case or separator difference
+ * hid the entry entirely. One malformed/legacy entry must never blank the
+ * student's week.
  */
 export async function listPlanningForClass(
   className: string,
   scope?: { programId?: string; trainingId?: string },
 ): Promise<PlanningRecord[]> {
-  const supportsScope = await hasPlanningScopeColumns();
-  if (supportsScope && scope?.programId && scope.trainingId) {
-    return (
-      await rows<PlanningRow>("planning", {
-        eq: { program_id: scope.programId, training_id: scope.trainingId },
-        order: { column: "date", ascending: true },
-      })
-    ).map(planningFromRow);
-  }
-  if (!className) return [];
-  return (
+  const all = (
     await rows<PlanningRow>("planning", {
-      eq: { class_name: className },
       order: { column: "date", ascending: true },
     })
   ).map(planningFromRow);
+  const programId = scope?.programId;
+  const trainingId = scope?.trainingId;
+  const wantedLabel = normalizeCourseName(className);
+  return all.filter((entry) => {
+    // A full FK pair match wins outright, even after a class rename.
+    if (
+      programId &&
+      trainingId &&
+      entry.programId &&
+      entry.trainingId &&
+      entry.programId === programId &&
+      entry.trainingId === trainingId
+    ) {
+      return true;
+    }
+    // A conflicting FK is a different class; never fall through to the label.
+    if (programId && entry.programId && entry.programId !== programId) {
+      return false;
+    }
+    if (trainingId && entry.trainingId && entry.trainingId !== trainingId) {
+      return false;
+    }
+    const rowLabel = normalizeCourseName(entry.className);
+    if (!wantedLabel || !rowLabel) return false;
+    if (rowLabel === wantedLabel) return true;
+    // Minor label drift (the operator grid may store "Training" while the
+    // student label is "CODE · Training") must not hide the entry. A conflict
+    // check above already ruled out a different FK scope, so containment is
+    // only used for rows that carry no usable program/training id.
+    const [shorter, longer] =
+      rowLabel.length <= wantedLabel.length
+        ? [rowLabel, wantedLabel]
+        : [wantedLabel, rowLabel];
+    return shorter.length >= 3 && longer.includes(shorter);
+  });
 }
 
 const PLANNING_SESSION_TYPE_MISSING =
@@ -4380,6 +4416,28 @@ function hasPlanningJuryTeacherIdsColumn(): Promise<boolean> {
   return planningJuryColumnPromise;
 }
 
+// `material_url`/`material_name` hold the optional daily lesson material of a
+// Course & Materials entry. Same rule as notes: a database without the
+// migration keeps saving sessions, but a save that attaches a material fails
+// with the migration hint instead of silently dropping it.
+const PLANNING_MATERIAL_MISSING =
+  "Planning course materials are not set up yet. Run supabase/planning-material-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningMaterialColumnsPromise: Promise<boolean> | null = null;
+
+function hasPlanningMaterialColumns(): Promise<boolean> {
+  if (!planningMaterialColumnsPromise) {
+    planningMaterialColumnsPromise = (async () => {
+      const [url, name] = await Promise.all([
+        hasColumn("planning", "material_url"),
+        hasColumn("planning", "material_name"),
+      ]);
+      return url && name;
+    })();
+  }
+  return planningMaterialColumnsPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -4403,6 +4461,12 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
   const supportsJury = await hasPlanningJuryTeacherIdsColumn();
   if (!supportsJury && (record.juryTeacherIds?.length ?? 0) > 0) {
     throw new Error(PLANNING_JURY_MISSING);
+  }
+  // A carried material needs the columns; an empty value only clears an
+  // existing one, so it is dropped silently on a database without them.
+  const supportsMaterial = await hasPlanningMaterialColumns();
+  if (!supportsMaterial && record.materialUrl) {
+    throw new Error(PLANNING_MATERIAL_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -4434,6 +4498,12 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
       ...(supportsJury
         ? { jury_teacher_ids: record.juryTeacherIds ?? null }
         : {}),
+      ...(supportsMaterial && record.materialUrl !== undefined
+        ? {
+            material_url: record.materialUrl || null,
+            material_name: record.materialName || null,
+          }
+        : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -4453,6 +4523,8 @@ export async function updatePlanning(
     | "content"
     | "notes"
     | "juryTeacherIds"
+    | "materialUrl"
+    | "materialName"
   > & {
     /** Operator editor only: reassign the session to another teacher. */
     teacherId?: string;
@@ -4482,6 +4554,10 @@ export async function updatePlanning(
   const supportsJury = await hasPlanningJuryTeacherIdsColumn();
   if (!supportsJury && values.juryTeacherIds !== undefined) {
     throw new Error(PLANNING_JURY_MISSING);
+  }
+  const supportsMaterial = await hasPlanningMaterialColumns();
+  if (!supportsMaterial && values.materialUrl) {
+    throw new Error(PLANNING_MATERIAL_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -4515,6 +4591,14 @@ export async function updatePlanning(
         // shared session form (which has no jury field) cannot clear a panel.
         ...(supportsJury && values.juryTeacherIds !== undefined
           ? { jury_teacher_ids: values.juryTeacherIds }
+          : {}),
+        // Only written when the caller touches the material, so an edit from a
+        // form without the attachment field cannot clear it.
+        ...(supportsMaterial && values.materialUrl !== undefined
+          ? {
+              material_url: values.materialUrl || null,
+              material_name: values.materialName || null,
+            }
           : {}),
         // Only written when the caller moves the session, so a normal edit
         // never shifts its day.
