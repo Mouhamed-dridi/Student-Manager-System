@@ -34,6 +34,8 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   deleteTeacherCourse,
   errorMessage,
+  listBranches,
+  listBranchMaterials,
   listTeacherCourses,
   saveTeacherCourse,
   subscribeToTable,
@@ -44,6 +46,13 @@ import {
 } from "@/lib/api";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { useNestedView } from "@/hooks/viewHistory";
+import type {
+  BranchMaterialRecord,
+} from "@/lib/api";
+import {
+  normalizeCourseName,
+  subjectNamesMatch,
+} from "@/lib/courseDisplay";
 import type {
   CourseMaterial,
   ScheduledCourseView,
@@ -103,6 +112,8 @@ type ViewKey = "my-courses" | "add-course" | "detail";
 interface CourseFormValues {
   name: string;
   description: string;
+  /** Material (matière) the course is taught under. */
+  subject?: string;
   program: string;
   training: string;
   subtitle?: string;
@@ -123,6 +134,12 @@ interface CourseFormProps {
   initialData?: TeacherCourseRecord;
   /** Locked program/training pulled from the logged-in teacher's profile. */
   lockedAssignment?: { program?: string; training?: string };
+  /**
+   * Materials (matières) of the teacher's class, or the teacher's own assigned
+   * materials. The course title stays free text; this picker says which
+   * matière it belongs to, which is what the student Cours filter groups by.
+   */
+  materialOptions?: string[];
   onSubmit: (values: CourseFormValues) => Promise<void>;
   onCancel: () => void;
 }
@@ -130,6 +147,7 @@ interface CourseFormProps {
 function CourseForm({
   initialData,
   lockedAssignment,
+  materialOptions,
   onSubmit,
   onCancel,
 }: CourseFormProps) {
@@ -145,6 +163,7 @@ function CourseForm({
         }
       : null;
   const [name, setName] = useState(initialData?.name ?? "");
+  const [subject, setSubject] = useState(initialData?.subject ?? "");
   const [description, setDescription] = useState(
     initialData?.description ?? "",
   );
@@ -180,7 +199,19 @@ function CourseForm({
 
   const programValue = assignment?.program ?? initialData?.program ?? "";
   const trainingValue = assignment?.training ?? initialData?.training ?? "";
-  const valid = name.trim() !== "";
+  // Keep a legacy/other subject selectable while editing even when it is not
+  // in this teacher's current material list.
+  const materialChoices = [...(materialOptions ?? [])];
+  const currentSubject = subject.trim();
+  if (currentSubject && !materialChoices.includes(currentSubject)) {
+    materialChoices.unshift(currentSubject);
+  }
+  const materialItems = materialChoices.map((name) => ({ value: name, label: name }));
+  // Linking the course to a matériau is the whole point of the filter; require
+  // it whenever the class/material schema could be read (the picker is empty
+  // on older databases that have not run the branches migration yet).
+  const valid =
+    name.trim() !== "" && (materialChoices.length === 0 || currentSubject !== "");
 
   return (
     <div className="max-w-xl">
@@ -195,11 +226,35 @@ function CourseForm({
           <Label htmlFor="course-title">Title</Label>
           <Input
             id="course-title"
-            placeholder="e.g. JavaScript Essentials"
+            placeholder="e.g. Implementing an SAP Solution"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
+        </div>
+        <div className="space-y-2">
+          <Label>Material (matière)</Label>
+          <Select
+            value={subject}
+            items={materialItems}
+            onValueChange={(value) => setSubject(value ?? "")}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a material" />
+            </SelectTrigger>
+            <SelectContent>
+              {materialItems.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {materialChoices.length > 0
+              ? "Students see this course under the selected material."
+              : "No material was found for your class yet. Ask the administration to add it under Materials before linking courses."}
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="course-description">
@@ -403,6 +458,7 @@ function CourseForm({
               const values: CourseFormValues = {
                 name: name.trim(),
                 description: description.trim(),
+                subject: subject.trim() || undefined,
                 program: programValue,
                 training: trainingValue,
                 subtitle: subtitle.trim() || undefined,
@@ -444,7 +500,12 @@ export default function MyCoursesPage() {
   const [assignment, setAssignment] = useState<{
     program: string;
     training: string;
+    programId?: string;
+    trainingId?: string;
   } | null>(null);
+  // Materials (matières) the course picker offers: the teacher's class branch,
+  // narrowed to the materials assigned to this teacher when there are any.
+  const [classMaterials, setClassMaterials] = useState<BranchMaterialRecord[]>([]);
   const [view, setView] = useState<ViewKey>("my-courses");
   const [editing, setEditing] = useState<TeacherCourseRecord | null>(null);
   // Course shown in the full-page detail view (instead of the card grid).
@@ -493,7 +554,12 @@ export default function MyCoursesPage() {
         teacherCourseAssignment(record.id)
           .then((a) => {
             if (!cancelled && a.program && a.training) {
-              setAssignment({ program: a.program, training: a.training });
+              setAssignment({
+                program: a.program,
+                training: a.training,
+                programId: a.programId,
+                trainingId: a.trainingId,
+              });
             }
           })
           .catch(() => {});
@@ -506,6 +572,58 @@ await refresh(record.id);
       cancelled = true;
     };
   }, [refresh]);
+
+  // Load the material catalog once the teacher and their class are known. The
+  // materials assigned to this teacher ANYWHERE win, because a material is tied
+  // to the teacher rather than to one branch: "ERP Consulting" is taught in the
+  // Commerce international class while this teacher's profile resolves to the
+  // IT-support class, so a branch-only list would never offer it. Only when the
+  // teacher has no assignment at all does the class's full catalog apply, so
+  // they can still link a new course.
+  const assignmentTrainingId = assignment?.trainingId;
+  const assignmentTraining = assignment?.training;
+  const teacherId = teacher?.id;
+  useEffect(() => {
+    if (!teacherId) return;
+    let cancelled = false;
+    Promise.all([listBranches(), listBranchMaterials()])
+      .then(([branches, all]) => {
+        if (cancelled) return;
+        const wantedTraining = normalizeCourseName(assignmentTraining);
+        const branch = branches.find(
+          (b) =>
+            (assignmentTrainingId && b.trainingId === assignmentTrainingId) ||
+            (wantedTraining &&
+              assignmentTraining !== undefined &&
+              subjectNamesMatch(b.name, assignmentTraining)),
+        );
+        const inBranch = branch
+          ? all.filter((m) => m.branchId === branch.id)
+          : [];
+        const mine = all.filter(
+          (m) => m.teacherId === teacherId && m.name.trim() !== "",
+        );
+        const offered = mine.length > 0 ? mine : inBranch;
+        // The same material exists in several branches; the course only stores
+        // its name, so one option per normalized name is enough.
+        const seen = new Set<string>();
+        setClassMaterials(
+          offered.filter((m) => {
+            const key = normalizeCourseName(m.name);
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }),
+        );
+      })
+      .catch(() => {
+        // Branches schema is optional; the picker stays empty and the form
+        // still saves until supabase/branches-materials-migration.sql runs.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teacherId, assignmentTrainingId, assignmentTraining]);
 
   // Live updates: courses added/edited/removed in another browser appear
   // here without a manual refresh. Runs once the teacher record resolves.
@@ -741,6 +859,7 @@ await refresh(record.id);
                 ? { program: assignment.program, training: assignment.training }
                 : undefined
             }
+            materialOptions={classMaterials.map((material) => material.name)}
             onSubmit={handleSubmit}
             onCancel={() => {
               setEditing(null);

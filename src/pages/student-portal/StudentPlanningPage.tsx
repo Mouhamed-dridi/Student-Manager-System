@@ -38,6 +38,7 @@ import {
   formatLongDate,
   formatWeekRange,
   startOfWeek,
+  storedDateKey,
 } from "./scheduleDates";
 
 interface DayBucket {
@@ -59,15 +60,6 @@ function sortSessions(a: PlanningRecord, b: PlanningRecord): number {
     (a.sessionTime ?? "").localeCompare(b.sessionTime ?? "") ||
     (a.course ?? "").localeCompare(b.course ?? "")
   );
-}
-
-/**
- * `planning.date` is a plain "YYYY-MM-DD" (or an ISO timestamp on old rows).
- * Cutting the string keeps the stored calendar day — `new Date("2026-11-23")`
- * would shift a day back in positive timezones.
- */
-function storedDateKey(value: string | null | undefined): string {
-  return (value ?? "").slice(0, 10);
 }
 
 function PlanningCategoryPill({ category }: { category: PlanningCategory }) {
@@ -110,15 +102,19 @@ export default function StudentPlanningPage() {
           return;
         }
         const classLabel = classNameFor(record.program, record.training);
-        const [schedule, classExams] = await Promise.all([
+        // The schedule is the point of this page: a failing exams query (e.g. a
+        // missing optional column) must not blank the student's week, so the two
+        // reads settle independently and only the schedule can fail the page.
+        const [schedule, classExams] = await Promise.allSettled([
           listPlanningForClass(classLabel, {
             programId: record.programId,
             trainingId: record.trainingId,
           }),
           listExamsForStudent(record.program, record.training),
         ]);
-        setPlanning(schedule);
-        setExams(classExams);
+        if (schedule.status === "rejected") throw schedule.reason;
+        setPlanning(schedule.value);
+        setExams(classExams.status === "fulfilled" ? classExams.value : []);
       })
       .catch((err) => setError(errorMessage(err)))
       .finally(() => setLoading(false));
@@ -272,6 +268,16 @@ export default function StudentPlanningPage() {
             </div>
           </div>
 
+          {planning.length === 0 ? (
+            <p className="mt-3 rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+              {classLabel
+                ? t("No sessions have been logged for your class yet.")
+                : t(
+                    "Your class is not linked to a program and training yet, so no sessions can be matched. Ask the administration to complete your record.",
+                  )}
+            </p>
+          ) : null}
+
           <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {weekDays.map((day) => {
               const key = dateKeyOf(day);
@@ -359,9 +365,12 @@ export default function StudentPlanningPage() {
                           key={exam.id}
                           className="rounded-md border border-zinc-300 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-950"
                         >
-                          <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                            <FileText className="h-3.5 w-3.5 shrink-0" />
-                            {t("Exam")}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <PlanningCategoryPill category="exam" />
+                            <FileText
+                              aria-hidden="true"
+                              className="h-3 w-3 shrink-0 text-zinc-500 dark:text-zinc-400"
+                            />
                           </div>
                           <p className="mt-1 text-sm font-medium break-words text-zinc-900 dark:text-zinc-100">
                             {exam.title}

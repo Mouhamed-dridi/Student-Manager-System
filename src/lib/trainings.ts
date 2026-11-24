@@ -1,5 +1,5 @@
 import { listTeacherCourses } from "@/lib/api";
-import { normalizeCourseName } from "@/lib/courseDisplay";
+import { subjectNamesMatch } from "@/lib/courseDisplay";
 
 export const PROGRAMS = ["BTP", "BTS", "CAP"] as const;
 
@@ -106,6 +106,8 @@ export interface CourseDetails {
 export interface TeacherCourseRecord extends CourseDetails {
   id: string;
   teacherId: string;
+  /** Material (matière) the course is taught under, e.g. "ERP Consulting". */
+  subject?: string;
   program: string;
   training: string;
   programId?: string;
@@ -122,6 +124,8 @@ export interface TeacherCourseRecord extends CourseDetails {
 export interface ScheduledCourseView extends ScheduledCourse, CourseDetails {
   id?: string;
   teacherId?: string;
+  /** Material (matière) the course is taught under, e.g. "ERP Consulting". */
+  subject?: string;
   program?: string;
   training?: string;
   programId?: string;
@@ -137,32 +141,38 @@ export interface ScheduledCourseView extends ScheduledCourse, CourseDetails {
 // program/training NAME text, normalized so case, accents and punctuation do
 // not hide a course ("Réseaux & Sécurité" vs "reseaux-securite").
 //
-// A course belongs to a student's class when their UUID FKs agree (both sides
-// non-null) or the resolved names agree. A missing name on either side is
-// treated as unknown rather than a mismatch: a legacy course row whose program
-// FK was never backfilled still reaches the student whose training matches.
+// A course belongs to a student's class when the training FK agrees (which
+// implies its program) or the resolved names agree after normalization. Names
+// are compared with whole-word matching rather than byte equality: a stored
+// "BTS — Commerce international" must still reach the student whose training is
+// "Commerce international (BTS)". A missing name on either side is unknown, not
+// a mismatch, so a legacy row whose FK was never backfilled still reaches the
+// student whose training matches.
 function courseInClass(
   c: TeacherCourseRecord,
   program: string,
   training: string,
   assignment?: { programId?: string; trainingId?: string },
 ): boolean {
-  if (
-    assignment?.programId &&
-    assignment.trainingId &&
-    c.programId &&
-    c.trainingId &&
-    c.programId === assignment.programId &&
-    c.trainingId === assignment.trainingId
-  ) {
+  if (assignment?.trainingId && c.trainingId === assignment.trainingId) {
     return true;
   }
-  const courseTraining = normalizeCourseName(c.training);
-  const wantedTraining = normalizeCourseName(training);
-  if (!wantedTraining || courseTraining !== wantedTraining) return false;
-  const courseProgram = normalizeCourseName(c.program);
-  const wantedProgram = normalizeCourseName(program);
-  return !wantedProgram || !courseProgram || courseProgram === wantedProgram;
+  if (!program.trim() || !training.trim()) return false;
+  if (!subjectNamesMatch(c.training, training)) return false;
+  return !c.program.trim() || subjectNamesMatch(c.program, program);
+}
+
+// A subject named in the planification may be taught in several BTS
+// specializations, so the course row's training scope cannot be required to
+// match. Its program tier still must (or be unknown on legacy rows), otherwise
+// a generic subject like "Anglais" would also pull in every other program's
+// course with the same name.
+function courseSharesProgram(
+  c: TeacherCourseRecord,
+  program: string,
+): boolean {
+  if (!program.trim() || !c.program.trim()) return true;
+  return subjectNamesMatch(c.program, program);
 }
 
 // Seeded entries carry no id/teacherId; teacher-created ones do.
@@ -170,10 +180,32 @@ function courseInClass(
 // The class of the student (program_id/training_id) is used as a server-side
 // filter when both FKs exist; otherwise ALL course rows are fetched and the
 // robust name comparison above picks the matches.
+//
+// `scheduledSubjects` is the student's planification: every distinct matière
+// scheduled for their class. A transverse subject (Arabic, English, ...) is
+// often attached to another BTS specialization while still being taught to
+// this class, so a course row whose title matches a scheduled subject is kept
+// even when its program/training scope points elsewhere. Without this, the
+// student only saw the courses scoped to their one specialization.
+//
+// `classMaterials` are the materials (matières) of the student's class and
+// `classTeacherIds` the teachers assigned to them. They are the strongest
+// signal available: a course belongs to this class when its teacher is the one
+// assigned a material here, even if the row was stamped with another
+// program/training (ERP Consulting is a Commerce international material, but
+// the teacher's profile may resolve to the IT-support class). Without this,
+// such a course was silently dropped before the page could attribute it to its
+// material.
 export async function loadScheduledCourses(
   program: string,
   training: string,
-  assignment?: { programId?: string; trainingId?: string },
+  assignment?: {
+    programId?: string;
+    trainingId?: string;
+    scheduledSubjects?: string[];
+    classMaterials?: string[];
+    classTeacherIds?: string[];
+  },
 ): Promise<ScheduledCourseView[]> {
   const seeded: ScheduledCourseView[] =
     COURSES[program as Program]?.[training] ?? [];
@@ -189,8 +221,24 @@ export async function loadScheduledCourses(
   // (subtitle/level/duration/format/skills/syllabus) before it could reach the
   // student view. The cast below still fails to compile if the two shapes ever
   // diverge.
-  const added = addedRows.filter((c) =>
-    courseInClass(c, program, training, assignment),
+  const scheduledSubjects = assignment?.scheduledSubjects ?? [];
+  const classMaterials = assignment?.classMaterials ?? [];
+  const classTeacherIds = new Set(
+    (assignment?.classTeacherIds ?? []).filter((id) => id.trim() !== ""),
+  );
+  const added = addedRows.filter(
+    (c) =>
+      courseInClass(c, program, training, assignment) ||
+      (c.teacherId !== "" && classTeacherIds.has(c.teacherId)) ||
+      classMaterials.some((material) =>
+        subjectNamesMatch(c.subject ?? "", material),
+      ) ||
+      (courseSharesProgram(c, program) &&
+        scheduledSubjects.some(
+          (subject) =>
+            subjectNamesMatch(c.name, subject) ||
+            subjectNamesMatch(c.subject ?? "", subject),
+        )),
   ) as ScheduledCourseView[];
   return [...seeded, ...added];
 }

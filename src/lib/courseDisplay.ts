@@ -53,6 +53,27 @@ export function normalizeCourseName(value: string | null | undefined): string {
     .trim();
 }
 
+/**
+ * Whether two subject names refer to the same matière. Normalized equality is
+ * the common case; a whole-word extension also matches so a course titled
+ * "Anglais technique" still belongs to the scheduled subject "Anglais". A
+ * short fragment (under four characters) never matches by containment, which
+ * keeps an accidental "art" from swallowing "arts plastiques".
+ */
+export function subjectNamesMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const left = normalizeCourseName(a);
+  const right = normalizeCourseName(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const [shorter, longer] =
+    left.length <= right.length ? [left, right] : [right, left];
+  if (shorter.length < 4) return false;
+  return new RegExp(`(^| )${shorter}( |$)`).test(longer);
+}
+
 /** `published_at` timestamp rendered as "Added Sep 25, 2026". */
 export function formatPublished(published: string): string {
   return new Date(published).toLocaleDateString(undefined, {

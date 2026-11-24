@@ -381,7 +381,11 @@ create table if not exists public.courses (
   time_slot text,
   teacher_id uuid,
   thumbnail_url text,
-  published_at timestamptz
+  published_at timestamptz,
+  -- Material (matière) the course is taught under, e.g. 'ERP Consulting'.
+  -- `title` is the course itself; the student Cours filter groups by this.
+  -- Optional on legacy rows (see supabase/course-subject-migration.sql).
+  subject text
 );
 
 -- Course description shown on teacher/student course cards (idempotent for

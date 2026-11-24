@@ -32,6 +32,20 @@ export function dateKeyOf(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
+/**
+ * The calendar day stored in a `date`/ISO column, as a "YYYY-MM-DD" key.
+ *
+ * The first ten characters are read as-is instead of going through
+ * `new Date(value)`: a `date` column already holds the intended calendar day,
+ * and parsing it as UTC midnight would shift it back a day in every positive
+ * timezone. Anything unparsable yields an empty key, which never matches a
+ * week bucket (so a corrupt row is ignored, not misfiled).
+ */
+export function storedDateKey(value: string | null | undefined): string {
+  const match = (value ?? "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : "";
+}
+
 /** Monday-based, matching the teacher Planning page. */
 export function startOfWeek(date: Date): Date {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -92,11 +106,11 @@ export function formatWeekRange(start: Date, locale?: string): string {
       day: "numeric",
       month: "short",
     });
-    const endLabel = end.toLocaleDateString(locale, {
+    // Day + month, then the year, so French does not print "29 nov., 2026".
+    const endLabel = `${end.toLocaleDateString(locale, {
       day: "numeric",
       month: "short",
-      year: "numeric",
-    });
+    })} ${end.getFullYear()}`;
     return `${startLabel} – ${endLabel}`;
   }
   const startLabel = `${start.getDate()} ${start.getMonth() === end.getMonth() ? "" : MONTH_LABELS[start.getMonth()] + " "}`;

@@ -835,6 +835,18 @@ const FRENCH: Record<string, string> = {
   "Assigned to {training} ({program})":
     "Assigné à {training} ({program})",
   "All Materials ({count})": "Tous les supports ({count})",
+  Subjects: "Matières",
+  "All subjects": "Toutes les matières",
+  "Filter by subject": "Filtrer par matière",
+  "Show all subjects": "Afficher toutes les matières",
+  "No courses available for this subject":
+    "Aucun cours disponible pour cette matière",
+  "Try selecting a different subject or view all subjects.":
+    "Essayez une autre matière ou affichez toutes les matières.",
+  "No course materials have been uploaded for your scheduled subjects yet.":
+    "Aucun support n'a encore été publié pour les matières de votre planification.",
+  "Your planification lists subjects, but no course has been published for them so far.":
+    "Votre planification contient des matières, mais aucun cours n'a encore été publié pour celles-ci.",
   "All supports": "Tous les supports",
   "Filter by support": "Filtrer par support",
   "Show all courses": "Afficher tous les cours",
@@ -863,6 +875,10 @@ const FRENCH: Record<string, string> = {
   "Your class": "Votre classe",
   "Loading your week…": "Chargement de votre semaine…",
   "Nothing scheduled this week.": "Rien de planifié cette semaine.",
+  "No sessions have been logged for your class yet.":
+    "Aucune séance n'a encore été enregistrée pour votre classe.",
+  "Your class is not linked to a program and training yet, so no sessions can be matched. Ask the administration to complete your record.":
+    "Votre classe n'est pas encore reliée à un programme et à une formation : aucune séance ne peut être associée. Demandez à l'administration de compléter votre fiche.",
   "{count} item this week": "{count} séance cette semaine",
   "{count} items this week": "{count} séances cette semaine",
   "Exams appear on their scheduled day and are also listed under Exams.":

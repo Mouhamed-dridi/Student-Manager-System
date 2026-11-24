@@ -14,7 +14,10 @@ import {
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { CourseMaterial, TeacherCourseRecord } from "@/lib/trainings";
 import type { ExamRecord, GradeRecord } from "@/pages/teacher-portal/exams";
-import { isPlanningSessionType } from "@/pages/teacher-portal/planning";
+import {
+  isPlanningSessionType,
+  planningCategoryFor,
+} from "@/pages/teacher-portal/planning";
 import type { PlanningRecord } from "@/pages/teacher-portal/planning";
 
 // Every Supabase call in the app goes through this module. Rows use
@@ -2700,6 +2703,8 @@ export async function resolveBilletContext(
 interface CourseRow {
   id: string;
   title: string;
+  /** Material (matière) the course is taught under. Optional schema. */
+  subject: string | null;
   description: string | null;
   program_id: string | null;
   training_id: string | null;
@@ -2777,6 +2782,7 @@ function courseFromRow(row: CourseRow): TeacherCourseRecord {
   return {
     id: row.id,
     teacherId: row.teacher_id ?? "",
+    subject: row.subject ?? undefined,
     program: row.programs?.code ?? "",
     training: row.trainings?.name ?? "",
     programId: row.program_id ?? undefined,
@@ -2932,6 +2938,21 @@ async function hasCourseMaterialsColumn(): Promise<boolean> {
   return courseMaterialsColumnPromise;
 }
 
+// `courses.subject` (the matière) is added by
+// supabase/course-subject-migration.sql. Probed once per app load; a write that
+// names a material on a database without the column gets the migration hint
+// instead of silently dropping the link.
+let courseSubjectColumnPromise: Promise<boolean> | null = null;
+
+async function hasCourseSubjectColumn(): Promise<boolean> {
+  if (!courseSubjectColumnPromise) {
+    courseSubjectColumnPromise = hasColumn("courses", "subject").catch(
+      () => false,
+    );
+  }
+  return courseSubjectColumnPromise;
+}
+
 // ------------------------------------------------- course detail capabilities
 //
 // Retired: the courses metadata columns (subtitle, level, duration, format,
@@ -2991,6 +3012,17 @@ export async function saveTeacherCourse(
       payload.materials = record.materials;
     }
   }
+  // The material link is what the student Cours filter groups by, so it is
+  // never silently dropped: without the column the save fails with the exact
+  // migration to run. An empty value still clears it when the column exists.
+  const subject = record.subject?.trim() ?? "";
+  const hasSubjectColumn = await hasCourseSubjectColumn();
+  if (subject && !hasSubjectColumn) {
+    throw new Error(
+      "The courses.subject column is missing. Run supabase/course-subject-migration.sql in the Supabase SQL Editor, then reload.",
+    );
+  }
+  if (hasSubjectColumn) payload.subject = subject || null;
   // Course-detail metadata maps straight onto its columns. All six are part of
   // the schema, so they are always written; an emptied field is written as null
   // so clearing the input actually clears the stored value.
@@ -4280,17 +4312,153 @@ function hasPlanningScopeColumns(): Promise<boolean> {
 }
 
 /**
- * The signed-in student's weekly schedule. Rows are matched on the stable class
- * scope (`program_id` + `training_id`) or on the normalized
- * "CODE · Training" label in `class_name`.
- *
- * The whole table is fetched and filtered here instead of using an `.eq` on
- * either column: a server-side FK filter hides teacher entries that were saved
- * before the scope migration (NULL FKs, matching label), and a server-side
- * label filter is byte-exact, so a stray space, case or separator difference
- * hid the entry entirely. One malformed/legacy entry must never blank the
- * student's week.
+ * Words that carry no class identity: connectors and articles. They may be
+ * dropped or reordered between two labels for the same class ("Réseaux &
+ * Sécurité" vs "Réseaux et sécurité").
  */
+const CLASS_LABEL_CONNECTORS = new Set([
+  "et",
+  "and",
+  "de",
+  "du",
+  "des",
+  "of",
+  "la",
+  "le",
+  "les",
+  "the",
+  "d",
+  "l",
+]);
+
+/**
+ * Significant words of an already-normalized class label. Single-character
+ * leftovers ("1", "a") carry no class information, so they are dropped: they
+ * only add noise when two labels are compared word by word.
+ */
+function classLabelTokens(label: string): string[] {
+  return label.split(" ").filter((token) => token.length > 1);
+}
+
+/**
+ * Word-for-word comparison for labels that contain the same class words in a
+ * different order or without their connectors, e.g.
+ * "BTS · Réseaux et sécurité informatique" vs "Réseaux & Sécurité Informatique".
+ *
+ * The extra words on one side may only be connectors, or that side's program
+ * tier (its first word — `classNameFor()` writes the program first). Two
+ * different tiers never match, and a different training that merely shares a
+ * few words is rejected, so a Commerce student never sees the Networking
+ * timetable just because both are "BTS".
+ */
+function classLabelsShareWords(rowLabel: string, wantedLabel: string): boolean {
+  const rowTokens = classLabelTokens(rowLabel);
+  const wantedTokens = classLabelTokens(wantedLabel);
+  if (rowTokens.length === 0 || wantedTokens.length === 0) return false;
+
+  const row = new Set(rowTokens);
+  const wanted = new Set(wantedTokens);
+  if (!rowTokens.some((token) => wanted.has(token))) return false;
+
+  const rowExtras = rowTokens.filter((token) => !wanted.has(token));
+  const wantedExtras = wantedTokens.filter((token) => !row.has(token));
+  // A dropped tier is fine, two different tiers are not (CAP vs BTS).
+  const rowDroppedTier = rowExtras.includes(rowTokens[0]);
+  const wantedDroppedTier = wantedExtras.includes(wantedTokens[0]);
+  if (rowDroppedTier && wantedDroppedTier) return false;
+
+  const onlyTierOrConnector = (extras: string[], tier: string) =>
+    extras.every(
+      (token) => token === tier || CLASS_LABEL_CONNECTORS.has(token),
+    );
+  return (
+    onlyTierOrConnector(rowExtras, rowTokens[0]) &&
+    onlyTierOrConnector(wantedExtras, wantedTokens[0])
+  );
+}
+
+/**
+ * Does a planning row's class label name the student's class?
+ *
+ * Both labels are already normalized by `normalizeCourseName()` (case, accents,
+ * apostrophes and every separator — " · ", "-", "&", "/" — collapse to single
+ * spaces), so the remaining differences are the ones a hand-typed or legacy
+ * label carries:
+ *
+ *   "BTS · Réseaux et sécurité informatique"  (student, from the DB joins)
+ *   "Réseaux & Sécurité Informatique"         (legacy teacher course text)
+ *   "BTS - Réseaux et sécurité informatique - G1"  (operator branch grid)
+ *
+ * Exact equality, containment in either direction, and word coverage all count
+ * as the same class. Sharing only the program tier ("BTS") is NOT a match once
+ * the student has a training, so a Commerce student never sees the Networking
+ * timetable.
+ */
+function classLabelsMatch(rowLabel: string, wantedLabel: string): boolean {
+  if (!rowLabel || !wantedLabel) return false;
+  if (rowLabel === wantedLabel) return true;
+
+  const [shorter, longer] =
+    rowLabel.length <= wantedLabel.length
+      ? [rowLabel, wantedLabel]
+      : [wantedLabel, rowLabel];
+  if (shorter.length >= 3 && longer.includes(shorter)) return true;
+
+  return classLabelsShareWords(rowLabel, wantedLabel);
+}
+
+/**
+ * The signed-in student's schedule. Rows are matched on the stable class scope
+ * (`planning.training_id`, else `program_id`) or on the normalized
+ * "CODE · Training" label in `planning.class_name`.
+ *
+ * There is no `class_id` column: a planning row is scoped by the training (and
+ * program) it was taught to plus the label both portals display. The whole
+ * table is fetched and filtered here instead of using an `.eq` on either
+ * column: a server-side FK filter hides teacher entries that were saved before
+ * the scope migration (NULL FKs, matching label), and a server-side label
+ * filter is byte-exact, so a stray space, case or separator difference hid the
+ * entry entirely. One malformed/legacy entry must never blank the student's
+ * week.
+ *
+ * Matching order matters: a class label match wins over a conflicting FK.
+ * IDs can be stale or unlinked (a session re-scoped in one grid keeps the old
+ * `training_id`), and the label is what the student's card shows — so an entry
+ * whose label names their class must never be dropped because of an old id.
+ */
+function planningBelongsToClass(
+  entry: PlanningRecord,
+  wantedLabel: string,
+  programId?: string,
+  trainingId?: string,
+): boolean {
+  // A stable training id (which implies its program) wins outright, even
+  // after the program/training was renamed.
+  if (trainingId && entry.trainingId === trainingId) return true;
+
+  // The class label is the fallback for rows saved before the scope columns
+  // existed, and the rescue path when the stored ids point elsewhere.
+  const rowLabel = normalizeCourseName(entry.className);
+  if (classLabelsMatch(rowLabel, wantedLabel)) return true;
+
+  // No label evidence: a conflicting scope is a different class.
+  if (programId && entry.programId && entry.programId !== programId) {
+    return false;
+  }
+  if (trainingId && entry.trainingId && entry.trainingId !== trainingId) {
+    return false;
+  }
+
+  // Partial scope only: a row scoped by program alone belongs to every class
+  // of that program, which is the best a pre-training row can offer.
+  return Boolean(
+    programId &&
+      entry.programId === programId &&
+      !trainingId &&
+      !entry.trainingId,
+  );
+}
+
 export async function listPlanningForClass(
   className: string,
   scope?: { programId?: string; trainingId?: string },
@@ -4300,41 +4468,139 @@ export async function listPlanningForClass(
       order: { column: "date", ascending: true },
     })
   ).map(planningFromRow);
-  const programId = scope?.programId;
-  const trainingId = scope?.trainingId;
   const wantedLabel = normalizeCourseName(className);
-  return all.filter((entry) => {
-    // A full FK pair match wins outright, even after a class rename.
-    if (
-      programId &&
-      trainingId &&
-      entry.programId &&
-      entry.trainingId &&
-      entry.programId === programId &&
-      entry.trainingId === trainingId
-    ) {
-      return true;
+
+  return all.filter((entry) =>
+    planningBelongsToClass(
+      entry,
+      wantedLabel,
+      scope?.programId,
+      scope?.trainingId,
+    ),
+  );
+}
+
+export interface StudentCourseSubjects {
+  /**
+   * Subjects used to include course rows in the student's list: the class's own
+   * course sessions plus shared modules scheduled for several classes of the
+   * program.
+   */
+  planned: string[];
+  /**
+   * Every subject offered as a filter option: `planned` first, then the rest of
+   * the program's course-type subjects. The dropdown must stay populated from
+   * the curriculum even when no course/material has been uploaded for the
+   * class yet.
+   */
+  options: string[];
+}
+
+/**
+ * Course subjects (matières) for the student's Cours page, resolved from the
+ * same `planning` rows the Planification page uses.
+ *
+ * `planned` is what the class actually follows: every course-type session
+ * logged for the student's class, a subject scheduled for **at least two
+ * classes of the same program**, or a program-wide subject with no class label
+ * at all. Those are the shared/transverse modules (Arabe, Anglais, Droit, ...)
+ * a teacher may have logged under only one specialization. The two-class rule
+ * keeps another specialization's unique module out of the course list.
+ *
+ * `options` additionally lists every course subject in the program, so the
+ * subject dropdown is populated even when this class has no course rows yet.
+ */
+export async function listScheduledCourseSubjects(
+  className: string,
+  scope: { program?: string; programId?: string; trainingId?: string },
+): Promise<StudentCourseSubjects> {
+  const all = (
+    await rows<PlanningRow>("planning", {
+      order: { column: "date", ascending: true },
+    })
+  ).map(planningFromRow);
+  const wantedLabel = normalizeCourseName(className);
+  const programCode = normalizeCourseName(scope.program);
+
+  const subjectOf = (entry: PlanningRecord): string =>
+    planningCategoryFor(entry.sessionType) === "course"
+      ? (entry.course ?? "").trim()
+      : "";
+
+  // A row belongs to the program through its program FK, or — for legacy rows
+  // without one — through the program code `classNameFor()` writes first.
+  const belongsToProgram = (entry: PlanningRecord): boolean => {
+    if (entry.programId) {
+      return !scope.programId || entry.programId === scope.programId;
     }
-    // A conflicting FK is a different class; never fall through to the label.
-    if (programId && entry.programId && entry.programId !== programId) {
-      return false;
+    if (!programCode) return false;
+    return normalizeCourseName(entry.className).split(" ").includes(programCode);
+  };
+
+  // A stable class key: the label without its program tier, so "BTS ·
+  // Commerce" and "Commerce" count as one class. Labels are preferred over
+  // the training FK because legacy rows carry a label but no id; mixing both
+  // would count one class twice and turn its own module into a "shared" one.
+  // A row with no class evidence but a program scope is program-wide (it is
+  // taught to every class of the tier), not a class of its own.
+  const PROGRAM_WIDE = "program";
+  const classKeyOf = (entry: PlanningRecord): string => {
+    const tokens = normalizeCourseName(entry.className).split(" ");
+    if (programCode && tokens[0] === programCode) tokens.shift();
+    const label = tokens.join(" ");
+    if (label) return `label:${label}`;
+    if (entry.trainingId) return `id:${entry.trainingId}`;
+    return PROGRAM_WIDE;
+  };
+
+  // Normalized subject -> original label, so the dropdown shows the spelling
+  // the planification actually uses.
+  const own = new Map<string, string>();
+  const program = new Map<
+    string,
+    { label: string; classes: Set<string>; programWide: boolean }
+  >();
+
+  for (const entry of all) {
+    const name = subjectOf(entry);
+    const key = normalizeCourseName(name);
+    if (!key) continue;
+    const isOwn = planningBelongsToClass(
+      entry,
+      wantedLabel,
+      scope.programId,
+      scope.trainingId,
+    );
+    const isProgram = belongsToProgram(entry);
+    if (isOwn && !own.has(key)) own.set(key, name);
+    if (!isProgram) continue;
+    const group = program.get(key) ?? {
+      label: name,
+      classes: new Set<string>(),
+      programWide: false,
+    };
+    const classKey = classKeyOf(entry);
+    group.classes.add(classKey);
+    if (classKey === PROGRAM_WIDE) group.programWide = true;
+    program.set(key, group);
+  }
+
+  // Planned: own subjects plus modules shared by two or more classes, or
+  // taught to the whole program (no class scope at all).
+  const planned = new Map(own);
+  for (const [key, group] of program) {
+    if ((group.programWide || group.classes.size >= 2) && !planned.has(key)) {
+      planned.set(key, group.label);
     }
-    if (trainingId && entry.trainingId && entry.trainingId !== trainingId) {
-      return false;
-    }
-    const rowLabel = normalizeCourseName(entry.className);
-    if (!wantedLabel || !rowLabel) return false;
-    if (rowLabel === wantedLabel) return true;
-    // Minor label drift (the operator grid may store "Training" while the
-    // student label is "CODE · Training") must not hide the entry. A conflict
-    // check above already ruled out a different FK scope, so containment is
-    // only used for rows that carry no usable program/training id.
-    const [shorter, longer] =
-      rowLabel.length <= wantedLabel.length
-        ? [rowLabel, wantedLabel]
-        : [wantedLabel, rowLabel];
-    return shorter.length >= 3 && longer.includes(shorter);
-  });
+  }
+
+  // Options: the planned ones, then every other course subject in the program.
+  const options = new Map(planned);
+  for (const [key, group] of program) {
+    if (!options.has(key)) options.set(key, group.label);
+  }
+
+  return { planned: [...planned.values()], options: [...options.values()] };
 }
 
 const PLANNING_SESSION_TYPE_MISSING =
