@@ -3915,16 +3915,23 @@ export interface StudentExamScope {
   trainingId?: string;
 }
 
-export async function listExamsForStudentClass(
+interface StudentClassMaterials {
+  branchMaterials: BranchMaterialRecord[];
+  /** Matières the class's teachers are assigned to in `branch_materials`. */
+  teacherIds: Set<string>;
+}
+
+/**
+ * The `branch_materials` catalog of the student's class. Both the FK and the
+ * normalized training name are tried, because legacy branches often have no
+ * training_id; a catalog that cannot be read only means no transverse exams.
+ */
+async function resolveStudentClassMaterials(
   scope: StudentExamScope,
-): Promise<StudentExamFeed> {
-  const program = scope.program?.trim() ?? "";
+): Promise<StudentClassMaterials> {
   const training = scope.training?.trim() ?? "";
   const trainingKey = normalizeCourseName(training);
 
-  // The branch mirrors the student's class. Both the FK and the normalized
-  // training name are tried, because legacy rows often have no training_id; a
-  // branch catalog that cannot be read only means no transverse exams.
   const branches = await listBranches().catch(() => [] as BranchRecord[]);
   const branch =
     branches.find(
@@ -3948,23 +3955,20 @@ export async function listExamsForStudentClass(
       .filter((id): id is string => Boolean(id)),
   );
 
-  const allExams = await listExams();
-  const visible = allExams.filter((exam) => {
-    // Same class by normalized name (containment allowed, so a "BTS · …"
-    // snapshot still matches its bare training). Byte-exact comparison used to
-    // hide exams whose snapshot was spelled differently.
-    const sameClass =
-      subjectNamesMatch(exam.program, program) &&
-      subjectNamesMatch(exam.training, training);
-    // A transverse teacher's exam is in scope even when its snapshot names
-    // another training (or none at all).
-    const ownTeacher =
-      Boolean(exam.teacherId) && teacherIds.has(exam.teacherId);
-    return sameClass || ownTeacher;
-  });
+  return { branchMaterials, teacherIds };
+}
 
-  // Matière catalog: the branch list is authoritative, distinct exam subjects
-  // are merged in so a module that only exists on an exam row is still offered.
+/**
+ * Tags each exam with the matières of the class it belongs to, and returns the
+ * class's matière catalog: the branch list is authoritative, distinct exam
+ * subjects are merged in so a module that only exists on an exam row is still
+ * offered. Shared by the exams page and the exam-scores page so both list and
+ * filter matières identically.
+ */
+function tagExamsWithMaterials(
+  exams: ExamRecord[],
+  { branchMaterials, teacherIds }: StudentClassMaterials,
+): StudentExamFeed {
   const catalog = new Map<string, string>();
   const addMaterial = (name: string | undefined) => {
     const label = (name ?? "").trim();
@@ -3973,11 +3977,11 @@ export async function listExamsForStudentClass(
     catalog.set(key, label);
   };
   for (const material of branchMaterials) addMaterial(material.name);
-  for (const exam of visible) addMaterial(exam.subject);
+  for (const exam of exams) addMaterial(exam.subject);
 
   const materials = [...catalog.values()].sort((a, b) => a.localeCompare(b));
 
-  const exams: StudentExamEntry[] = visible.map((exam) => {
+  const tagged: StudentExamEntry[] = exams.map((exam) => {
     const found = new Set<string>();
     const explicit = exam.subject?.trim();
     // 1. The exam's own subject/material tag, when the row carries one.
@@ -3987,7 +3991,11 @@ export async function listExamsForStudentClass(
       }
     }
     // 2. Otherwise the materials this exam's teacher is assigned in the class.
-    if (found.size === 0 && Boolean(exam.teacherId) && teacherIds.has(exam.teacherId)) {
+    if (
+      found.size === 0 &&
+      Boolean(exam.teacherId) &&
+      teacherIds.has(exam.teacherId)
+    ) {
       for (const material of branchMaterials) {
         if (material.teacherId !== exam.teacherId) continue;
         found.add(
@@ -3999,7 +4007,54 @@ export async function listExamsForStudentClass(
     return { ...exam, materials: [...found] };
   });
 
-  return { exams, materials };
+  return { exams: tagged, materials };
+}
+
+export async function listExamsForStudentClass(
+  scope: StudentExamScope,
+): Promise<StudentExamFeed> {
+  const program = scope.program?.trim() ?? "";
+  const training = scope.training?.trim() ?? "";
+
+  const classMaterials = await resolveStudentClassMaterials(scope);
+
+  const allExams = await listExams();
+  const visible = allExams.filter((exam) => {
+    // Same class by normalized name (containment allowed, so a "BTS · …"
+    // snapshot still matches its bare training). Byte-exact comparison used to
+    // hide exams whose snapshot was spelled differently.
+    const sameClass =
+      subjectNamesMatch(exam.program, program) &&
+      subjectNamesMatch(exam.training, training);
+    // A transverse teacher's exam is in scope even when its snapshot names
+    // another training (or none at all).
+    const ownTeacher =
+      Boolean(exam.teacherId) && classMaterials.teacherIds.has(exam.teacherId);
+    return sameClass || ownTeacher;
+  });
+
+  return tagExamsWithMaterials(visible, classMaterials);
+}
+
+/**
+ * The exams behind the student's grades, tagged with the matières of their
+ * class. Grades are the only rows that matter here, so unlike the exams page
+ * nothing is filtered out by class snapshot — a graded exam always keeps its
+ * score, even when its program/training text drifted.
+ */
+export async function listExamsForStudentScores(
+  ids: string[],
+  scope: StudentExamScope,
+): Promise<StudentExamFeed> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return { exams: [], materials: [] };
+
+  const [classMaterials, exams] = await Promise.all([
+    resolveStudentClassMaterials(scope),
+    listExamsByIds(unique),
+  ]);
+
+  return tagExamsWithMaterials(exams, classMaterials);
 }
 
 /** Loads the exams behind a set of grade rows (grades carry no FK to exams). */

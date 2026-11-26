@@ -317,30 +317,47 @@ function DayDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="box-border w-[calc(100vw-2rem)] max-w-lg overflow-hidden p-6 sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t("Planning entry")}</DialogTitle>
-          <DialogDescription>{longDate}</DialogDescription>
-        </DialogHeader>
+      {/* Landscape dialog: the form lays its fields out in two columns, so the
+          popup is wide (and keeps a clean sheet shape on phones). The header
+          and the action bar sit outside the scrolling body, which is why a
+          session can be filled out without losing the date, the category tabs
+          or "Save". */}
+      <DialogContent className="box-border w-[95vw] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-hidden p-0 sm:max-w-4xl sm:p-0 lg:max-w-5xl">
+        <div className="flex max-h-[92vh] min-h-0 flex-col">
+          <DialogHeader className="shrink-0 gap-1 border-b border-zinc-200 px-6 py-4 pr-12 dark:border-zinc-800">
+            <DialogTitle>{t("Planning entry")}</DialogTitle>
+            <DialogDescription>{longDate}</DialogDescription>
+          </DialogHeader>
 
-        {formOpen || entries.length === 0 ? (
-          <PlanningEntryForm
-            key={editingId ?? "new"}
-            initial={editing ?? undefined}
-            courses={courses}
-            classes={classes}
-            submitLabel={editingId ? t("Save Changes") : t("Add Entry")}
-            showCancel={!!editingId}
-            showCategory
-            onUploadMaterial={onUploadMaterial}
-            onSubmit={(values) => onSave(values, editingId)}
-            onCancel={() => {
-              setEditingId(null);
-              setFormOpen(false);
-            }}
-          />
-        ) : (
-          <div className="space-y-3">
+          {formOpen || entries.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
+              <PlanningEntryForm
+                key={editingId ?? "new"}
+                initial={editing ?? undefined}
+                courses={courses}
+                classes={classes}
+                submitLabel={editingId ? t("Save Changes") : t("Add Entry")}
+                showCancel
+                showCategory
+                layout="landscape"
+                onUploadMaterial={onUploadMaterial}
+                onSubmit={(values) => onSave(values, editingId)}
+                onCancel={() => {
+                  // Cancel steps back to the day's session list, and closes the
+                  // dialog when there is no list to go back to.
+                  if (editingId) {
+                    setEditingId(null);
+                    setFormOpen(false);
+                  } else if (entries.length > 0) {
+                    setFormOpen(false);
+                  } else {
+                    onClose();
+                  }
+                }}
+              />
+            </div>
+          ) : (
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-4">
             <ul className="space-y-2">
               {entries.map((e) => (
                 <li key={e.id} className="rounded-md border p-3">
@@ -429,7 +446,8 @@ function DayDialog({
               {t("Add Entry")}
             </Button>
           </div>
-        )}
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

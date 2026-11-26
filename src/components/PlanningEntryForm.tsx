@@ -54,7 +54,9 @@ import type {
 // teacher picker follows the subject, `timeSlots` for a preset window select
 // and `showNotes` for the internal comment. It also asks for `layout="grid"`,
 // the landscape form (date | class | subject / teacher | type | room / time |
-// topic / notes) — the teacher dialogs stay narrow, so they keep the stack.
+// topic / notes). The teacher dialog asks for `layout="landscape"`: two
+// balanced columns in a wide popup, with the category tabs pinned above the
+// scrolling body and the submit bar pinned below it.
 
 const NO_CLASS = "__none";
 const CUSTOM_TIME = "__custom";
@@ -69,10 +71,11 @@ export interface PlanningEntryDraft {
 }
 
 /**
- * `stack` is the original single column used by the teacher dialogs; `grid` is
- * the landscape form for the operator's wide session dialog.
+ * `stack` is the original single column; `grid` is the operator's three-column
+ * session dialog; `landscape` is the teacher dialog's two-column wide layout
+ * with pinned tabs and a pinned submit bar.
  */
-export type PlanningEntryLayout = "stack" | "grid";
+export type PlanningEntryLayout = "stack" | "grid" | "landscape";
 
 export interface PlanningEntryFormProps {
   initial?: PlanningRecord;
@@ -114,7 +117,7 @@ export interface PlanningEntryFormProps {
    */
   date?: string;
   onDateChange?: (date: string) => void;
-  /** Landscape grid when the dialog is wide enough, single column otherwise. */
+  /** Wide layout when the dialog is wide enough, single column otherwise. */
   layout?: PlanningEntryLayout;
   /**
    * Teacher entry dialog: adds the Course & Materials / Exam / PFE switcher,
@@ -301,10 +304,18 @@ export default function PlanningEntryForm({
     !contentMissing && !timeInvalid && !teacherMissing && !uploading;
 
   const isGrid = layout === "grid";
-  // In the grid, every cell is a column of its own; `space-y-1.5` keeps the
-  // label, control and hint tight enough for three rows to fit a landscape
-  // dialog without scrolling.
-  const fieldClass = isGrid ? "min-w-0 space-y-1.5" : "min-w-0 space-y-2";
+  // The teacher dialog: two columns, tabs pinned at the top and the submit bar
+  // pinned at the bottom of a fixed-height popup.
+  const isLandscape = layout === "landscape";
+  const isWide = isGrid || isLandscape;
+  // In the wide layouts every cell is a column of its own; `space-y-1.5` keeps
+  // the label, control and hint tight enough to fit a landscape dialog without
+  // scrolling.
+  const fieldClass = isWide ? "min-w-0 space-y-1.5" : "min-w-0 space-y-2";
+  // Helper captions stay quiet so the form reads as fields, not paragraphs.
+  const hintClass = isWide
+    ? "text-xs text-zinc-500 dark:text-zinc-400"
+    : "text-xs text-muted-foreground";
   // Long option labels must truncate inside the trigger instead of widening
   // the card past its right border.
   const controlClass =
@@ -331,12 +342,20 @@ export default function PlanningEntryForm({
   ]);
 
   return (
-    <div className={isGrid ? "space-y-3" : "min-w-0 space-y-4"}>
+    <div
+      className={
+        isLandscape
+          ? "flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+          : isGrid
+            ? "space-y-3"
+            : "min-w-0 space-y-4"
+      }
+    >
       {showCategory ? (
         <div
           role="group"
           aria-label={t("Planning category")}
-          className="grid w-full min-w-0 grid-cols-3 gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100 p-[3px] dark:border-zinc-800 dark:bg-zinc-900"
+          className="grid w-full min-w-0 shrink-0 grid-cols-3 gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100 p-[3px] dark:border-zinc-800 dark:bg-zinc-900"
         >
           {CATEGORY_OPTIONS.map((option) => {
             const active = option.value === category;
@@ -366,9 +385,11 @@ export default function PlanningEntryForm({
 
       <div
         className={
-          isGrid
-            ? "grid grid-cols-1 items-start gap-x-4 gap-y-3 md:grid-cols-2 lg:grid-cols-3"
-            : "min-w-0 space-y-4"
+          isLandscape
+            ? "grid min-h-0 flex-1 grid-cols-1 content-start items-start gap-x-6 gap-y-4 overflow-y-auto md:grid-cols-2"
+            : isGrid
+              ? "grid grid-cols-1 items-start gap-x-4 gap-y-3 md:grid-cols-2 lg:grid-cols-3"
+              : "min-w-0 space-y-4"
         }
       >
         {onDateChange ? (
@@ -381,7 +402,7 @@ export default function PlanningEntryForm({
               value={date ?? ""}
               onChange={(event) => onDateChange(event.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t("Changing the date moves the session.")}
             </p>
           </div>
@@ -393,7 +414,7 @@ export default function PlanningEntryForm({
             <div className="flex h-8 min-w-0 items-center rounded-lg border bg-muted/40 px-2.5 text-sm">
               <span className="truncate">{className || t("No class")}</span>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t("Fixed by the branch this timetable belongs to.")}
             </p>
           </div>
@@ -469,7 +490,7 @@ export default function PlanningEntryForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {qualifiedIds.length > 0
                 ? t(
                     linkedTeacherCount === 1
@@ -539,7 +560,7 @@ export default function PlanningEntryForm({
               <Video className="h-3.5 w-3.5 shrink-0 text-zinc-600 dark:text-zinc-400" />
               <span className="truncate">{ONLINE_SESSION_LOCATION}</span>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t(
                 "Online sessions meet on {platform}, so no classroom is assigned.",
                 { platform: ONLINE_SESSION_LOCATION },
@@ -564,7 +585,7 @@ export default function PlanningEntryForm({
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t(
                 "Shown as a badge next to the session time in every planning view.",
               )}
@@ -632,7 +653,7 @@ export default function PlanningEntryForm({
               <span>{t("End time must be after the start time.")}</span>
             </div>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t(
                 "Optional. Pick a slot, or use custom times for any other window.",
               )}
@@ -642,13 +663,17 @@ export default function PlanningEntryForm({
 
         <div
           className={
-            isGrid ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-2" : "min-w-0 space-y-2"
+            isLandscape
+              ? "min-w-0 space-y-1.5"
+              : isGrid
+                ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-2"
+                : "min-w-0 space-y-2"
           }
         >
           <Label htmlFor="log-content">{contentLabel}</Label>
           <Textarea
             id="log-content"
-            rows={isGrid ? 3 : undefined}
+            rows={isLandscape ? 4 : isGrid ? 3 : undefined}
             className="w-full min-w-0 max-w-full box-border"
             placeholder={contentPlaceholder}
             value={content}
@@ -660,9 +685,11 @@ export default function PlanningEntryForm({
         {showCategory && category === "course" ? (
           <div
             className={
-              isGrid
-                ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
-                : "min-w-0 space-y-2"
+              isLandscape
+                ? "min-w-0 space-y-1.5 md:col-span-2"
+                : isGrid
+                  ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
+                  : "min-w-0 space-y-2"
             }
           >
             <Label htmlFor="log-material">{t("Lesson material")}</Label>
@@ -730,7 +757,7 @@ export default function PlanningEntryForm({
                 <span className="min-w-0">{uploadError}</span>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
+              <p className={hintClass}>
                 {t(
                   "Optional. Students see this material on their schedule for that day.",
                 )}
@@ -742,9 +769,11 @@ export default function PlanningEntryForm({
         {showNotes ? (
           <div
             className={
-              isGrid
-                ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
-                : "min-w-0 space-y-2"
+              isLandscape
+                ? "min-w-0 space-y-1.5 md:col-span-2"
+                : isGrid
+                  ? "min-w-0 space-y-1.5 md:col-span-2 lg:col-span-3"
+                  : "min-w-0 space-y-2"
             }
           >
             <Label htmlFor="log-notes">{t("Comment / internal note")}</Label>
@@ -758,7 +787,7 @@ export default function PlanningEntryForm({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className={hintClass}>
               {t("Optional. Internal only — students never see this.")}
             </p>
           </div>
@@ -767,9 +796,11 @@ export default function PlanningEntryForm({
 
       <div
         className={
-          isGrid
-            ? "flex flex-wrap items-center justify-end gap-2 border-t pt-3"
-            : "flex items-center justify-end gap-3 pt-2"
+          isLandscape
+            ? "flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-3 dark:border-zinc-800"
+            : isGrid
+              ? "flex flex-wrap items-center justify-end gap-2 border-t pt-3"
+              : "flex items-center justify-end gap-3 pt-2"
         }
       >
         {showCancel ? (
