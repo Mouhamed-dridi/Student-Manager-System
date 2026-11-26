@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, BookOpen, Check, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -16,6 +17,7 @@ import {
   teacherAssignedClasses,
   type TeacherAssignedClass,
 } from "@/lib/api";
+import { subjectTone } from "@/lib/subjectColors";
 import { cn } from "@/lib/utils";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { useNestedView } from "@/hooks/viewHistory";
@@ -42,9 +44,13 @@ function statusBadge(blocked?: boolean) {
 }
 
 /**
- * One assigned class: level badge, class name and the material(s) this teacher
- * teaches there. Rendered as a switcher button, only when the teacher has two
- * or more classes (a single assignment is summarised in the page header).
+ * One assigned class, styled exactly like the operator's Branches card: level
+ * badge and class name on the left, track-coloured status dot on the right,
+ * the materials this teacher teaches in that class as the subtitle, and the
+ * roster size with the open/selected action as the footer.
+ *
+ * Clicking a card selects the class, which switches the roster below the grid;
+ * the open card keeps a crisp zinc ring so the selection is obvious.
  */
 function ClassCard({
   entry,
@@ -55,36 +61,12 @@ function ClassCard({
   active: boolean;
   onSelect: () => void;
 }) {
-  const body = (
-    <>
-      <span className="flex min-w-0 items-center gap-2">
-        <BranchLevelBadge level={entry.level} />
-        <span className="truncate text-sm font-semibold">{entry.name}</span>
-      </span>
-
-      <span className="flex flex-wrap items-center gap-1.5">
-        {entry.materials.length === 0 ? (
-          <span className="text-xs text-muted-foreground">
-            No material assigned
-          </span>
-        ) : (
-          entry.materials.map((material) => (
-            <span
-              key={material}
-              className="inline-flex max-w-full items-center truncate rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              {material}
-            </span>
-          ))
-        )}
-      </span>
-
-      <span className="text-xs tabular-nums text-muted-foreground">
-        {entry.students.length} student
-        {entry.students.length === 1 ? "" : "s"}
-      </span>
-    </>
-  );
+  // Same colour rule as the Branches grid: the track decides the dot.
+  const tone = subjectTone(entry.level || entry.program || entry.name);
+  const materialLine =
+    entry.materials.length > 0
+      ? entry.materials.join(" / ")
+      : "No material assigned";
 
   return (
     <button
@@ -92,13 +74,47 @@ function ClassCard({
       onClick={onSelect}
       aria-pressed={active}
       className={cn(
-        "flex min-w-0 flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:hover:border-zinc-600",
-        active
-          ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100"
-          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
+        "group flex min-w-0 flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        active && "ring-2 ring-zinc-900 dark:ring-zinc-100",
       )}
     >
-      {body}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <BranchLevelBadge level={entry.level} />
+          <h3 className="mt-1.5 line-clamp-2 text-sm font-semibold">
+            {entry.name}
+          </h3>
+        </div>
+        <span
+          className={cn("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", tone.dot)}
+        />
+      </div>
+
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <BookOpen className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{materialLine}</span>
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-2 border-t pt-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          {entry.students.length} student
+          {entry.students.length === 1 ? "" : "s"}
+        </span>
+        <span className="inline-flex items-center gap-1 font-medium">
+          {active ? (
+            <>
+              Selected
+              <Check className="h-3.5 w-3.5" />
+            </>
+          ) : (
+            <>
+              Open class
+              <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+            </>
+          )}
+        </span>
+      </div>
     </button>
   );
 }
@@ -108,7 +124,7 @@ export default function MyClassPage() {
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
   // Every branch this teacher is staffed in (branch_materials + planning).
   const [classes, setClasses] = useState<TeacherAssignedClass[] | null>(null);
-  // The switcher's selection; null means "first assigned class".
+  // The selected class; null means "first assigned class".
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The roster row whose full-page profile is open (null = closed). Read-only
@@ -156,7 +172,7 @@ export default function MyClassPage() {
 
   // Live roster: students added, edited, or removed by the operator appear
   // here without a manual refresh. The assigned-class list is re-resolved too,
-  // so a material assignment picked up by focus refresh updates the switcher.
+  // so a material assignment picked up by focus refresh updates the grid.
   useEffect(() => {
     if (!teacher) return;
     const offStudents = subscribeToTable("students", () =>
@@ -249,20 +265,18 @@ export default function MyClassPage() {
         </Card>
       ) : activeClass ? (
         <>
-          {/* A single assignment needs no switcher: the header already shows
-              its level, name and material. Only multiple classes get pills. */}
-          {classes.length > 1 && (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {classes.map((entry) => (
-                <ClassCard
-                  key={entry.id}
-                  entry={entry}
-                  active={entry.id === activeClass.id}
-                  onSelect={() => setActiveClassId(entry.id)}
-                />
-              ))}
-            </div>
-          )}
+          {/* Every class this teacher has a material in, laid out like the
+              operator's Branches grid. Clicking a card switches the roster. */}
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {classes.map((entry) => (
+              <ClassCard
+                key={entry.id}
+                entry={entry}
+                active={entry.id === activeClass.id}
+                onSelect={() => setActiveClassId(entry.id)}
+              />
+            ))}
+          </div>
 
           <div className="mt-6">
             <p className="mb-2 text-sm text-muted-foreground">

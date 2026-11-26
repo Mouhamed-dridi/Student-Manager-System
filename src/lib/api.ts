@@ -2,7 +2,11 @@ import { supabase } from "@/lib/supabase";
 import { getRole } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
 import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
-import { normalizeCourseName, subjectNamesMatch } from "@/lib/courseDisplay";
+import {
+  normalizeCourseName,
+  subjectAliasKey,
+  subjectNamesMatch,
+} from "@/lib/courseDisplay";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import {
@@ -3623,11 +3627,16 @@ export async function teacherAssignedClasses(
     entry.materials.sort((a, b) => a.localeCompare(b));
   }
 
-  return [...classes.values()].sort((a, b) => {
-    const level =
-      (CLASS_LEVEL_ORDER[a.level] ?? 9) - (CLASS_LEVEL_ORDER[b.level] ?? 9);
-    return level || a.name.localeCompare(b.name);
-  });
+  // A class only belongs on the teacher's page when at least one material of
+  // the class is theirs. Planning sessions whose course is blank therefore drop
+  // out instead of showing an empty class nobody assigned them.
+  return [...classes.values()]
+    .filter((entry) => entry.materials.length > 0)
+    .sort((a, b) => {
+      const level =
+        (CLASS_LEVEL_ORDER[a.level] ?? 9) - (CLASS_LEVEL_ORDER[b.level] ?? 9);
+      return level || a.name.localeCompare(b.name);
+    });
 }
 
 // ----------------------------------------------------------- course reviews
@@ -3756,6 +3765,12 @@ interface ExamRow {
   semester?: string | null;
   file_name: string | null;
   attachment_url?: string | null;
+  // Optional matière links some databases carry (the app itself never writes
+  // them). `select *` returns whatever exists, so reading them cannot break a
+  // query; they are only ever used as a hint for the matière of an exam.
+  // `course` is deliberately ignored: it holds a course title, not a matière.
+  subject?: string | null;
+  material?: string | null;
 }
 
 function examFromRow(row: ExamRow): ExamRecord {
@@ -3769,6 +3784,7 @@ function examFromRow(row: ExamRow): ExamRecord {
     type: row.type ?? undefined,
     duration: row.duration ?? undefined,
     semester: row.semester ?? undefined,
+    subject: (row.subject ?? row.material) || undefined,
     attachment: row.file_name ?? undefined,
     attachmentUrl: row.attachment_url ?? undefined,
   };
@@ -3864,6 +3880,126 @@ export async function listExamsForStudent(
       order: { column: "date", ascending: false },
     })
   ).map(examFromRow);
+}
+
+/**
+ * Everything the student's exams page needs for one class.
+ *
+ * Exams are class snapshots (`program` + `training` text), which is enough for
+ * the class's own teachers but hides the transverse modules: an English or
+ * Warehouse & Logistics teacher usually stamps their own specialization on the
+ * row, or leaves the snapshot blank. So an exam is also visible when its teacher
+ * holds a material of the student's branch in `branch_materials` — exactly the
+ * assignment the class file and My Class page read.
+ *
+ * Each exam is tagged with the matières it belongs to: a stored subject wins,
+ * otherwise the materials of its teacher. `materials` is the class catalog
+ * (branch materials merged with any distinct exam subjects, alias-deduped) so
+ * the page can list every matière even when it has no exam yet.
+ */
+export interface StudentExamEntry extends ExamRecord {
+  /** Matières of the class this exam belongs to; empty when unresolved. */
+  materials: string[];
+}
+
+export interface StudentExamFeed {
+  exams: StudentExamEntry[];
+  /** Alias-deduped matières of the class, alphabetically sorted. */
+  materials: string[];
+}
+
+export interface StudentExamScope {
+  program: string;
+  training: string;
+  programId?: string;
+  trainingId?: string;
+}
+
+export async function listExamsForStudentClass(
+  scope: StudentExamScope,
+): Promise<StudentExamFeed> {
+  const program = scope.program?.trim() ?? "";
+  const training = scope.training?.trim() ?? "";
+  const trainingKey = normalizeCourseName(training);
+
+  // The branch mirrors the student's class. Both the FK and the normalized
+  // training name are tried, because legacy rows often have no training_id; a
+  // branch catalog that cannot be read only means no transverse exams.
+  const branches = await listBranches().catch(() => [] as BranchRecord[]);
+  const branch =
+    branches.find(
+      (candidate) =>
+        (Boolean(scope.trainingId) &&
+          candidate.trainingId === scope.trainingId) ||
+        (Boolean(trainingKey) &&
+          subjectNamesMatch(candidate.name, training) &&
+          (!scope.programId ||
+            !candidate.programId ||
+            candidate.programId === scope.programId)),
+    ) ?? null;
+  const branchMaterials = branch
+    ? await listBranchMaterials(branch.id).catch(
+        () => [] as BranchMaterialRecord[],
+      )
+    : [];
+  const teacherIds = new Set(
+    branchMaterials
+      .map((material) => material.teacherId)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  const allExams = await listExams();
+  const visible = allExams.filter((exam) => {
+    // Same class by normalized name (containment allowed, so a "BTS · …"
+    // snapshot still matches its bare training). Byte-exact comparison used to
+    // hide exams whose snapshot was spelled differently.
+    const sameClass =
+      subjectNamesMatch(exam.program, program) &&
+      subjectNamesMatch(exam.training, training);
+    // A transverse teacher's exam is in scope even when its snapshot names
+    // another training (or none at all).
+    const ownTeacher =
+      Boolean(exam.teacherId) && teacherIds.has(exam.teacherId);
+    return sameClass || ownTeacher;
+  });
+
+  // Matière catalog: the branch list is authoritative, distinct exam subjects
+  // are merged in so a module that only exists on an exam row is still offered.
+  const catalog = new Map<string, string>();
+  const addMaterial = (name: string | undefined) => {
+    const label = (name ?? "").trim();
+    const key = subjectAliasKey(label);
+    if (!key || catalog.has(key)) return;
+    catalog.set(key, label);
+  };
+  for (const material of branchMaterials) addMaterial(material.name);
+  for (const exam of visible) addMaterial(exam.subject);
+
+  const materials = [...catalog.values()].sort((a, b) => a.localeCompare(b));
+
+  const exams: StudentExamEntry[] = visible.map((exam) => {
+    const found = new Set<string>();
+    const explicit = exam.subject?.trim();
+    // 1. The exam's own subject/material tag, when the row carries one.
+    if (explicit) {
+      for (const label of materials) {
+        if (subjectNamesMatch(label, explicit)) found.add(label);
+      }
+    }
+    // 2. Otherwise the materials this exam's teacher is assigned in the class.
+    if (found.size === 0 && Boolean(exam.teacherId) && teacherIds.has(exam.teacherId)) {
+      for (const material of branchMaterials) {
+        if (material.teacherId !== exam.teacherId) continue;
+        found.add(
+          materials.find((label) => subjectNamesMatch(label, material.name)) ??
+            material.name,
+        );
+      }
+    }
+    return { ...exam, materials: [...found] };
+  });
+
+  return { exams, materials };
 }
 
 /** Loads the exams behind a set of grade rows (grades carry no FK to exams). */

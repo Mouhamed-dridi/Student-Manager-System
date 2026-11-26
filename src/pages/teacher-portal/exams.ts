@@ -9,6 +9,8 @@ export interface ExamRecord {
   duration?: string;
   /** 'Semester 1' | 'Semester 2' (exams.semester). */
   semester?: string;
+  /** Matière tag, when the row carries one (exams.subject/material/course). */
+  subject?: string;
   /** Display name of the attached PDF (exams.file_name). */
   attachment?: string;
   /** Public URL of the attached PDF (exams.attachment_url). */
