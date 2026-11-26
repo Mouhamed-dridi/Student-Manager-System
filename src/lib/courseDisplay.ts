@@ -53,6 +53,30 @@ export function normalizeCourseName(value: string | null | undefined): string {
     .trim();
 }
 
+// The planification and the branch material catalog do not always spell a
+// language the same way ("Anglais" vs "English"), so both sides are folded to
+// one canonical token before they are compared. Without this, the dropdown
+// listed the same matière twice and a course tagged "English" never counted
+// under the branch's "Anglais" material.
+const SUBJECT_ALIASES: Record<string, string> = {
+  anglais: "anglais",
+  english: "anglais",
+  francais: "francais",
+  french: "francais",
+};
+
+/**
+ * Normalized, alias-folded key for a subject name. Used to deduplicate the
+ * matière options and to compare a course against a material, so
+ * "Anglais"/"English" and "Français"/"French" are one subject.
+ */
+export function subjectAliasKey(value: string | null | undefined): string {
+  return normalizeCourseName(value)
+    .split(" ")
+    .map((token) => SUBJECT_ALIASES[token] ?? token)
+    .join(" ");
+}
+
 /**
  * Whether two subject names refer to the same matière. Normalized equality is
  * the common case; a whole-word extension also matches so a course titled
@@ -64,8 +88,8 @@ export function subjectNamesMatch(
   a: string | null | undefined,
   b: string | null | undefined,
 ): boolean {
-  const left = normalizeCourseName(a);
-  const right = normalizeCourseName(b);
+  const left = subjectAliasKey(a);
+  const right = subjectAliasKey(b);
   if (!left || !right) return false;
   if (left === right) return true;
   const [shorter, longer] =

@@ -1,107 +1,121 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "brainstorming": {
       "source": "obra/superpowers",
       "sourceType": "github",
       "skillPath": "skills/brainstorming/SKILL.md",
-      "computedHash": "da48054155b36bfe3fc2ad24f97087af4a495e1b6a4e352233cc1a77550838e5"
+      "computedHash": "68dc20afa48ad6fd41b034a14cbe236adacbe8fb2fdb90fdd5b6efb381e2774e"
+    },
+    "figma-designer": {
+      "source": "elayadesign/ai-design-skills",
+      "commit": "456d9e0d3e2d84c748bb143c6ca3d90c45e16213",
+      "sourceType": "github",
+      "skillPath": "skills/figma-designer/SKILL.md",
+      "computedHash": "7dd0425720ec529650af8fc6840eb7c02ae1721dd895dcfbc68b4c741658f607"
     },
     "firecrawl": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl/SKILL.md",
-      "computedHash": "a05c80c01a49d1c8154ec3e8b24045e6e4062e7c49b2d4dcb8537acb7ad4ed24"
+      "computedHash": "312a4e91899cbdeaaba45bde8cd22b0468e8c48885ece7d2602558764d107a64"
     },
     "firecrawl-agent": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-agent/SKILL.md",
-      "computedHash": "e747e66d61a9c8cd7f78879c0684c6f2a1088dc05b73299e3682910a1e83079b"
+      "computedHash": "530c52993977f6f9abe2f33a2eb5746fcd558fc63b91d24900275f1596da21a3"
     },
     "firecrawl-alexandria": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-alexandria/SKILL.md",
-      "computedHash": "0acd61b341f97d893a5d5c5c254f1df5d4c7090dd1a9ba6667ccf766eed96056"
+      "computedHash": "dbb57c24117e1b25a58cdaccb352eeea9b565b105a1e1bfa5d59531da7f31894"
     },
     "firecrawl-crawl": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-crawl/SKILL.md",
-      "computedHash": "665b9e55fec896289629ba624877f2620f58d1c42d41c2432d419f31c4045a50"
+      "computedHash": "c81687665629f868fa8261568724bbfa3d7fd02e32efeac6f23a8a6ef0755d33"
     },
     "firecrawl-developer-index": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-developer-index/SKILL.md",
-      "computedHash": "5f46f90ba59c0a44177d5012a47588ec5fa1227ed286e6a32309ab0d57652b41"
+      "computedHash": "5cc9f4bb969d8b67ed69b7c0a4d84ca5a2451483ae628ee8f5e3b63290e219e9"
     },
     "firecrawl-download": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-download/SKILL.md",
-      "computedHash": "e782c0ca23f5c953fe85384d79e1be4f6c568bb4a9a7507685a5564579e9daaa"
+      "computedHash": "8d842f00909038ef51c9e1ddee8d611f7d2d7c97497e2156a51ca2d918526c5b"
     },
     "firecrawl-interact": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-interact/SKILL.md",
-      "computedHash": "728317bfe4a7e16dcddf75bbcc0299d8c8251e8aa3992cce20edd26c19e7882d"
+      "computedHash": "ff00daf62d34f419955f8c71cb5ac7aa417c7ef0134b35a02f1afbfe3b2e4fa2"
     },
     "firecrawl-map": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-map/SKILL.md",
-      "computedHash": "2487304533985fda0ff0f6942cc8c1b59ff245cc243e93f99ce6dd988d39d351"
+      "computedHash": "420f8f42a2ff170be77d84c290ae270479166bd36231c816bc07f1a2991035e9"
     },
     "firecrawl-monitor": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-monitor/SKILL.md",
-      "computedHash": "f803b2dea1e07b882fa4ef6c98948e81ef5385cf5dee811615eb5b90f7aeca51"
+      "computedHash": "ebb0259eb3a8007387eeb555c29821d6d5981ccf419283c05faf9d0bb80482ad"
     },
     "firecrawl-parse": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-parse/SKILL.md",
-      "computedHash": "cc47904d3da9d774094e5ceb8e1c50fbc9a3e13657da87d9b462e8ebd78ab1a5"
+      "computedHash": "c73f9f4dd8dc6b7c97f179ffc68e6f28989463336efb5485ba246b430f1d4b03"
     },
     "firecrawl-research-index": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-research-index/SKILL.md",
-      "computedHash": "f8db73d3688e8a04e564ce7c5f42fa2f6ce8dd084b2c0b35896e230e744f6dd3"
+      "computedHash": "6a4a749ca42a468a2b42f609f39b48037d38a832b4ddc53812dab1ad2ec63ab9"
     },
     "firecrawl-scrape": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-scrape/SKILL.md",
-      "computedHash": "0ed7b155075c18ec240dc61121b8d05aaae37de2f05f84cc0a0709b172725a44"
+      "computedHash": "0ea7679c5f850c7064d5bed8ee235e36cf3cea5a3f6b6cdbff78ca3b98858835"
     },
     "firecrawl-search": {
       "source": "firecrawl/cli",
       "sourceType": "github",
       "skillPath": "skills/firecrawl-search/SKILL.md",
-      "computedHash": "e8ac19e9256c253da4546c2f52c36547e11e626e54d3926f3e198f9bd0b39c5e"
+      "computedHash": "576f10b5d1f917434b320162f20fd5e40c0583f252ab101648ef9500c31107f1"
+    },
+    "landing-page-design": {
+      "source": "elayadesign/ai-design-skills",
+      "commit": "456d9e0d3e2d84c748bb143c6ca3d90c45e16213",
+      "sourceType": "github",
+      "skillPath": "skills/landing-page-design/SKILL.md",
+      "computedHash": "98fa8463d5fc56f969d52f24512366d66655271080cb67b43ca0790d8e951bc6"
     },
     "migrate-radix-to-base": {
       "source": "shadcn/ui",
       "sourceType": "github",
       "skillPath": "skills/migrate-radix-to-base/SKILL.md",
-      "computedHash": "4fdc31bf287f674ba6bf91a648120f7b34cd7ef370f998f2cc116fed067789c5"
+      "computedHash": "7644de21e9aa533904def58c30f809ae6574c3cabc6396ab8b03dee751e8ffbe"
     },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",
       "skillPath": "skills/shadcn/SKILL.md",
-      "computedHash": "7859e9a064940a1a0010c992b63e4633c4f5f39ed367a23c16f24029816b1703"
+      "computedHash": "388962d16c7a4f13aaeee0d8f128e50a87df8553d42ef7988c39c0e1c74a40e8"
     },
     "writing-plans": {
       "source": "obra/superpowers",
       "sourceType": "github",
       "skillPath": "skills/writing-plans/SKILL.md",
-      "computedHash": "c2647b5bf067be353a893e5a39a632cbbeb7ad81e61fa5ae227ece5490029073"
+      "computedHash": "ef082ddb5354d736059397133b3682e8a0c85c57906affe47c9da354cbb7c91e"
     }
   }
 }

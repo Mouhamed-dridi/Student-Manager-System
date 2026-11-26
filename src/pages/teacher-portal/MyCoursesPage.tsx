@@ -37,9 +37,9 @@ import {
   listBranches,
   listBranchMaterials,
   listTeacherCourses,
+  resolveTeacherTeachingContext,
   saveTeacherCourse,
   subscribeToTable,
-  teacherCourseAssignment,
   toMaterialList,
   uploadCourseMaterial,
   uploadCourseThumbnail,
@@ -140,6 +140,13 @@ interface CourseFormProps {
    * matière it belongs to, which is what the student Cours filter groups by.
    */
   materialOptions?: string[];
+  /** Matière preselected for a new course: an assigned branch material, else
+   *  the teacher's specialty, so transverse teachers do not have to hunt for
+   *  their own material in the picker. */
+  defaultMaterial?: string;
+  /** Whether the teacher teaches anything at all (profile class, material, or
+   *  a planning session). False is the only case that shows the amber notice. */
+  hasTeachingAssignment?: boolean;
   onSubmit: (values: CourseFormValues) => Promise<void>;
   onCancel: () => void;
 }
@@ -148,6 +155,8 @@ function CourseForm({
   initialData,
   lockedAssignment,
   materialOptions,
+  defaultMaterial,
+  hasTeachingAssignment = true,
   onSubmit,
   onCancel,
 }: CourseFormProps) {
@@ -164,6 +173,11 @@ function CourseForm({
       : null;
   const [name, setName] = useState(initialData?.name ?? "");
   const [subject, setSubject] = useState(initialData?.subject ?? "");
+  // A new course starts on the teacher's own material (assigned branch
+  // material, else specialty). Derived rather than stored so a catalog that
+  // resolves after mount still fills it in, while an explicit pick always wins.
+  // Editing never changes the stored matière.
+  const effectiveSubject = subject || (initialData ? "" : defaultMaterial ?? "");
   const [description, setDescription] = useState(
     initialData?.description ?? "",
   );
@@ -202,7 +216,7 @@ function CourseForm({
   // Keep a legacy/other subject selectable while editing even when it is not
   // in this teacher's current material list.
   const materialChoices = [...(materialOptions ?? [])];
-  const currentSubject = subject.trim();
+  const currentSubject = effectiveSubject.trim();
   if (currentSubject && !materialChoices.includes(currentSubject)) {
     materialChoices.unshift(currentSubject);
   }
@@ -235,7 +249,7 @@ function CourseForm({
         <div className="space-y-2">
           <Label>Material (matière)</Label>
           <Select
-            value={subject}
+            value={effectiveSubject}
             items={materialItems}
             onValueChange={(value) => setSubject(value ?? "")}
           >
@@ -368,11 +382,16 @@ function CourseForm({
               </div>
             </div>
           </>
+        ) : hasTeachingAssignment ? (
+          <p className="rounded-lg border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+            Your class is not set on your profile. The course is recorded without
+            a program/training and appears under the material selected above.
+          </p>
         ) : (
           <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            Your profile has no assigned program or training yet, so this course
-            will be recorded without one until the center assigns you a
-            program/training.
+            Your profile has no assigned program, training, material or planning
+            session yet, so this course will be recorded without one until the
+            center assigns you a class.
           </p>
         )}
         <div className="space-y-2">
@@ -458,7 +477,7 @@ function CourseForm({
               const values: CourseFormValues = {
                 name: name.trim(),
                 description: description.trim(),
-                subject: subject.trim() || undefined,
+                subject: effectiveSubject.trim() || undefined,
                 program: programValue,
                 training: trainingValue,
                 subtitle: subtitle.trim() || undefined,
@@ -506,6 +525,13 @@ export default function MyCoursesPage() {
   // Materials (matières) the course picker offers: the teacher's class branch,
   // narrowed to the materials assigned to this teacher when there are any.
   const [classMaterials, setClassMaterials] = useState<BranchMaterialRecord[]>([]);
+  // First of the teacher's own materials, else their specialty: preselected in
+  // the Add Course form.
+  const [preferredMaterial, setPreferredMaterial] = useState("");
+  // Optimistic until the full context resolves, so the amber "no assignment"
+  // notice never flashes for a teacher who is staffed through materials or
+  // planning.
+  const [hasTeachingAssignment, setHasTeachingAssignment] = useState(true);
   const [view, setView] = useState<ViewKey>("my-courses");
   const [editing, setEditing] = useState<TeacherCourseRecord | null>(null);
   // Course shown in the full-page detail view (instead of the card grid).
@@ -551,19 +577,22 @@ export default function MyCoursesPage() {
           return;
         }
         setTeacher(record);
-        teacherCourseAssignment(record.id)
-          .then((a) => {
-            if (!cancelled && a.program && a.training) {
+        resolveTeacherTeachingContext(record.id)
+          .then((ctx) => {
+            if (cancelled) return;
+            setHasTeachingAssignment(ctx.hasAssignment);
+            setPreferredMaterial(ctx.materials[0] ?? record.specialty ?? "");
+            if (ctx.program && ctx.training) {
               setAssignment({
-                program: a.program,
-                training: a.training,
-                programId: a.programId,
-                trainingId: a.trainingId,
+                program: ctx.program,
+                training: ctx.training,
+                programId: ctx.programId,
+                trainingId: ctx.trainingId,
               });
             }
           })
           .catch(() => {});
-await refresh(record.id);
+        void refresh(record.id);
       })
       .catch(() => {
         if (!cancelled) setTeacher(null);
@@ -698,6 +727,10 @@ await refresh(record.id);
         id: crypto.randomUUID(),
         teacherId: teacher.id,
         published: new Date().toISOString(),
+        // Already-resolved class ids, so saving does not have to look them up
+        // again before it can insert.
+        programId: assignment?.programId,
+        trainingId: assignment?.trainingId,
         ...courseValues,
       };
     }
@@ -718,11 +751,14 @@ await refresh(record.id);
         ),
       );
     }
+    // The write has completed (or thrown) by now; close the form immediately
+    // and let the list refresh in the background instead of keeping the
+    // button on "Saving…" for another round-trip.
     await saveTeacherCourse(record);
     setEditing(null);
     setDetail(null);
     setView("my-courses");
-    await refresh(teacher?.id);
+    void refresh(teacher?.id);
   };
 
   const confirmDelete = async () => {
@@ -860,6 +896,10 @@ await refresh(record.id);
                 : undefined
             }
             materialOptions={classMaterials.map((material) => material.name)}
+            defaultMaterial={
+              preferredMaterial || classMaterials[0]?.name || undefined
+            }
+            hasTeachingAssignment={hasTeachingAssignment}
             onSubmit={handleSubmit}
             onCancel={() => {
               setEditing(null);

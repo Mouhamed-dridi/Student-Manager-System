@@ -17,6 +17,7 @@ import type { BranchMaterialRecord } from "@/lib/api";
 import {
   courseKey,
   normalizeCourseName,
+  subjectAliasKey,
   subjectNamesMatch,
 } from "@/lib/courseDisplay";
 import { loadScheduledCourses } from "@/lib/trainings";
@@ -37,32 +38,39 @@ import { cn } from "@/lib/utils";
 import { Filter } from "lucide-react";
 
 /**
- * The dropdown's matière list. The branch material catalog (Materials &
- * assigned teachers) is authoritative whenever it exists; the planification
- * subjects are only a fallback for databases that have not run the branches
- * migration. Planning can carry course titles, which must never become
- * matière options.
+ * The dropdown's matière list: every material assigned to the student's branch
+ * merged with the distinct subjects planned for their class/training. The
+ * branch catalog is authoritative, but planning-only modules (a language
+ * shared with another specialization, for instance) must still be offered.
+ * The two lists are deduplicated with `subjectAliasKey`, so "Anglais" and
+ * "English" (or "Français" and "French") are one option, not two. Planning can
+ * carry course titles, which must never become matière options.
  */
 function classMaterialCatalog(
   materials: BranchMaterialRecord[],
   plannedSubjects: string[],
 ): string[] {
-  const source =
-    materials.length > 0
-      ? materials.map((material) => material.name)
-      : plannedSubjects;
-  return [...new Set(source.map((name) => name.trim()).filter(Boolean))];
+  const seen = new Map<string, string>();
+  const add = (name: string) => {
+    const label = name.trim();
+    const key = subjectAliasKey(label);
+    if (!key || seen.has(key)) return;
+    seen.set(key, label);
+  };
+  for (const material of materials) add(material.name);
+  for (const subject of plannedSubjects) add(subject);
+  return [...seen.values()];
 }
 
 /**
  * The materials (matières) a course belongs to, or an empty list when it
- * cannot be tied to the student's class. An explicit `courses.subject` wins;
- * a label that does not match the catalog ("SAP consulting" vs "ERP
- * Consulting") then falls back to a title match, and finally to every material
- * whose assigned teacher owns the course — never just one, because a teacher
- * can hold several materials and dropping the row would hide valid courses.
- * Courses with no resolvable material are not shown at all, so a course title
- * can never masquerade as a matière.
+ * cannot be tied to the student's class. A course matches through any of the
+ * signals the data model offers: its `subject` tag, a file in its `materials`
+ * list, or its teacher being the one assigned a material of this branch. They
+ * are combined (never first-match-wins) because a teacher can hold several
+ * materials and a course may be tagged one way while the branch uses another.
+ * A title match is only a last resort so a course title cannot masquerade as a
+ * matière when every other signal is missing.
  */
 function courseMaterials(
   course: ScheduledCourseView,
@@ -84,14 +92,25 @@ function courseMaterials(
       if (subjectNamesMatch(name, explicit)) add(name);
     }
   }
+  for (const file of course.materials ?? []) {
+    for (const name of classMaterials) {
+      if (subjectNamesMatch(name, file.name)) add(name);
+    }
+  }
+  if (course.teacherId) {
+    for (const material of materials) {
+      if (material.teacherId !== course.teacherId) continue;
+      // Prefer the catalog label so an alias pair ("Anglais"/"English") does
+      // not put both spellings on the same course.
+      const label =
+        classMaterials.find((name) => subjectNamesMatch(name, material.name)) ??
+        material.name;
+      add(label);
+    }
+  }
   if (found.size === 0) {
     for (const name of classMaterials) {
       if (subjectNamesMatch(course.name, name)) add(name);
-    }
-  }
-  if (found.size === 0 && course.teacherId) {
-    for (const material of materials) {
-      if (material.teacherId === course.teacherId) add(material.name);
     }
   }
   return [...found];
@@ -355,8 +374,11 @@ export default function CoursesPage() {
                 <SelectValue className="min-w-0 truncate font-medium" />
               </SelectTrigger>
               <SelectContent
+                position="popper"
+                side="bottom"
                 align="end"
-                className="min-w-[15rem] border border-zinc-200 bg-white shadow-sm ring-0 dark:border-zinc-800 dark:bg-zinc-950"
+                sideOffset={8}
+                className="z-50 max-h-[320px] min-w-[240px] overflow-y-auto border border-zinc-200 bg-white shadow-sm ring-0 dark:border-zinc-800 dark:bg-zinc-950"
               >
                 {subjectOptions.map((option) => (
                   <SelectItem

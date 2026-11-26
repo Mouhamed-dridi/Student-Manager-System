@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -9,14 +9,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DataError, DataLoading } from "@/components/DataState";
+import BranchLevelBadge from "@/pages/branches/BranchLevelBadge";
 import {
-  classRosterForTeacher,
   errorMessage,
-  importClassForTeacher,
-  teacherCourseAssignment,
   subscribeToTable,
-  type TeacherCourseAssignment,
+  teacherAssignedClasses,
+  type TeacherAssignedClass,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import { useNestedView } from "@/hooks/viewHistory";
 import StudentProfilePage from "@/components/StudentProfilePage";
@@ -41,38 +41,87 @@ function statusBadge(blocked?: boolean) {
   );
 }
 
+/**
+ * One assigned class: level badge, class name and the material(s) this teacher
+ * teaches there. Rendered as a switcher button, only when the teacher has two
+ * or more classes (a single assignment is summarised in the page header).
+ */
+function ClassCard({
+  entry,
+  active,
+  onSelect,
+}: {
+  entry: TeacherAssignedClass;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  const body = (
+    <>
+      <span className="flex min-w-0 items-center gap-2">
+        <BranchLevelBadge level={entry.level} />
+        <span className="truncate text-sm font-semibold">{entry.name}</span>
+      </span>
+
+      <span className="flex flex-wrap items-center gap-1.5">
+        {entry.materials.length === 0 ? (
+          <span className="text-xs text-muted-foreground">
+            No material assigned
+          </span>
+        ) : (
+          entry.materials.map((material) => (
+            <span
+              key={material}
+              className="inline-flex max-w-full items-center truncate rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300"
+            >
+              {material}
+            </span>
+          ))
+        )}
+      </span>
+
+      <span className="text-xs tabular-nums text-muted-foreground">
+        {entry.students.length} student
+        {entry.students.length === 1 ? "" : "s"}
+      </span>
+    </>
+  );
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={active}
+      className={cn(
+        "flex min-w-0 flex-col gap-2 rounded-lg border p-3 text-left transition-colors hover:border-zinc-400 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none dark:hover:border-zinc-600",
+        active
+          ? "border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900 dark:border-zinc-100 dark:bg-zinc-900 dark:ring-zinc-100"
+          : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
+      )}
+    >
+      {body}
+    </button>
+  );
+}
+
 export default function MyClassPage() {
   // undefined = session record still loading; null = record is gone.
   const [teacher, setTeacher] = useState<Teacher | null | undefined>(undefined);
-  const [roster, setRoster] = useState<Student[] | null>(null);
-  const [courseCount, setCourseCount] = useState(0);
+  // Every branch this teacher is staffed in (branch_materials + planning).
+  const [classes, setClasses] = useState<TeacherAssignedClass[] | null>(null);
+  // The switcher's selection; null means "first assigned class".
+  const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // The class roster is read for the teacher's assigned program/training, which
-  // teacherCourseAssignment() resolves from the profile columns first, else
-  // from the class of their existing courses. undefined = still resolving;
-  // null = no assignment.
-  const [assignment, setAssignment] = useState<TeacherCourseAssignment | null | undefined>(undefined);
-  // Populated automatically once the assignment resolves — there is no import
-  // action on this page, the teacher only ever sees their own class.
-  const [imported, setImported] = useState<Student[] | null>(null);
-  const [importError, setImportError] = useState<string | null>(null);
   // The roster row whose full-page profile is open (null = closed). Read-only
   // for a teacher: no `onEdit`, so the shared page hides the edit action.
   const [profile, setProfile] = useState<Student | null>(null);
 
-  // Read by importClass, which stays referentially stable so the realtime
-  // effect below never re-subscribes mid-session.
-  const teacherIdRef = useRef("");
-
-  const importClass = useCallback(async () => {
-    if (!teacherIdRef.current) return;
+  const refresh = useCallback(async (record: Teacher) => {
     try {
-      const { students } = await importClassForTeacher(teacherIdRef.current);
-      setImported(students);
-      setImportError(null);
+      const list = await teacherAssignedClasses(record.id, record.fullName);
+      setClasses(list);
+      setError(null);
     } catch (err) {
-      setImportError(errorMessage(err));
+      setError(errorMessage(err));
     }
   }, []);
 
@@ -86,30 +135,15 @@ export default function MyClassPage() {
           return;
         }
         setTeacher(record);
-        teacherIdRef.current = record.id;
         try {
-          const [{ courses, students }, resolved] = await Promise.all([
-            classRosterForTeacher(record.id),
-            teacherCourseAssignment(record.id),
-          ]);
+          const list = await teacherAssignedClasses(record.id, record.fullName);
           if (cancelled) return;
-          setCourseCount(courses.length);
-          setRoster(students);
-          const assigned =
-            resolved.program && resolved.training ? resolved : null;
-          setAssignment(assigned);
-          if (!assigned) return;
-          // Load the class roster right away: the page has no Import action.
-          try {
-            const { students: classStudents } = await importClassForTeacher(
-              record.id,
-            );
-            if (!cancelled) setImported(classStudents);
-          } catch (err) {
-            if (!cancelled) setImportError(errorMessage(err));
-          }
+          setClasses(list);
+          setError(null);
         } catch (err) {
-          if (!cancelled) setError(errorMessage(err));
+          if (cancelled) return;
+          setError(errorMessage(err));
+          setClasses([]);
         }
       })
       .catch(() => {
@@ -120,41 +154,24 @@ export default function MyClassPage() {
     };
   }, []);
 
-  // Live roster: courses/students added, edited, or removed by the operator
-  // or the teacher in another browser appear here without a manual refresh.
-  // Runs once the teacher record resolves (undefined/null never subscribe).
+  // Live roster: students added, edited, or removed by the operator appear
+  // here without a manual refresh. The assigned-class list is re-resolved too,
+  // so a material assignment picked up by focus refresh updates the switcher.
   useEffect(() => {
     if (!teacher) return;
-    const refresh = async () => {
-      try {
-        const { courses, students } = await classRosterForTeacher(teacher.id);
-        setCourseCount(courses.length);
-        setRoster(students);
-        await importClass();
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    };
-    const offStudents = subscribeToTable("students", refresh);
-    const offCourses = subscribeToTable("courses", refresh);
+    const offStudents = subscribeToTable("students", () =>
+      void refresh(teacher),
+    );
     return () => {
       offStudents();
-      offCourses();
     };
-  }, [teacher, importClass]);
+  }, [teacher, refresh]);
 
-  // Quiet fallback: refresh the roster once if the tab regains focus after
-  // being in the background for a while, in case realtime silently dropped.
-  useRefetchOnFocus(async () => {
-    if (!teacher) return;
-    try {
-      const { courses, students } = await classRosterForTeacher(teacher.id);
-      setCourseCount(courses.length);
-      setRoster(students);
-      await importClass();
-    } catch (err) {
-      setError(errorMessage(err));
-    }
+  // Quiet fallback: refresh once if the tab regains focus after being in the
+  // background for a while, in case realtime silently dropped or the operator
+  // changed this teacher's branch assignments.
+  useRefetchOnFocus(() => {
+    if (teacher) void refresh(teacher);
   });
 
   // The profile is a sub-page of My Class: the shared history stack makes the
@@ -166,11 +183,12 @@ export default function MyClassPage() {
     () => setProfile(null),
   );
 
-  // Prefer the latest row from either roster table so realtime refreshes keep
-  // the open profile current; fall back to the captured object if it vanished.
+  // Prefer the latest row from any class roster so realtime refreshes keep the
+  // open profile current; fall back to the captured object if it vanished.
   const profileStudent = profile
-    ? [...(imported ?? []), ...(roster ?? [])].find((s) => s.id === profile.id) ??
-      profile
+    ? ((classes ?? []).flatMap((entry) => entry.students).find(
+        (student) => student.id === profile.id,
+      ) ?? profile)
     : null;
 
   if (profileStudent) {
@@ -191,170 +209,124 @@ export default function MyClassPage() {
     );
   }
 
-  if (
-    teacher === undefined ||
-    roster === null ||
-    assignment === undefined ||
-    // With an assignment the class roster is fetched automatically, so wait for
-    // it instead of flashing the fallback table. A failed fetch shows the error
-    // and falls back to the course-based roster rather than spinning forever.
-    (assignment !== null && imported === null && !importError)
-  ) {
+  if (teacher === undefined || classes === null) {
     return <DataLoading label="Loading your class…" />;
   }
 
-  const sorted = [...roster].sort((a, b) =>
-    (a.fullName ?? "").localeCompare(b.fullName ?? ""),
-  );
+  const activeClass =
+    classes.find((entry) => entry.id === activeClassId) ?? classes[0] ?? null;
+  const activeStudents = activeClass?.students ?? [];
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold">My Class</h2>
-
-      {assignment === null && (
-        <p className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          There is no class assigned yet. Ask the center to set your program and
-          training on your profile.
-        </p>
-      )}
-
-      {importError && (
-        <div className="mt-4">
-          <DataError message={importError} />
-        </div>
-      )}
-
-      {imported ? (
-        <div className="mt-4">
-          <p className="mb-2 text-sm text-muted-foreground">
-            {imported.length} student{imported.length === 1 ? "" : "s"} enrolled
+      <div>
+        <h2 className="text-2xl font-semibold">My Class</h2>
+        {activeClass && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            {[activeClass.level, activeClass.name].filter(Boolean).join(" · ")}
+            {activeClass.materials.length > 0
+              ? ` — ${activeClass.materials.join(", ")}`
+              : ""}
           </p>
-          {imported.length === 0 ? (
-            <Card className="max-w-xl">
-              <CardContent className="py-8 text-center">
-                <p className="text-sm font-medium">No students found</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Nobody is enrolled in this class yet.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="overflow-hidden rounded-lg ring-1 ring-foreground/10">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Student Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Enrolled Track</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {imported.map((s) => (
-                    <TableRow
-                      key={s.id}
-                      onClick={() => setProfile(s)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="font-medium">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProfile(s);
-                          }}
-                          className="cursor-pointer text-left hover:underline"
-                        >
-                          {s.fullName}
-                        </button>
-                      </TableCell>
-                      <TableCell>{s.phone || "—"}</TableCell>
-                      <TableCell>{s.email || "—"}</TableCell>
-                      <TableCell>
-                        {[s.program, s.training].filter(Boolean).join(" · ") || "—"}
-                      </TableCell>
-                      <TableCell>{statusBadge(s.blocked)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        )}
+      </div>
+
+      {error && (
+        <div className="mt-4">
+          <DataError message={error} />
         </div>
-      ) : (
-        <>
-          {courseCount > 0 && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {sorted.length} student{sorted.length === 1 ? "" : "s"} enrolled in
-              your course{sorted.length === 1 ? "" : "s"}
-            </p>
-          )}
-
-          {error && (
-            <div className="mt-4">
-              <DataError message={error} />
-            </div>
-          )}
-
-          {courseCount === 0 ? (
-            <Card className="mt-4 max-w-xl">
-              <CardContent className="py-8 text-center">
-                <p className="text-sm font-medium">No courses yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Add a course — students enrolled in it will appear here.
-                </p>
-              </CardContent>
-            </Card>
-          ) : sorted.length === 0 ? (
-            <Card className="mt-4 max-w-xl">
-              <CardContent className="py-8 text-center">
-                <p className="text-sm font-medium">No students yet</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Students appear here once they are assigned to a program and
-                  training you teach.
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="mt-4 overflow-hidden rounded-lg ring-1 ring-foreground/10">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Full Name</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Email</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sorted.map((s) => (
-                    <TableRow
-                      key={s.id}
-                      onClick={() => setProfile(s)}
-                      className="cursor-pointer"
-                    >
-                      <TableCell className="font-medium">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProfile(s);
-                          }}
-                          className="cursor-pointer text-left hover:underline"
-                        >
-                          {s.fullName}
-                        </button>
-                      </TableCell>
-                      <TableCell>{s.phone || "—"}</TableCell>
-                      <TableCell>{s.email || "—"}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </>
       )}
+
+      {classes.length === 0 ? (
+        <Card className="mt-4 max-w-xl">
+          <CardContent className="py-8 text-center">
+            <p className="text-sm font-medium">No class assigned</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ask the center to assign your materials to a class. Students
+              appear here once a branch has one of your materials.
+            </p>
+          </CardContent>
+        </Card>
+      ) : activeClass ? (
+        <>
+          {/* A single assignment needs no switcher: the header already shows
+              its level, name and material. Only multiple classes get pills. */}
+          {classes.length > 1 && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {classes.map((entry) => (
+                <ClassCard
+                  key={entry.id}
+                  entry={entry}
+                  active={entry.id === activeClass.id}
+                  onSelect={() => setActiveClassId(entry.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="mt-6">
+            <p className="mb-2 text-sm text-muted-foreground">
+              {activeStudents.length} student
+              {activeStudents.length === 1 ? "" : "s"} enrolled
+            </p>
+
+            {activeStudents.length === 0 ? (
+              <Card className="max-w-xl">
+                <CardContent className="py-8 text-center">
+                  <p className="text-sm font-medium">No students found</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Nobody is enrolled in this class yet.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="overflow-hidden rounded-lg ring-1 ring-foreground/10">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student Name</TableHead>
+                      <TableHead>Phone</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Enrolled Track</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {activeStudents.map((s) => (
+                      <TableRow
+                        key={s.id}
+                        onClick={() => setProfile(s)}
+                        className="cursor-pointer"
+                      >
+                        <TableCell className="font-medium">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProfile(s);
+                            }}
+                            className="cursor-pointer text-left hover:underline"
+                          >
+                            {s.fullName}
+                          </button>
+                        </TableCell>
+                        <TableCell>{s.phone || "—"}</TableCell>
+                        <TableCell>{s.email || "—"}</TableCell>
+                        <TableCell>
+                          {[s.program, s.training]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </TableCell>
+                        <TableCell>{statusBadge(s.blocked)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

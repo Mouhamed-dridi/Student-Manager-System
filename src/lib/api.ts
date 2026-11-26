@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { getRole } from "@/lib/session";
 import { setTheme } from "@/lib/theme";
 import { bucketForMaterial, COURSE_COVERS_BUCKET } from "@/lib/courseBuckets";
-import { normalizeCourseName } from "@/lib/courseDisplay";
+import { normalizeCourseName, subjectNamesMatch } from "@/lib/courseDisplay";
 import type { Student } from "@/pages/students/StudentForm";
 import type { Teacher } from "@/pages/teachers/TeacherForm";
 import {
@@ -31,6 +31,15 @@ export function errorMessage(error: unknown): string {
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const PROBE_TIMEOUT_MS = 8000;
+
+/**
+ * Budget for a Storage upload. The 15 s query timeout is far too short for a
+ * byte transfer: a 1 MB course file measures ~20-25 s on a slow uplink, so any
+ * real PDF/video was rejected mid-upload with the generic "request timed out"
+ * message before `courses` was ever written. Still bounded, so a dead
+ * connection surfaces instead of hanging forever.
+ */
+const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Guarantees a query settles even when the underlying Supabase fetch stalls
@@ -105,6 +114,15 @@ export async function listTrainings(
   return rows<TrainingRow>(
     "trainings",
     programId ? { eq: { program_id: programId } } : undefined,
+  );
+}
+
+/** Postgres uuid shape. Values that fail this must be sent as NULL: PostgREST
+ *  rejects the whole write with 22P02 otherwise. */
+function isUuid(value: string | null | undefined): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
   );
 }
 
@@ -2865,14 +2883,25 @@ async function uploadToCourseBucket(
   contentType: string | undefined,
   label: string,
 ): Promise<string> {
-  const { error } = await withTimeout(
-    supabase.storage.from(bucket).upload(filePath, body, {
-      cacheControl: "3600",
-      contentType,
-      upsert: false,
-    }),
-  );
-  if (error) throw courseStorageUploadError(error, bucket, label);
+  try {
+    const { error } = await withTimeout(
+      supabase.storage.from(bucket).upload(filePath, body, {
+        cacheControl: "3600",
+        contentType,
+        upsert: false,
+      }),
+      UPLOAD_TIMEOUT_MS,
+    );
+    if (error) throw courseStorageUploadError(error, bucket, label);
+  } catch (error) {
+    // withTimeout rejects with the query wording; say what actually happened.
+    if (error instanceof Error && /timed out/i.test(error.message)) {
+      throw new Error(
+        `${label} upload failed: the transfer took longer than 15 minutes. Check your connection and try again.`,
+      );
+    }
+    throw error;
+  }
   return supabase.storage.from(bucket).getPublicUrl(filePath).data.publicUrl;
 }
 
@@ -2991,13 +3020,22 @@ export async function listTeacherCourses(
 export async function saveTeacherCourse(
   record: TeacherCourseRecord,
 ): Promise<void> {
-  const { programId, trainingId } = await courseTargetIds(record);
+  // A class lookup is best-effort: if it is slow or fails, the course is still
+  // saved with NULL program_id/training_id instead of the page hanging on a
+  // lookup before the insert is even attempted.
+  let programId = "";
+  let trainingId = "";
+  try {
+    ({ programId, trainingId } = await courseTargetIds(record));
+  } catch {
+    // Only a UUID or NULL may reach Postgres.
+  }
   const payload: Record<string, unknown> = {
     id: record.id,
     title: record.name,
     description: record.description ?? null,
-    program_id: programId || null,
-    training_id: trainingId || null,
+    program_id: isUuid(programId) ? programId : null,
+    training_id: isUuid(trainingId) ? trainingId : null,
     teacher_id: record.teacherId,
     thumbnail_url: record.thumbnail ?? null,
     published_at: record.published ?? null,
@@ -3032,12 +3070,18 @@ export async function saveTeacherCourse(
   payload.format = record.format ?? null;
   payload.syllabus = record.syllabus ?? null;
   payload.skills = record.skills ?? null;
-  const { error } = await withTimeout(
-    supabase.from("courses").upsert(payload, {
-      onConflict: "id",
-    }),
-  );
-  if (error) throw new Error(error.message);
+  // Report the real PostgREST message at once rather than letting the form sit
+  // on "Saving…" until a generic timeout fires.
+  try {
+    const { error } = await withTimeout(
+      supabase.from("courses").upsert(payload, {
+        onConflict: "id",
+      }),
+    );
+    if (error) throw new Error(error.message);
+  } catch (err) {
+    throw new Error(err instanceof Error ? err.message : "The course could not be saved.");
+  }
 }
 
 export interface TeacherCourseAssignment {
@@ -3213,6 +3257,69 @@ export async function teacherCourseAssignment(
   return empty;
 }
 
+export interface TeacherTeachingContext {
+  /** Resolved class ("BTS" / "Commerce international"), empty when unknown. */
+  program: string;
+  training: string;
+  programId: string;
+  trainingId: string;
+  /** Materials (matières) assigned to this teacher in any class. */
+  materials: string[];
+  /** True when the teacher demonstrably teaches something: a profile class, a
+   *  class material, or at least one planning session. Transverse teachers
+   *  (English, French, Arabic) have no program/training on their profile but
+   *  are staffed through `branch_materials` / `planning`, so the course form
+   *  must not claim they have no assignment. */
+  hasAssignment: boolean;
+}
+
+/**
+ * Everything the Add Course form needs about what a teacher actually teaches.
+ * `teachers.program`/`training` are text columns and are often NULL for
+ * transverse teachers, so the class materials and the planning rows are also
+ * consulted. Each lookup is independent: a missing/optional table only drops
+ * its own evidence instead of failing the whole context.
+ */
+export async function resolveTeacherTeachingContext(
+  teacherId: string,
+): Promise<TeacherTeachingContext> {
+  const [assignment, materials, planningHit] = await Promise.all([
+    teacherCourseAssignment(teacherId).catch(() => null),
+    listBranchMaterials().catch(() => [] as BranchMaterialRecord[]),
+    withTimeout(
+      supabase.from("planning").select("id").eq("teacher_id", teacherId).limit(1),
+    )
+      .then(({ data }) => (data ?? []).length > 0)
+      .catch(() => false),
+  ]);
+
+  // `listBranchMaterials()` returns every material of every class, so this is
+  // the teacher's real assignment list, not just their own class's catalog.
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const material of materials) {
+    if (material.teacherId !== teacherId) continue;
+    const name = material.name.trim();
+    const key = normalizeCourseName(name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    names.push(name);
+  }
+
+  return {
+    program: assignment?.program ?? "",
+    training: assignment?.training ?? "",
+    programId: assignment?.programId ?? "",
+    trainingId: assignment?.trainingId ?? "",
+    materials: names,
+    hasAssignment: Boolean(
+      (assignment?.program && assignment?.training) ||
+        names.length > 0 ||
+        planningHit,
+    ),
+  };
+}
+
 /**
  * Resolves the program/training FK targets for a course write. The logged-in
  * teacher's assignment (profile, else own courses) wins so the form can
@@ -3223,15 +3330,18 @@ export async function teacherCourseAssignment(
 async function courseTargetIds(
   record: TeacherCourseRecord,
 ): Promise<{ programId: string; trainingId: string }> {
+  // The Add Course form already carries the class it showed the teacher, so
+  // take those ids directly. Re-deriving them means several extra round-trips
+  // (profile, programs, trainings, own courses) before the insert can start.
+  if (isUuid(record.programId) && isUuid(record.trainingId)) {
+    return { programId: record.programId, trainingId: record.trainingId };
+  }
   const assignment = await teacherCourseAssignment(record.teacherId);
-  if (assignment.programId && assignment.trainingId) {
+  if (isUuid(assignment.programId) && isUuid(assignment.trainingId)) {
     return {
       programId: assignment.programId,
       trainingId: assignment.trainingId,
     };
-  }
-  if (record.programId && record.trainingId) {
-    return { programId: record.programId, trainingId: record.trainingId };
   }
   return resolveProgramTrainingIds(record.program, record.training);
 }
@@ -3331,6 +3441,193 @@ export async function importClassForTeacher(
     program: assignment.program,
     training: assignment.training,
   };
+}
+
+export interface TeacherAssignedClass {
+  /** Branch id, or a synthetic planning id when no branch row exists. */
+  id: string;
+  /** CAP / BTP / BTS badge. Empty when the branch has no level. */
+  level: BranchLevel | "";
+  /** Class / branch display name, e.g. "Agent d'entrepôt". */
+  name: string;
+  /** Program code and training name, used for the track column fallback. */
+  program: string;
+  training: string;
+  programId: string;
+  trainingId: string;
+  /** Materials (matières) this teacher teaches in this class. */
+  materials: string[];
+  /** Students enrolled in this class, alphabetically by name. */
+  students: Student[];
+}
+
+const CLASS_LEVEL_ORDER: Record<string, number> = { CAP: 0, BTP: 1, BTS: 2 };
+
+/** A student belongs to a class through the training FK, else the names. */
+function studentInAssignedClass(
+  student: Student,
+  entry: TeacherAssignedClass,
+): boolean {
+  if (entry.trainingId && student.trainingId) {
+    return entry.trainingId === student.trainingId;
+  }
+  const training = entry.training || entry.name;
+  if (!training || !student.training) return false;
+  if (!subjectNamesMatch(student.training, training)) return false;
+  if (!entry.program || !student.program) return true;
+  return subjectNamesMatch(student.program, entry.program);
+}
+
+/**
+ * Every class the logged-in teacher is actually staffed in, with the materials
+ * they teach there and the students enrolled.
+ *
+ * The source of truth is `branch_materials`: a row is the teacher's assignment
+ * to one class, so only branches that own at least one of their materials are
+ * returned — never another class of the same program. The teacher id is the
+ * primary match; the joined teacher name is the fallback for legacy rows whose
+ * `teacher_id` was never written. `planning` is a secondary source: a class
+ * with a scheduled session for this teacher is included even when no
+ * `branch_materials` row was duplicated for it, and its course becomes the
+ * material tag. Planning rows for another teacher are ignored, and a planning
+ * row that cannot be tied to a training/class is skipped rather than guessed.
+ *
+ * Classes are ordered CAP → BTP → BTS then by name so the page always opens on
+ * the teacher's first assigned class deterministically.
+ */
+export async function teacherAssignedClasses(
+  teacherId: string,
+  teacherName = "",
+): Promise<TeacherAssignedClass[]> {
+  const [branches, materials, planning, students, trainings, programs] =
+    await Promise.all([
+      listBranches().catch(() => [] as BranchRecord[]),
+      listBranchMaterials().catch(() => [] as BranchMaterialRecord[]),
+      listPlanning().catch(() => [] as PlanningRecord[]),
+      listStudents(),
+      listTrainings().catch(() => [] as TrainingRow[]),
+      listPrograms().catch(() => [] as ProgramRow[]),
+    ]);
+
+  const programCodeById = new Map(programs.map((p) => [p.id, p.code]));
+  const trainingNameById = new Map(trainings.map((t) => [t.id, t.name]));
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const teacherKey = normalizeCourseName(teacherName);
+
+  const classes = new Map<string, TeacherAssignedClass>();
+
+  const addMaterial = (entry: TeacherAssignedClass, name: string) => {
+    const label = name.trim();
+    const key = normalizeCourseName(label);
+    if (!key) return;
+    if (entry.materials.some((m) => normalizeCourseName(m) === key)) return;
+    entry.materials.push(label);
+  };
+
+  const ensureBranch = (branch: BranchRecord): TeacherAssignedClass => {
+    const existing = classes.get(branch.id);
+    if (existing) return existing;
+    const entry: TeacherAssignedClass = {
+      id: branch.id,
+      level: branch.level,
+      name: branch.name,
+      program: branch.programCode || programCodeById.get(branch.programId) || "",
+      training: trainingNameById.get(branch.trainingId) ?? branch.name,
+      programId: branch.programId,
+      trainingId: branch.trainingId,
+      materials: [],
+      students: [],
+    };
+    classes.set(branch.id, entry);
+    return entry;
+  };
+
+  // 1. Materials assigned to this teacher. The name fallback only matters for
+  // legacy rows; a blank teacherName never matches everyone.
+  for (const material of materials) {
+    const matchesTeacher =
+      material.teacherId === teacherId ||
+      (Boolean(teacherKey) &&
+        normalizeCourseName(material.teacherName) === teacherKey);
+    if (!matchesTeacher) continue;
+    const branch = branchById.get(material.branchId);
+    if (!branch) continue;
+    addMaterial(ensureBranch(branch), material.name);
+  }
+
+  // 2. Planning sessions as the secondary assignment source. A branch is
+  // matched by training FK first, then by its class/training label; when no
+  // branch row exists (optional branches schema) a synthetic class is built
+  // from the training/program ids so the session is not lost.
+  const findBranch = (session: PlanningRecord): BranchRecord | null => {
+    if (session.trainingId) {
+      const byId = branches.find((b) => b.trainingId === session.trainingId);
+      if (byId) return byId;
+    }
+    const label = session.className?.trim();
+    if (!label) return null;
+    return (
+      branches.find((b) => {
+        const training = trainingNameById.get(b.trainingId) ?? "";
+        return (
+          subjectNamesMatch(b.name, label) ||
+          (Boolean(training) && subjectNamesMatch(training, label))
+        );
+      }) ?? null
+    );
+  };
+
+  for (const session of planning) {
+    if (session.teacherId !== teacherId) continue;
+    let entry: TeacherAssignedClass | null = null;
+    const branch = findBranch(session);
+    if (branch) {
+      entry = ensureBranch(branch);
+    } else if (session.trainingId || session.className?.trim()) {
+      const key = session.trainingId
+        ? `training:${session.trainingId}`
+        : `label:${normalizeCourseName(session.className)}`;
+      entry = classes.get(key) ?? null;
+      if (!entry) {
+        const program =
+          (session.programId && programCodeById.get(session.programId)) || "";
+        const training =
+          (session.trainingId && trainingNameById.get(session.trainingId)) ||
+          session.className?.trim() ||
+          "";
+        if (!training) continue;
+        entry = {
+          id: key,
+          level: branchLevelOf(program),
+          name: training,
+          program,
+          training,
+          programId: session.programId ?? "",
+          trainingId: session.trainingId ?? "",
+          materials: [],
+          students: [],
+        };
+        classes.set(key, entry);
+      }
+    }
+    if (!entry) continue;
+    addMaterial(entry, session.course ?? "");
+  }
+
+  // 3. Enrolled students, matched by training FK first so a renamed training
+  // still resolves, then by the normalized names for legacy rows.
+  for (const entry of classes.values()) {
+    entry.students = students
+      .filter((student) => studentInAssignedClass(student, entry))
+      .sort((a, b) => (a.fullName ?? "").localeCompare(b.fullName ?? ""));
+    entry.materials.sort((a, b) => a.localeCompare(b));
+  }
+
+  return [...classes.values()].sort((a, b) => {
+    const level =
+      (CLASS_LEVEL_ORDER[a.level] ?? 9) - (CLASS_LEVEL_ORDER[b.level] ?? 9);
+    return level || a.name.localeCompare(b.name);
+  });
 }
 
 // ----------------------------------------------------------- course reviews
