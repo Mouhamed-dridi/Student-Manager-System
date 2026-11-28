@@ -33,8 +33,10 @@ import {
   countGradesForExam,
   deleteExamCascade,
   errorMessage,
+  teacherExamClasses,
   uploadExamAttachment,
   upsertExam,
+  type TeacherExamClass,
 } from "@/lib/api";
 import { EXAM_SEMESTER_OPTIONS, EXAM_TYPE_OPTIONS } from "./exams";
 import type { ExamRecord } from "./exams";
@@ -82,6 +84,8 @@ export default function ExamsTableView() {
   const [deleteTarget, setDeleteTarget] = useState<ExamRecord | null>(null);
   const [gradeCount, setGradeCount] = useState(0);
   const [uploading, setUploading] = useState(false);
+  // Classes this teacher may scope an exam to (same list as Create Exam).
+  const [classes, setClasses] = useState<TeacherExamClass[]>([]);
 
   // The delete confirmation names the number of recorded grades.
   useEffect(() => {
@@ -99,6 +103,22 @@ export default function ExamsTableView() {
     };
   }, [deleteTarget]);
 
+  // Resolved once the teacher record loads; a failure only hides the picker.
+  useEffect(() => {
+    if (!teacher) return;
+    let cancelled = false;
+    teacherExamClasses(teacher.id, teacher.fullName)
+      .then((list) => {
+        if (!cancelled) setClasses(list);
+      })
+      .catch(() => {
+        if (!cancelled) setClasses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teacher]);
+
   if (teacher === null) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -113,7 +133,7 @@ export default function ExamsTableView() {
 
   const handleEditSubmit = async (data: ExamFormData) => {
     if (!editing) return;
-    const { attachmentFile, ...fields } = data;
+    const { attachmentFile, classId, ...fields } = data;
     try {
       setError(null);
       // Upload first: if Storage or the schema blocks it, the exam is not saved.
@@ -127,11 +147,26 @@ export default function ExamsTableView() {
         }
       }
       const existing = myExams.find((e) => e.id === data.id) ?? editing;
-      // Edits keep the exam's original scope, including its program and
-      // training snapshots, and its previous URL when no new file was picked.
+      // A class picked in the form re-scopes the exam; leaving the picker on
+      // "keep current class" preserves the original program/training snapshot.
+      const selected = classes.find((entry) => entry.id === classId) ?? null;
+      const scope = selected
+        ? {
+            program: selected.program,
+            training: selected.training,
+            programId: selected.programId || undefined,
+            trainingId: selected.trainingId || undefined,
+            branchId: selected.id,
+            subject:
+              selected.examMaterials[0] ?? selected.materials[0] ?? undefined,
+          }
+        : {};
+      // Edits keep the exam's original scope and its previous URL when no new
+      // file was picked.
       await upsertExam({
         ...existing,
         ...fields,
+        ...scope,
         ...(attachmentUrl ? { attachmentUrl } : {}),
       });
       setEditing(null);
@@ -173,9 +208,15 @@ export default function ExamsTableView() {
       return false;
     }
     if (!query) return true;
-    return [exam.title, exam.type, exam.semester, exam.duration, exam.date].some(
-      (value) => (value ?? "").toLowerCase().includes(query),
-    );
+    return [
+      exam.title,
+      exam.type,
+      exam.semester,
+      exam.duration,
+      exam.date,
+      exam.program,
+      exam.training,
+    ].some((value) => (value ?? "").toLowerCase().includes(query));
   });
 
   const clearFilters = () => {
@@ -209,6 +250,7 @@ export default function ExamsTableView() {
                 onSubmit={handleEditSubmit}
                 onCancel={() => setEditing(null)}
                 uploading={uploading}
+                classes={classes}
               />
             </div>
           </CardContent>
@@ -296,6 +338,7 @@ export default function ExamsTableView() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Title</TableHead>
+                  <TableHead>Class</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Semester</TableHead>
                   <TableHead>Duration</TableHead>
@@ -308,6 +351,10 @@ export default function ExamsTableView() {
                 {filtered.map((exam) => (
                   <TableRow key={exam.id}>
                     <TableCell className="font-medium">{exam.title}</TableCell>
+                    <TableCell>
+                      {[exam.program, exam.training].filter(Boolean).join(" · ") ||
+                        "—"}
+                    </TableCell>
                     <TableCell>{exam.type || "—"}</TableCell>
                     <TableCell>{exam.semester || "—"}</TableCell>
                     <TableCell>{exam.duration || "—"}</TableCell>

@@ -610,12 +610,18 @@ end $$;
 -- ------------------------------------------------------------------ exams --
 -- Owned by the teacher who created them. `program`/`training` are legacy
 -- snapshots kept for old rows; exams are identified by type + duration now.
+-- The class picker (supabase/exams-class-migration.sql) also stores the chosen
+-- branch and its FK snapshots plus the matière tag.
 
 create table if not exists public.exams (
   id uuid primary key default gen_random_uuid(),
   teacher_id uuid,
   program text,
   training text,
+  branch_id uuid,
+  program_id uuid,
+  training_id uuid,
+  subject text,
   title text not null,
   date date,
   type text,
@@ -627,12 +633,18 @@ create table if not exists public.exams (
   created_at timestamptz not null default now()
 );
 
--- Exam attachments and the semester were added after the table shipped: keep
--- existing live databases in sync (CREATE TABLE IF NOT EXISTS will not add
--- the columns). `semester` is plain text ('Semester 1' | 'Semester 2').
+-- Exam attachments, the semester and the class scope were added after the
+-- table shipped: keep existing live databases in sync (CREATE TABLE IF NOT
+-- EXISTS will not add the columns). `semester` is plain text
+-- ('Semester 1' | 'Semester 2'); the class columns are optional to the app and
+-- only written when they exist.
 alter table public.exams
   add column if not exists attachment_url text,
-  add column if not exists semester text;
+  add column if not exists semester text,
+  add column if not exists branch_id uuid,
+  add column if not exists program_id uuid,
+  add column if not exists training_id uuid,
+  add column if not exists subject text;
 
 create table if not exists public.grades (
   id uuid primary key default gen_random_uuid(),

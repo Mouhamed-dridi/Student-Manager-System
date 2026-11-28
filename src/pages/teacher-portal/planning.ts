@@ -317,6 +317,8 @@ export interface PlanningRecord {
   materialUrl?: string;
   /** Display name of the attached material (`planning.material_name`). */
   materialName?: string;
+  /** Class / branch the entry belongs to (`planning.branch_id`). */
+  branchId?: string;
 }
 
 /** One selectable class: the label shown in the form plus the FKs the entry stores. */
@@ -324,6 +326,9 @@ export interface PlanningClassOption {
   label: string;
   programId?: string;
   trainingId?: string;
+  branchId?: string;
+  /** Teacher's assigned materials / subjects in this class. */
+  materials?: string[];
 }
 
 /** Everything the entry form produces, ready for insertPlanning/updatePlanning. */
@@ -335,6 +340,7 @@ export interface PlanningEntryValues {
   className?: string;
   programId?: string;
   trainingId?: string;
+  branchId?: string;
   sessionTime?: string;
   roomName?: string;
   content: string;

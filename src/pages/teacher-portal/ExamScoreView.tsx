@@ -24,8 +24,11 @@ import {
   errorMessage,
   listGrades,
   saveGradesForExam,
+  teacherExamClasses,
+  type TeacherExamClass,
 } from "@/lib/api";
 import type { Student } from "@/pages/students/StudentForm";
+import { classIdForExam } from "./exams";
 import { useTeacherExams } from "./useTeacherExams";
 
 /**
@@ -36,6 +39,10 @@ export default function ExamScoreView() {
   const { teacher, exams, myExams, error, setError } = useTeacherExams();
   const [roster, setRoster] = useState<Student[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
+  // Classes the teacher is staffed in; an exam's class wins over the course
+  // roster so a CAP exam is never graded with BTS students.
+  const [classes, setClasses] = useState<TeacherExamClass[]>([]);
+  const [classesLoaded, setClassesLoaded] = useState(false);
   const [selectedExamId, setSelectedExamId] = useState("");
   const [scores, setScores] = useState<Record<string, string>>({});
   const [justSaved, setJustSaved] = useState(false);
@@ -61,7 +68,35 @@ export default function ExamScoreView() {
     };
   }, [teacher, setError]);
 
+  useEffect(() => {
+    if (!teacher) return;
+    let cancelled = false;
+    teacherExamClasses(teacher.id, teacher.fullName)
+      .then((list) => {
+        if (cancelled) return;
+        setClasses(list);
+        setClassesLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setClasses([]);
+        setClassesLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teacher]);
+
   const selectedExam = myExams.find((e) => e.id === selectedExamId);
+  // The roster of the class the selected exam belongs to, when it is one of
+  // the teacher's current classes. Falls back to the course-based roster for
+  // legacy exams with no class scope.
+  const selectedClass = selectedExam
+    ? (classes.find(
+        (entry) => entry.id === classIdForExam(selectedExam, classes),
+      ) ?? null)
+    : null;
+  const activeRoster = selectedClass ? selectedClass.students : roster;
 
   // Prefill the score inputs whenever a different exam is picked.
   const handleExamChange = async (examId: string | null) => {
@@ -89,7 +124,7 @@ export default function ExamScoreView() {
     );
   }
 
-  if (teacher === undefined || exams === null || !rosterLoaded) {
+  if (teacher === undefined || exams === null || !rosterLoaded || !classesLoaded) {
     return <DataLoading label="Loading grades…" />;
   }
 
@@ -98,7 +133,7 @@ export default function ExamScoreView() {
     // Upsert per (exam, student): blank inputs simply don't re-add a record,
     // so leaving a field empty clears that grade.
     const entries: { studentId: string; score: number }[] = [];
-    for (const s of roster) {
+    for (const s of activeRoster) {
       const raw = (scores[s.id] ?? "").trim();
       if (raw === "") continue;
       const score = Number(raw);
@@ -169,7 +204,7 @@ export default function ExamScoreView() {
         <p className="mt-4 text-sm text-muted-foreground">
           Pick an exam above to enter or review its grades.
         </p>
-      ) : roster.length === 0 ? (
+      ) : activeRoster.length === 0 ? (
         <Card className="mt-4 max-w-xl">
           <CardContent className="py-8 text-center">
             <p className="text-sm font-medium">No students in your class</p>
@@ -197,7 +232,7 @@ export default function ExamScoreView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {roster.map((s) => {
+                {activeRoster.map((s) => {
                   const raw = scores[s.id] ?? "";
                   const invalid =
                     raw.trim() !== "" && !Number.isFinite(Number(raw));

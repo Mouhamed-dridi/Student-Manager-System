@@ -17,6 +17,7 @@ import {
 } from "@/pages/pay/paymentTypes";
 import type { Publication } from "@/pages/publications/publicationTypes";
 import type { CourseMaterial, TeacherCourseRecord } from "@/lib/trainings";
+export type { CourseMaterial, TeacherCourseRecord };
 import type { ExamRecord, GradeRecord } from "@/pages/teacher-portal/exams";
 import {
   isPlanningSessionType,
@@ -3639,6 +3640,53 @@ export async function teacherAssignedClasses(
     });
 }
 
+/**
+ * Whole-word ERP/SAP test: "ERP Consulting" and "SAP consulting" match, while a
+ * material whose name merely contains those letters ("Enterprise Reporting")
+ * does not. The material names are free text typed by the operator.
+ */
+function isErpSapMaterial(name: string | null | undefined): boolean {
+  const key = normalizeCourseName(name);
+  return /(^| )(erp|sap)( |$)/.test(key);
+}
+
+export interface TeacherExamClass extends TeacherAssignedClass {
+  /** Materials of this class that name the teacher's ERP/SAP discipline. */
+  examMaterials: string[];
+}
+
+/**
+ * The classes the Create Exam picker may scope an exam to.
+ *
+ * A multi-class teacher (Lobna Ouertani teaches "ERP Consulting" in CAP, BTP
+ * and BTS) must be able to say which class an exam belongs to, so the source is
+ * `teacherAssignedClasses()` — `branch_materials` (teacher id, normalized-name
+ * fallback) plus `planning` — never `teachers.program`/`training`, which are
+ * NULL on live rows.
+ *
+ * The picker is narrowed to the classes where one of this teacher's ERP/SAP
+ * materials is assigned: the ERP/SAP discipline is the one the operator staffs
+ * across levels, and an exam stamped with the wrong level would leak into
+ * another class's student portal. Teachers with no ERP/SAP material at all keep
+ * every class they are staffed in, so the field is not dead for other
+ * disciplines.
+ *
+ * Ordered CAP → BTP → BTS then by class name (inherited), so the first entry is
+ * a stable default.
+ */
+export async function teacherExamClasses(
+  teacherId: string,
+  teacherName = "",
+): Promise<TeacherExamClass[]> {
+  const classes = await teacherAssignedClasses(teacherId, teacherName);
+  const scoped = classes.map((entry) => ({
+    ...entry,
+    examMaterials: entry.materials.filter((name) => isErpSapMaterial(name)),
+  }));
+  const erpClasses = scoped.filter((entry) => entry.examMaterials.length > 0);
+  return erpClasses.length > 0 ? erpClasses : scoped;
+}
+
 // ----------------------------------------------------------- course reviews
 //
 // Student star ratings and comments on a course. Append-only: a student may
@@ -3765,6 +3813,12 @@ interface ExamRow {
   semester?: string | null;
   file_name: string | null;
   attachment_url?: string | null;
+  // Optional class scope written by the Create Exam class picker (see
+  // supabase/exams-class-migration.sql). `select *` returns whatever exists, so
+  // reading them cannot break a query; they are only written when probed.
+  branch_id?: string | null;
+  program_id?: string | null;
+  training_id?: string | null;
   // Optional matière links some databases carry (the app itself never writes
   // them). `select *` returns whatever exists, so reading them cannot break a
   // query; they are only ever used as a hint for the matière of an exam.
@@ -3785,6 +3839,9 @@ function examFromRow(row: ExamRow): ExamRecord {
     duration: row.duration ?? undefined,
     semester: row.semester ?? undefined,
     subject: (row.subject ?? row.material) || undefined,
+    branchId: row.branch_id ?? undefined,
+    programId: row.program_id ?? undefined,
+    trainingId: row.training_id ?? undefined,
     attachment: row.file_name ?? undefined,
     attachmentUrl: row.attachment_url ?? undefined,
   };
@@ -3919,12 +3976,21 @@ interface StudentClassMaterials {
   branchMaterials: BranchMaterialRecord[];
   /** Matières the class's teachers are assigned to in `branch_materials`. */
   teacherIds: Set<string>;
+  /** Teacher id -> ids of the branches they are staffed in. */
+  teacherBranches: Map<string, Set<string>>;
+  /** Every known branch, used to resolve an exam's class snapshot. */
+  branches: BranchRecord[];
 }
 
 /**
  * The `branch_materials` catalog of the student's class. Both the FK and the
  * normalized training name are tried, because legacy branches often have no
  * training_id; a catalog that cannot be read only means no transverse exams.
+ * The full material table is read once: the student's class slice and the
+ * teacher -> branch map used to keep multi-class exams scoped come from it.
+ * `planning` is the secondary staffing source, exactly like
+ * `teacherAssignedClasses()`, so a class a teacher only has timetable sessions
+ * in still counts as theirs when deciding whether an exam is class-scoped.
  */
 async function resolveStudentClassMaterials(
   scope: StudentExamScope,
@@ -3932,7 +3998,11 @@ async function resolveStudentClassMaterials(
   const training = scope.training?.trim() ?? "";
   const trainingKey = normalizeCourseName(training);
 
-  const branches = await listBranches().catch(() => [] as BranchRecord[]);
+  const [branches, allMaterials, planning] = await Promise.all([
+    listBranches().catch(() => [] as BranchRecord[]),
+    listBranchMaterials().catch(() => [] as BranchMaterialRecord[]),
+    listPlanning().catch(() => [] as PlanningRecord[]),
+  ]);
   const branch =
     branches.find(
       (candidate) =>
@@ -3945,9 +4015,7 @@ async function resolveStudentClassMaterials(
             candidate.programId === scope.programId)),
     ) ?? null;
   const branchMaterials = branch
-    ? await listBranchMaterials(branch.id).catch(
-        () => [] as BranchMaterialRecord[],
-      )
+    ? allMaterials.filter((material) => material.branchId === branch.id)
     : [];
   const teacherIds = new Set(
     branchMaterials
@@ -3955,7 +4023,60 @@ async function resolveStudentClassMaterials(
       .filter((id): id is string => Boolean(id)),
   );
 
-  return { branchMaterials, teacherIds };
+  const teacherBranches = new Map<string, Set<string>>();
+  const addTeacherBranch = (teacherId: string | null, branchId: string) => {
+    if (!teacherId) return;
+    const assigned = teacherBranches.get(teacherId) ?? new Set<string>();
+    assigned.add(branchId);
+    teacherBranches.set(teacherId, assigned);
+  };
+  for (const material of allMaterials) {
+    addTeacherBranch(material.teacherId, material.branchId);
+  }
+  // Planning sessions only carry a class label (legacy rows have no
+  // training_id), so the branch is matched by training FK then by name.
+  for (const session of planning) {
+    if (!session.teacherId) continue;
+    const label = session.className?.trim() ?? "";
+    const sessionBranch =
+      (session.trainingId
+        ? branches.find(
+            (candidate) => candidate.trainingId === session.trainingId,
+          )
+        : undefined) ??
+      (label
+        ? branches.find((candidate) =>
+            subjectNamesMatch(candidate.name, label),
+          )
+        : undefined);
+    if (sessionBranch) addTeacherBranch(session.teacherId, sessionBranch.id);
+  }
+
+  return { branchMaterials, teacherIds, teacherBranches, branches };
+}
+
+/**
+ * True when the exam names one of its teacher's own classes. A teacher staffed
+ * in several branches (ERP/SAP is taught in CAP, BTP and BTS) must not leak a
+ * CAP exam into the other levels, so a class snapshot that resolves to one of
+ * their branches is authoritative. Rows whose snapshot names no assigned branch
+ * (blank, or a legacy profile-level class) keep the transverse fallback.
+ */
+function examNamesAssignedClass(
+  exam: ExamRecord,
+  branches: BranchRecord[],
+  teacherBranches: Map<string, Set<string>>,
+): boolean {
+  if (!exam.teacherId) return false;
+  const assigned = teacherBranches.get(exam.teacherId);
+  if (!assigned || assigned.size === 0) return false;
+  const snapshot = branches.find(
+    (candidate) =>
+      (Boolean(exam.trainingId) && candidate.trainingId === exam.trainingId) ||
+      (Boolean(exam.training?.trim()) &&
+        subjectNamesMatch(candidate.name, exam.training)),
+  );
+  return Boolean(snapshot && assigned.has(snapshot.id));
 }
 
 /**
@@ -4022,15 +4143,34 @@ export async function listExamsForStudentClass(
   const visible = allExams.filter((exam) => {
     // Same class by normalized name (containment allowed, so a "BTS · …"
     // snapshot still matches its bare training). Byte-exact comparison used to
-    // hide exams whose snapshot was spelled differently.
+    // hide exams whose snapshot was spelled differently. A blank program on a
+    // legacy row never blocks the training match.
     const sameClass =
-      subjectNamesMatch(exam.program, program) &&
-      subjectNamesMatch(exam.training, training);
-    // A transverse teacher's exam is in scope even when its snapshot names
-    // another training (or none at all).
-    const ownTeacher =
-      Boolean(exam.teacherId) && classMaterials.teacherIds.has(exam.teacherId);
-    return sameClass || ownTeacher;
+      subjectNamesMatch(exam.training, training) &&
+      (!exam.program?.trim() ||
+        !program ||
+        subjectNamesMatch(exam.program, program));
+    // Newer rows also carry the class FK, so a renamed training still resolves.
+    const sameTrainingById =
+      Boolean(scope.trainingId) &&
+      Boolean(exam.trainingId) &&
+      exam.trainingId === scope.trainingId;
+    if (sameClass || sameTrainingById) return true;
+    // An exam that names another of its teacher's classes belongs to that
+    // class only. A teacher staffed in several branches (ERP/SAP is taught in
+    // CAP, BTP and BTS) must not leak a CAP exam into the other levels.
+    if (
+      examNamesAssignedClass(
+        exam,
+        classMaterials.branches,
+        classMaterials.teacherBranches,
+      )
+    ) {
+      return false;
+    }
+    // A blank or legacy snapshot keeps the transverse fallback: an English or
+    // logistics teacher's exam stays visible to every class they teach.
+    return Boolean(exam.teacherId) && classMaterials.teacherIds.has(exam.teacherId);
   });
 
   return tagExamsWithMaterials(visible, classMaterials);
@@ -4083,6 +4223,37 @@ function hasExamSemesterColumn(): Promise<boolean> {
   return examSemesterColumnPromise;
 }
 
+// The class picker additionally stores the chosen branch and its FK snapshots
+// (see supabase/exams-class-migration.sql). These columns are optional: the
+// program/training text snapshot already scopes the exam for students, so a
+// database without them keeps working — only the ids and the matière tag are
+// omitted. Probed once and cached like every other optional column.
+interface ExamClassColumns {
+  /** True when branch_id + program_id + training_id all exist. */
+  classIds: boolean;
+  /** True when exams.subject exists. */
+  subject: boolean;
+}
+
+let examClassColumnsPromise: Promise<ExamClassColumns> | null = null;
+
+function examClassColumns(): Promise<ExamClassColumns> {
+  if (!examClassColumnsPromise) {
+    examClassColumnsPromise = Promise.all([
+      hasColumn("exams", "branch_id"),
+      hasColumn("exams", "program_id"),
+      hasColumn("exams", "training_id"),
+      hasColumn("exams", "subject"),
+    ])
+      .then(([branchId, programId, trainingId, subject]) => ({
+        classIds: branchId && programId && trainingId,
+        subject,
+      }))
+      .catch(() => ({ classIds: false, subject: false }));
+  }
+  return examClassColumnsPromise;
+}
+
 export async function upsertExam(exam: ExamRecord): Promise<void> {
   let attachmentUrl: string | undefined;
   if (exam.attachmentUrl !== undefined) {
@@ -4098,6 +4269,8 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
     throw new Error(EXAM_SEMESTER_MISSING);
   }
 
+  const classColumns = await examClassColumns();
+
   const { error } = await withTimeout(
     supabase
       .from("exams")
@@ -4112,6 +4285,19 @@ export async function upsertExam(exam: ExamRecord): Promise<void> {
           type: exam.type ?? null,
           duration: exam.duration ?? null,
           ...(exam.semester !== undefined ? { semester: exam.semester } : {}),
+          ...(classColumns.classIds
+            ? {
+                // Synthetic planning ids ("training:…") are not UUIDs; the text
+                // snapshot still scopes those exams, so only real branch ids
+                // are written to the uuid columns.
+                branch_id: isUuid(exam.branchId) ? exam.branchId : null,
+                program_id: isUuid(exam.programId) ? exam.programId : null,
+                training_id: isUuid(exam.trainingId) ? exam.trainingId : null,
+              }
+            : {}),
+          ...(classColumns.subject && exam.subject !== undefined
+            ? { subject: exam.subject }
+            : {}),
           file_name: exam.attachment ?? null,
           // Omitted on databases that have not run the migration yet, so
           // exam saves without an attachment keep working there.
@@ -4731,6 +4917,7 @@ interface PlanningRow {
   program_id?: string | null;
   training_id?: string | null;
   notes?: string | null;
+  branch_id?: string | null;
   /** PFE/STAGE/Soutenance jury panel; absent on every other session kind. */
   jury_teacher_ids?: string[] | null;
   /** Daily lesson material attached by the teacher (Course & Materials). */
@@ -4752,6 +4939,7 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
     roomName: row.room_name ?? undefined,
     programId: row.program_id ?? undefined,
     trainingId: row.training_id ?? undefined,
+    branchId: row.branch_id ?? undefined,
     content: row.topic ?? "",
     notes: row.notes ?? undefined,
     juryTeacherIds:
@@ -5178,6 +5366,14 @@ const PLANNING_MATERIAL_MISSING =
   "Planning course materials are not set up yet. Run supabase/planning-material-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
 
 let planningMaterialColumnsPromise: Promise<boolean> | null = null;
+let planningBranchIdColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningBranchIdColumn(): Promise<boolean> {
+  if (!planningBranchIdColumnPromise) {
+    planningBranchIdColumnPromise = hasColumn("planning", "branch_id");
+  }
+  return planningBranchIdColumnPromise;
+}
 
 function hasPlanningMaterialColumns(): Promise<boolean> {
   if (!planningMaterialColumnsPromise) {
@@ -5204,6 +5400,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
   const supportsScope = await hasPlanningScopeColumns();
+  const supportsBranch = await hasPlanningBranchIdColumn();
   const supportsRoom = await hasPlanningRoomColumn();
   if (!supportsRoom && record.roomName !== undefined) {
     throw new Error(PLANNING_ROOM_MISSING);
@@ -5247,6 +5444,7 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
             training_id: record.trainingId ?? null,
           }
         : {}),
+      ...(supportsBranch && record.branchId ? { branch_id: record.branchId } : {}),
       ...(supportsRoom ? { room_name: record.roomName ?? null } : {}),
       ...(supportsNotes ? { notes: record.notes ?? null } : {}),
       ...(supportsJury
@@ -5274,6 +5472,7 @@ export async function updatePlanning(
     | "roomName"
     | "programId"
     | "trainingId"
+    | "branchId"
     | "content"
     | "notes"
     | "juryTeacherIds"
@@ -5297,6 +5496,7 @@ export async function updatePlanning(
     throw new Error(PLANNING_CLASS_TIME_MISSING);
   }
   const supportsScope = await hasPlanningScopeColumns();
+  const supportsBranch = await hasPlanningBranchIdColumn();
   const supportsRoom = await hasPlanningRoomColumn();
   if (!supportsRoom && values.roomName !== undefined) {
     throw new Error(PLANNING_ROOM_MISSING);
@@ -5334,6 +5534,9 @@ export async function updatePlanning(
               program_id: values.programId ?? null,
               training_id: values.trainingId ?? null,
             }
+          : {}),
+        ...(supportsBranch
+          ? { branch_id: values.branchId ?? null }
           : {}),
         ...(supportsRoom ? { room_name: values.roomName ?? null } : {}),
         // Only written when the caller actually touches the note, so the inline

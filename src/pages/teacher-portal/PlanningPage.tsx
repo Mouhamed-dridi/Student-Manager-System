@@ -47,7 +47,9 @@ import {
   insertPlanning,
   listPlanning,
   listTeacherCourses,
-  teacherCourseAssignment,
+  teacherAssignedClasses,
+  type TeacherAssignedClass,
+  type TeacherCourseRecord,
   updatePlanning,
   uploadCourseMaterial,
 } from "@/lib/api";
@@ -206,48 +208,61 @@ interface PlanningOptions {
 }
 
 /**
- * Course and class choices for the entry form. Classes come from the teacher's
- * own courses, with the profile assignment added so a teacher who has no
- * courses yet can still log a session for their class. Each option carries the
- * program/training ids so an entry can be scoped without re-parsing its label.
+ * Course and class choices for the entry form.
+ * Uses the exact same multi-class resolver (branch_materials + planning)
+ * used on My Class, so a teacher sees all of their assigned CAP, BTP, and BTS classes.
  */
-async function planningOptions(teacherId: string): Promise<PlanningOptions> {
-  const [all, assignment] = await Promise.all([
-    listTeacherCourses({ teacherId }),
-    teacherCourseAssignment(teacherId),
+async function planningOptions(
+  teacherId: string,
+  teacherName = "",
+): Promise<PlanningOptions> {
+  const [assigned, allCourses] = await Promise.all([
+    teacherAssignedClasses(teacherId, teacherName).catch(
+      () => [] as TeacherAssignedClass[],
+    ),
+    listTeacherCourses({ teacherId }).catch(() => [] as TeacherCourseRecord[]),
   ]);
   const classes = new Map<string, PlanningClassOption>();
-  const addClass = (
-    program: string,
-    training: string,
-    programId?: string,
-    trainingId?: string,
-  ) => {
-    const label = classNameFor(program, training);
-    if (!label) return;
-    const existing = classes.get(label);
+
+  // 1. All classes this teacher is staffed in (branch_materials + planning)
+  for (const c of assigned) {
+    const label = classNameFor(c.program || c.level, c.training || c.name);
+    if (!label) continue;
     classes.set(label, {
       label,
-      programId: programId || existing?.programId,
-      trainingId: trainingId || existing?.trainingId,
+      programId: c.programId || undefined,
+      trainingId: c.trainingId || undefined,
+      branchId: c.id,
+      materials: c.materials,
     });
-  };
-  for (const course of all) {
-    addClass(
-      course.program,
-      course.training,
-      course.programId,
-      course.trainingId,
-    );
   }
-  addClass(
-    assignment.program,
-    assignment.training,
-    assignment.programId,
-    assignment.trainingId,
-  );
+
+  // 2. Also keep any courses this teacher has created
+  for (const course of allCourses) {
+    const label = classNameFor(course.program, course.training);
+    if (!label) continue;
+    const existing = classes.get(label);
+    if (!existing) {
+      classes.set(label, {
+        label,
+        programId: course.programId || undefined,
+        trainingId: course.trainingId || undefined,
+      });
+    }
+  }
+
+  const allSuggestions = new Set<string>();
+  for (const c of assigned) {
+    for (const m of c.materials) {
+      if (m.trim()) allSuggestions.add(m.trim());
+    }
+  }
+  for (const course of allCourses) {
+    if (course.name.trim()) allSuggestions.add(course.name.trim());
+  }
+
   return {
-    courses: [...new Set(all.map((c) => c.name))],
+    courses: [...allSuggestions],
     classes: [...classes.values()].sort((a, b) =>
       a.label.localeCompare(b.label),
     ),
@@ -275,6 +290,8 @@ interface DayDialogProps {
   classes: PlanningClassOption[];
   /** Opens the dialog straight into the edit form for this entry. */
   initialEditingId?: string;
+  /** Opens the dialog straight into the add form for this day. */
+  initialAdd?: boolean;
   onSave: (values: PlanningEntryValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
@@ -288,6 +305,7 @@ function DayDialog({
   courses,
   classes,
   initialEditingId,
+  initialAdd,
   onSave,
   onDeleteRequest,
   onClose,
@@ -295,7 +313,7 @@ function DayDialog({
 }: DayDialogProps) {
   const { t, language } = useI18n();
   const [formOpen, setFormOpen] = useState(
-    entries.length === 0 || Boolean(initialEditingId),
+    entries.length === 0 || Boolean(initialEditingId || initialAdd),
   );
   const [editingId, setEditingId] = useState<string | null>(
     initialEditingId ?? null,
@@ -469,6 +487,7 @@ export default function PlanningPage() {
   const [dialog, setDialog] = useState<{
     date: string;
     editingId?: string;
+    initialAdd?: boolean;
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PlanningRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -485,7 +504,7 @@ export default function PlanningPage() {
         try {
           const [all, options] = await Promise.all([
             listPlanning(),
-            planningOptions(record.id),
+            planningOptions(record.id, record.fullName),
           ]);
           if (cancelled) return;
           setEntries(all);
@@ -530,7 +549,7 @@ export default function PlanningPage() {
       setError(null);
       const [all, options] = await Promise.all([
         listPlanning(),
-        planningOptions(teacher.id),
+        planningOptions(teacher.id, teacher.fullName),
       ]);
       setEntries(all);
       setCourses(options.courses);
@@ -715,10 +734,12 @@ export default function PlanningPage() {
     // Full-height column so the week grid eats the rest of the viewport
     // instead of collapsing to its content height in the top third.
     <div className="flex min-h-[calc(100vh-5rem)] w-full min-w-0 flex-col">
-      <h2 className="text-2xl font-semibold">{t("Planning")}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("Click any day to log what was studied with your class.")}
-      </p>
+      <div>
+        <h2 className="text-2xl font-semibold">{t("Planning")}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("Click any day to log what was studied with your class.")}
+        </p>
+      </div>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -807,11 +828,11 @@ export default function PlanningPage() {
                       : "border-zinc-200 dark:border-zinc-800",
                   )}
                 >
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 items-center justify-between gap-1.5">
                     <button
                       type="button"
                       onClick={() => setDialog({ date: key })}
-                      className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-center transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                      className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     >
                       <span
                         className={cn(
@@ -824,11 +845,23 @@ export default function PlanningPage() {
                         {t(WEEKDAYS[i])} {d.getDate()}
                       </span>
                     </button>
-                    {isToday ? (
-                      <span className="shrink-0 rounded-full border border-zinc-900 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase dark:border-zinc-100">
-                        {t("Today")}
-                      </span>
-                    ) : null}
+                    <div className="flex items-center gap-1">
+                      {isToday ? (
+                        <span className="shrink-0 rounded-full border border-zinc-900 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide uppercase dark:border-zinc-100">
+                          {t("Today")}
+                        </span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={t("Add session on {date}", { date: key })}
+                        onClick={() => setDialog({ date: key, initialAdd: true })}
+                        className="h-6 w-6 rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
                   </div>
                   <div className="my-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                     {dayEntries.map((e) => (
@@ -889,19 +922,19 @@ export default function PlanningPage() {
                       </button>
                     ))}
                     {dayEntries.length === 0 ? (
-                      <p className="rounded-md border border-dashed border-zinc-200 px-2 py-3 text-center text-[11px] text-muted-foreground dark:border-zinc-800">
-                        {t("No sessions")}
-                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setDialog({ date: key, initialAdd: true })}
+                        aria-label={t("Add session on {date}", { date: key })}
+                        className="group flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-zinc-200 py-10 text-xs font-medium text-zinc-500 transition-colors hover:border-zinc-400 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-900/50 dark:hover:text-zinc-100"
+                      >
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-dashed border-zinc-300 transition-colors group-hover:border-zinc-500 group-hover:bg-white dark:border-zinc-700 dark:group-hover:border-zinc-500 dark:group-hover:bg-zinc-800">
+                          <Plus className="h-3.5 w-3.5" />
+                        </div>
+                        <span>{t("Add a session")}</span>
+                      </button>
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setDialog({ date: key })}
-                    aria-label={t("Add an entry on {date}", { date: key })}
-                    className="mt-auto flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-200 py-2 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
-                  >
-                    <Plus className="h-4 w-4 shrink-0" />
-                  </button>
                 </div>
               );
             })}
@@ -1043,12 +1076,13 @@ export default function PlanningPage() {
 
       {dialog ? (
         <DayDialog
-          key={`${dialog.date}:${dialog.editingId ?? "new"}`}
+          key={`${dialog.date}:${dialog.editingId ?? (dialog.initialAdd ? "add" : "list")}`}
           date={dialog.date}
           entries={dialogEntries}
           courses={courses}
           classes={classes}
           initialEditingId={dialog.editingId}
+          initialAdd={dialog.initialAdd}
           onUploadMaterial={materialUploader}
           onSave={async (values, editingId) => {
             try {

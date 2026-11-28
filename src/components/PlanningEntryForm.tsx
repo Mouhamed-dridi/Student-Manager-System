@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -140,10 +141,10 @@ const CATEGORY_OPTIONS: {
   label: string;
   icon: typeof BookOpen;
 }[] = [
-  { value: "course", label: "Course & Materials", icon: BookOpen },
-  { value: "exam", label: "Exam Planning", icon: ClipboardList },
-  { value: "pfe", label: "PFE Planning", icon: GraduationCap },
-];
+    { value: "course", label: "Course & Materials", icon: BookOpen },
+    { value: "exam", label: "Exam Planning", icon: ClipboardList },
+    { value: "pfe", label: "PFE Planning", icon: GraduationCap },
+  ];
 
 export default function PlanningEntryForm({
   initial,
@@ -223,8 +224,28 @@ export default function PlanningEntryForm({
 
   // Same idea for the subject: a legacy free-text course stays selectable so
   // opening and saving a session cannot blank it.
-  const subjectOptions: string[] = [...(subjects ?? courses)];
-  if (course && !subjectOptions.includes(course)) subjectOptions.unshift(course);
+  const subjectOptions = useMemo(() => {
+    const list: string[] = [...(subjects ?? courses)];
+    if (course && !list.includes(course)) list.unshift(course);
+    return list;
+  }, [subjects, courses, course]);
+
+  const selectedClass = classes.find((c) => c.label === className);
+  const courseSuggestions = useMemo(() => {
+    const list: string[] = [];
+    const seen = new Set<string>();
+    const add = (val: string | undefined) => {
+      const trimmed = val?.trim();
+      if (!trimmed || seen.has(trimmed.toLowerCase())) return;
+      seen.add(trimmed.toLowerCase());
+      list.push(trimmed);
+    };
+    if (selectedClass?.materials) {
+      for (const m of selectedClass.materials) add(m);
+    }
+    for (const s of subjectOptions) add(s);
+    return list;
+  }, [selectedClass, subjectOptions]);
 
   // Subject → teacher: keep the current pick even when it is not linked to the
   // new subject, and never narrow to nothing (the admin may know better).
@@ -233,14 +254,14 @@ export default function PlanningEntryForm({
   const effectiveTeacherOptions = teacherOptions
     ? qualifiedIds.length > 0
       ? teacherOptions.filter(
-          (option) =>
-            qualifiedIds.includes(option.id) || option.id === teacherId,
-        )
+        (option) =>
+          qualifiedIds.includes(option.id) || option.id === teacherId,
+      )
       : teacherOptions
     : undefined;
   const linkedTeacherCount = effectiveTeacherOptions
     ? effectiveTeacherOptions.filter((option) => qualifiedIds.includes(option.id))
-        .length
+      .length
     : 0;
 
   const categoryTypes = showCategory
@@ -249,21 +270,21 @@ export default function PlanningEntryForm({
   const contentLabel = !showCategory
     ? t("Topic / course details")
     : t(
-        category === "exam"
-          ? "Exam notes"
-          : category === "pfe"
-            ? "Jury / supervision notes"
-            : "Topic / course details",
-      );
+      category === "exam"
+        ? "Exam notes"
+        : category === "pfe"
+          ? "Jury / supervision notes"
+          : "Topic / course details",
+    );
   const contentPlaceholder = !showCategory
     ? t("e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks")
     : t(
-        category === "exam"
-          ? "e.g. DS on Chapter 4 — closed book, calculators allowed"
-          : category === "pfe"
-            ? "e.g. Mid-project review with the supervisor and the jury"
-            : "e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks",
-      );
+      category === "exam"
+        ? "e.g. DS on Chapter 4 — closed book, calculators allowed"
+        : category === "pfe"
+          ? "e.g. Mid-project review with the supervisor and the jury"
+          : "e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks",
+    );
 
   const changeCategory = (next: PlanningCategory) => {
     setCategory(next);
@@ -423,9 +444,14 @@ export default function PlanningEntryForm({
             <Label>{t("Class")}</Label>
             <Select
               value={className || NO_CLASS}
-              onValueChange={(value) =>
-                setClassName(value === NO_CLASS ? "" : (value ?? ""))
-              }
+              onValueChange={(value) => {
+                const nextClass = value === NO_CLASS ? "" : (value ?? "");
+                setClassName(nextClass);
+                const found = classes.find((c) => c.label === nextClass);
+                if (found?.materials && found.materials.length > 0 && !course) {
+                  setCourse(found.materials[0]);
+                }
+              }}
             >
               <SelectTrigger className={controlClass}>
                 <SelectValue
@@ -449,27 +475,24 @@ export default function PlanningEntryForm({
         )}
 
         <div className={fieldClass}>
-          <Label>{t(subjects ? "Subject" : "Course")}</Label>
-          <Select value={course} onValueChange={(value) => setCourse(value ?? "")}>
-            <SelectTrigger className={controlClass}>
-              <SelectValue
-                placeholder={
-                  subjectOptions.length > 0
-                    ? subjects
-                      ? t("Select subject")
-                      : t("Select course")
-                    : t("No courses available")
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {subjectOptions.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="planning-course-input">
+            {t(subjects ? "Subject" : "Course")}
+          </Label>
+          <Input
+            id="planning-course-input"
+            list="planning-course-suggestions"
+            value={course}
+            onChange={(e) => setCourse(e.target.value)}
+            placeholder={t(
+              "Course or session title (e.g. Introduction SAP ERP, Practical workshop...)",
+            )}
+            className={controlClass}
+          />
+          <datalist id="planning-course-suggestions">
+            {courseSuggestions.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
         </div>
 
         {effectiveTeacherOptions ? (
@@ -493,19 +516,19 @@ export default function PlanningEntryForm({
             <p className={hintClass}>
               {qualifiedIds.length > 0
                 ? t(
-                    linkedTeacherCount === 1
-                      ? "{count} teacher is linked to {course}. Changing this moves the session to that teacher's planning."
-                      : "{count} teachers are linked to {course}. Changing this moves the session to that teacher's planning.",
-                    { count: linkedTeacherCount, course },
-                  )
+                  linkedTeacherCount === 1
+                    ? "{count} teacher is linked to {course}. Changing this moves the session to that teacher's planning."
+                    : "{count} teachers are linked to {course}. Changing this moves the session to that teacher's planning.",
+                  { count: linkedTeacherCount, course },
+                )
                 : teacherQualifier && course
                   ? t(
-                      "No teacher is linked to {course} yet — showing all teachers.",
-                      { course },
-                    )
+                    "No teacher is linked to {course} yet — showing all teachers.",
+                    { course },
+                  )
                   : t(
-                      "Changing this moves the session to that teacher's planning.",
-                    )}
+                    "Changing this moves the session to that teacher's planning.",
+                  )}
             </p>
           </div>
         ) : null}
@@ -826,6 +849,9 @@ export default function PlanningEntryForm({
               trainingId:
                 selected?.trainingId ||
                 (keepsExisting ? initial?.trainingId : undefined),
+              branchId:
+                selected?.branchId ||
+                (keepsExisting ? initial?.branchId : undefined),
               sessionTime: formatSessionTime(startTime, endTime),
               roomName:
                 sessionType === "Online"
@@ -841,11 +867,11 @@ export default function PlanningEntryForm({
               // an entry to Exam/PFE clears a previously attached course file.
               ...(showCategory
                 ? {
-                    materialUrl:
-                      category === "course" ? materialUrl.trim() : "",
-                    materialName:
-                      category === "course" ? materialName.trim() : "",
-                  }
+                  materialUrl:
+                    category === "course" ? materialUrl.trim() : "",
+                  materialName:
+                    category === "course" ? materialName.trim() : "",
+                }
                 : {}),
               ...(teacherOptions ? { teacherId: teacherId || undefined } : {}),
             });

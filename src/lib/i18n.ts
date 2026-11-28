@@ -315,6 +315,8 @@ const FRENCH: Record<string, string> = {
     "Cette séance est en conflit avec une autre",
   "Add a session on {date} at {slot}":
     "Ajouter une séance le {date} à {slot}",
+  "Add a session": "Ajouter une séance",
+  "Add session on {date}": "Ajouter une séance le {date}",
   "Edit session": "Modifier la séance",
   "New session": "Nouvelle séance",
   "Conflict warning": "Avertissement de conflit",
@@ -341,6 +343,8 @@ const FRENCH: Record<string, string> = {
 
   // ------------------------------------------------- planning entry modal
   "Planning entry": "Saisie du planning",
+  "Course or session title (e.g. Introduction SAP ERP, Practical workshop...)":
+    "Titre du cours ou de la séance (ex. Introduction SAP ERP, Atelier pratique...)",
   Course: "Cours",
   "Session Type": "Type de séance",
   "Classroom / Room": "Salle",
