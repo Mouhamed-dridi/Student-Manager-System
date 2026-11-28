@@ -39,12 +39,15 @@ import { Input } from "@/components/ui/input";
 import { DataError, DataLoading } from "@/components/DataState";
 import PlanningEntryForm from "@/components/PlanningEntryForm";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
+import { PlanningMeetingLink } from "@/components/PlanningMeetingLink";
+import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useI18n } from "@/lib/i18n";
 import {
   classNameFor,
   deletePlanning,
   errorMessage,
   insertPlanning,
+  listExams,
   listPlanning,
   listTeacherCourses,
   teacherAssignedClasses,
@@ -216,11 +219,15 @@ async function planningOptions(
   teacherId: string,
   teacherName = "",
 ): Promise<PlanningOptions> {
-  const [assigned, allCourses] = await Promise.all([
+  const [assigned, allCourses, exams] = await Promise.all([
     teacherAssignedClasses(teacherId, teacherName).catch(
       () => [] as TeacherAssignedClass[],
     ),
     listTeacherCourses({ teacherId }).catch(() => [] as TeacherCourseRecord[]),
+    // Exam subjects complete the Matière suggestions: `teacherAssignedClasses`
+    // already folds in `branch_materials` and past `planning`, but a teacher who
+    // only ever created exams for a module would otherwise not see it.
+    listExams().catch(() => []),
   ]);
   const classes = new Map<string, PlanningClassOption>();
 
@@ -260,6 +267,11 @@ async function planningOptions(
   for (const course of allCourses) {
     if (course.name.trim()) allSuggestions.add(course.name.trim());
   }
+  for (const exam of exams) {
+    if (exam.teacherId !== teacherId) continue;
+    const subject = exam.subject?.trim();
+    if (subject) allSuggestions.add(subject);
+  }
 
   return {
     courses: [...allSuggestions],
@@ -292,6 +304,8 @@ interface DayDialogProps {
   initialEditingId?: string;
   /** Opens the dialog straight into the add form for this day. */
   initialAdd?: boolean;
+  /** Category tab the add form opens on (the page's active filter). */
+  defaultCategory: PlanningCategory;
   onSave: (values: PlanningEntryValues, editingId: string | null) => void;
   onDeleteRequest: (entry: PlanningRecord) => void;
   onClose: () => void;
@@ -306,6 +320,7 @@ function DayDialog({
   classes,
   initialEditingId,
   initialAdd,
+  defaultCategory,
   onSave,
   onDeleteRequest,
   onClose,
@@ -357,6 +372,7 @@ function DayDialog({
                 submitLabel={editingId ? t("Save Changes") : t("Add Entry")}
                 showCancel
                 showCategory
+                defaultCategory={defaultCategory}
                 layout="landscape"
                 onUploadMaterial={onUploadMaterial}
                 onSubmit={(values) => onSave(values, editingId)}
@@ -388,9 +404,10 @@ function DayDialog({
                         <span className="truncate text-sm font-medium">
                           {e.course || t("Logged session")}
                         </span>
-                        <span className="text-[10px] font-medium text-muted-foreground">
-                          {t(planningSessionTypeKey(e.sessionType))}
-                        </span>
+                        <PlanningSessionTypeBadge
+                          sessionType={e.sessionType}
+                          label={e.customSessionType}
+                        />
                       </div>
                       {(e.sessionTime ||
                         e.className ||
@@ -448,6 +465,11 @@ function DayDialog({
                   <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
                     {e.content}
                   </p>
+                  {e.meetingUrl ? (
+                    <div className="mt-1.5">
+                      <PlanningMeetingLink url={e.meetingUrl} monochrome />
+                    </div>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -689,7 +711,7 @@ export default function PlanningPage() {
     t(planningCategoryKey(planningCategoryFor(p.sessionType))),
     p.className ?? "",
     p.course ?? "",
-    t(planningSessionTypeKey(p.sessionType)),
+    p.customSessionType?.trim() || t(planningSessionTypeKey(p.sessionType)),
     p.content,
     p.materialUrl
       ? [p.materialName, p.materialUrl].filter(Boolean).join(" — ")
@@ -865,61 +887,75 @@ export default function PlanningPage() {
                   </div>
                   <div className="my-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
                     {dayEntries.map((e) => (
-                      <button
+                      // The visual card is a wrapper, not a button, so the Teams
+                      // link can be a real anchor outside the clickable area:
+                      // joining never opens the editor, and it stays keyboard
+                      // reachable (a link nested in a button is not).
+                      <div
                         key={e.id}
-                        type="button"
-                        onClick={() =>
-                          setDialog({ date: key, editingId: e.id })
-                        }
-                        className="block w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800"
+                        className="w-full min-w-0 rounded-md border border-zinc-200 bg-zinc-50 transition-colors dark:border-zinc-800 dark:bg-zinc-900"
                       >
-                        <span className="flex flex-wrap items-center gap-1">
-                          <PlanningCategoryPill
-                            category={planningCategoryFor(e.sessionType)}
-                          />
-                          <span className="text-[10px] font-medium text-muted-foreground">
-                            {t(planningSessionTypeKey(e.sessionType))}
-                          </span>
-                        </span>
-                        {(e.sessionTime ||
-                          e.roomName ||
-                          e.sessionType === "Online") && (
-                          <span className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium">
-                            {e.sessionTime && (
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="h-3 w-3 shrink-0" />
-                                <span>{e.sessionTime}</span>
-                              </span>
-                            )}
-                            <PlanningLocationBadge
-                              room={e.roomName}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDialog({ date: key, editingId: e.id })
+                          }
+                          className="block w-full min-w-0 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          <span className="flex flex-wrap items-center gap-1">
+                            <PlanningCategoryPill
+                              category={planningCategoryFor(e.sessionType)}
+                            />
+                            <PlanningSessionTypeBadge
                               sessionType={e.sessionType}
-                              monochrome
+                              label={e.customSessionType}
                             />
                           </span>
-                        )}
-                        {e.className && (
-                          <span className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground">
-                            <Users className="mt-0.5 h-3 w-3 shrink-0" />
-                            <span className="min-w-0 break-words">
-                              {e.className}
+                          {(e.sessionTime ||
+                            e.roomName ||
+                            e.sessionType === "Online") && (
+                            <span className="mt-1 flex flex-wrap items-center gap-1 text-[10px] font-medium">
+                              {e.sessionTime && (
+                                <span className="inline-flex items-center gap-1">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  <span>{e.sessionTime}</span>
+                                </span>
+                              )}
+                              <PlanningLocationBadge
+                                room={e.roomName}
+                                sessionType={e.sessionType}
+                                monochrome
+                              />
                             </span>
+                          )}
+                          {e.className && (
+                            <span className="mt-1 flex items-start gap-1 text-[10px] text-muted-foreground">
+                              <Users className="mt-0.5 h-3 w-3 shrink-0" />
+                              <span className="min-w-0 break-words">
+                                {e.className}
+                              </span>
+                            </span>
+                          )}
+                          <span className="mt-1 block text-xs font-medium break-words">
+                            {e.course || t("Logged session")}
                           </span>
-                        )}
-                        <span className="mt-1 block text-xs font-medium break-words">
-                          {e.course || t("Logged session")}
-                        </span>
-                        {e.content ? (
-                          <span className="mt-0.5 block text-xs break-words whitespace-pre-wrap text-muted-foreground">
-                            {e.content}
-                          </span>
+                          {e.content ? (
+                            <span className="mt-0.5 block text-xs break-words whitespace-pre-wrap text-muted-foreground">
+                              {e.content}
+                            </span>
+                          ) : null}
+                          {e.materialUrl ? (
+                            <span className="mt-1.5 block">
+                              <PlanningMaterialBadge entry={e} />
+                            </span>
+                          ) : null}
+                        </button>
+                        {e.meetingUrl ? (
+                          <div className="px-2 pb-1.5">
+                            <PlanningMeetingLink url={e.meetingUrl} monochrome />
+                          </div>
                         ) : null}
-                        {e.materialUrl ? (
-                          <span className="mt-1.5 block">
-                            <PlanningMaterialBadge entry={e} />
-                          </span>
-                        ) : null}
-                      </button>
+                      </div>
                     ))}
                     {dayEntries.length === 0 ? (
                       <button
@@ -1013,9 +1049,10 @@ export default function PlanningPage() {
                                   entry.sessionType,
                                 )}
                               />
-                              <span className="text-[10px] font-medium text-muted-foreground">
-                                {t(planningSessionTypeKey(entry.sessionType))}
-                              </span>
+                              <PlanningSessionTypeBadge
+                                sessionType={entry.sessionType}
+                                label={entry.customSessionType}
+                              />
                               {entry.sessionTime ? (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
                                   <Clock className="h-3 w-3 shrink-0" />
@@ -1037,6 +1074,14 @@ export default function PlanningPage() {
                               {entry.content}
                             </p>
                             <PlanningMaterialLink entry={entry} />
+                            {entry.meetingUrl ? (
+                              <div>
+                                <PlanningMeetingLink
+                                  url={entry.meetingUrl}
+                                  monochrome
+                                />
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex shrink-0 gap-1">
                             <Button
@@ -1083,6 +1128,9 @@ export default function PlanningPage() {
           classes={classes}
           initialEditingId={dialog.editingId}
           initialAdd={dialog.initialAdd}
+          // "+" on a week column opens the tab of the active filter: PFE opens
+          // Planning PFE, Exams opens Planification d'examen, otherwise Course.
+          defaultCategory={filter === "all" ? "course" : filter}
           onUploadMaterial={materialUploader}
           onSave={async (values, editingId) => {
             try {

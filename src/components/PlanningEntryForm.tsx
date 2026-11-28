@@ -21,13 +21,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { materialAliasKey, materialNamesMatch } from "@/lib/courseDisplay";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_PLANNING_CLASSROOM,
   defaultPlanningSessionType,
   formatSessionTime,
+  isOnlineSessionType,
   isPlanningSessionType,
+  normalizeMeetingUrl,
   ONLINE_SESSION_LOCATION,
   parseSessionTime,
   planningCategoryFor,
@@ -35,6 +38,7 @@ import {
   planningSessionTypeKey,
   planningSlotKey,
   PLANNING_CLASSROOMS,
+  PLANNING_CUSTOM_EXAM_TYPE,
   PLANNING_SESSION_TYPES,
 } from "@/pages/teacher-portal/planning";
 import type {
@@ -59,8 +63,14 @@ import type {
 // balanced columns in a wide popup, with the category tabs pinned above the
 // scrolling body and the submit bar pinned below it.
 
-const NO_CLASS = "__none";
 const CUSTOM_TIME = "__custom";
+
+/**
+ * "Other / Text" option of the exam type select. It is a view over the stored
+ * type, never a stored value: the row keeps `Exam` (so it still classifies as
+ * an exam) and the typed kind goes to `planning.custom_session_type`.
+ */
+const CUSTOM_EXAM_TYPE = "__custom_exam_type";
 
 /** The live form state, reported so a caller can check for timetable clashes. */
 export interface PlanningEntryDraft {
@@ -127,6 +137,12 @@ export interface PlanningEntryFormProps {
    */
   showCategory?: boolean;
   /**
+   * Entry dialog only: the category tab a new entry opens on, so "+" on a week
+   * column opens the tab the teacher is currently filtering by (PFE filter →
+   * Planning PFE). Editing an existing entry always follows its stored type.
+   */
+  defaultCategory?: PlanningCategory;
+  /**
    * Uploads a daily lesson material and resolves to its public URL and display
    * name. Only the teacher page passes it, because the upload is namespaced by
    * the signed-in teacher's id.
@@ -168,14 +184,17 @@ export default function PlanningEntryForm({
   onDateChange,
   layout = "stack",
   showCategory = false,
+  defaultCategory,
   onUploadMaterial,
 }: PlanningEntryFormProps) {
   const { t } = useI18n();
   // A category is a view over the stored session type, so an old row opens on
-  // the right tab without a second column.
-  const [category, setCategory] = useState<PlanningCategory>(() =>
-    planningCategoryFor(initial?.sessionType),
-  );
+  // the right tab without a second column. A new entry opens on the tab the
+  // caller asked for (the teacher page's active filter), Course otherwise.
+  const openingCategory: PlanningCategory = initial
+    ? planningCategoryFor(initial.sessionType)
+    : (defaultCategory ?? "course");
+  const [category, setCategory] = useState<PlanningCategory>(openingCategory);
   const [materialUrl, setMaterialUrl] = useState(initial?.materialUrl ?? "");
   const [materialName, setMaterialName] = useState(initial?.materialName ?? "");
   const [uploading, setUploading] = useState(false);
@@ -183,14 +202,29 @@ export default function PlanningEntryForm({
   const [teacherId, setTeacherId] = useState(
     initial?.teacherId ?? defaultTeacherId ?? "",
   );
-  const [course, setCourse] = useState(initial?.course ?? "");
-  const [sessionType, setSessionType] = useState<PlanningSessionType>(
-    initial?.sessionType ?? "In-class",
+  // A new exam entry starts on the teacher's primary matière for the first
+  // assigned class, so the field is usable without opening the suggestion list.
+  const [course, setCourse] = useState(
+    initial?.course ??
+      (openingCategory === "exam" ? (classes[0]?.materials?.[0] ?? "") : ""),
   );
-  // A teacher with a single assigned class gets it prefilled; otherwise the
-  // field stays blank until they pick one.
+  // The opening tab decides the stored session kind too, so a PFE entry never
+  // starts as "In-class" while the PFE tab is displayed.
+  const [sessionType, setSessionType] = useState<PlanningSessionType>(
+    initial?.sessionType ?? defaultPlanningSessionType(openingCategory),
+  );
+  // "Other / Text" exam kind: the select sits on the sentinel while the typed
+  // value lives in its own state and is stored next to the exam row.
+  const [customTypeMode, setCustomTypeMode] = useState(
+    Boolean(initial?.customSessionType),
+  );
+  const [customSessionType, setCustomSessionType] = useState(
+    initial?.customSessionType ?? "",
+  );
+  // The first assigned class is prefilled so the field is immediately usable;
+  // the placeholder only shows when the teacher has no class at all.
   const [className, setClassName] = useState(
-    initial?.className ?? (classes.length === 1 ? classes[0].label : ""),
+    initial?.className ?? classes[0]?.label ?? "",
   );
   const initialTime = parseSessionTime(
     initial?.sessionTime ?? defaultSessionTime,
@@ -214,6 +248,15 @@ export default function PlanningEntryForm({
   );
   const [content, setContent] = useState(initial?.content ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  // Only an Online session carries a link; switching back to In-class clears
+  // it so a classroom session never keeps a leftover Teams meeting.
+  const [meetingUrl, setMeetingUrl] = useState(
+    initial?.sessionType === "Online" ? (initial.meetingUrl ?? "") : "",
+  );
+  const meetingUrlInvalid =
+    isOnlineSessionType(sessionType) &&
+    meetingUrl.trim() !== "" &&
+    normalizeMeetingUrl(meetingUrl) === null;
 
   // A room stored before the list was fixed (or typed by hand) stays
   // selectable, so editing an old entry never silently moves it.
@@ -231,6 +274,35 @@ export default function PlanningEntryForm({
   }, [subjects, courses, course]);
 
   const selectedClass = classes.find((c) => c.label === className);
+  // The exam tab schedules a matière, not a free session title: the options are
+  // the materials the operator assigned to this teacher in the chosen class
+  // (`branch_materials`, with `planning` as the fallback source in
+  // teacherAssignedClasses). They are deduplicated on the canonical material
+  // key, so "Anglais"/"English" and "ERP Consulting"/"SAP consulting" are
+  // offered once instead of twice.
+  const isExamTab = showCategory && category === "exam";
+  // A PFE sitting has no course: the tab hides that field entirely.
+  const isPfeTab = showCategory && category === "pfe";
+  const examSubjectOptions = useMemo(() => {
+    const list: string[] = [];
+    const seen = new Set<string>();
+    const add = (value: string | undefined) => {
+      const trimmed = value?.trim();
+      if (!trimmed) return;
+      const key = materialAliasKey(trimmed);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      list.push(trimmed);
+    };
+    // The class's assigned matières lead, then every other subject the teacher
+    // has a trace of (their other classes, created courses, past planning and
+    // exam subjects — all of which reach `courses`), then the stored value.
+    for (const material of selectedClass?.materials ?? []) add(material);
+    for (const option of subjectOptions) add(option);
+    add(course);
+    return list;
+  }, [selectedClass, subjectOptions, course]);
+
   const courseSuggestions = useMemo(() => {
     const list: string[] = [];
     const seen = new Set<string>();
@@ -286,6 +358,30 @@ export default function PlanningEntryForm({
           : "e.g. Chapter 3: IP Routing Protocols, or Lab 2: React Hooks",
     );
 
+  /**
+   * Moves the exam subject to the selected class: the same matière when the
+   * teacher also teaches it there, otherwise their first assigned one. A
+   * subject the teacher typed by hand is left alone — the field is editable, so
+   * a class switch must not overwrite a module that is not in the catalog.
+   */
+  const scopeExamSubjectTo = (
+    materials: readonly string[] | undefined,
+    force = false,
+  ) => {
+    if (!materials || materials.length === 0) return;
+    const typed = course.trim();
+    const isAssigned = classes.some((entry) =>
+      (entry.materials ?? []).some((material) =>
+        materialNamesMatch(material, typed),
+      ),
+    );
+    if (!force && typed && !isAssigned) return;
+    setCourse(
+      materials.find((material) => materialNamesMatch(material, course)) ??
+        materials[0],
+    );
+  };
+
   const changeCategory = (next: PlanningCategory) => {
     setCategory(next);
     // Keep a stored type that already belongs to the chosen category (editing a
@@ -293,6 +389,10 @@ export default function PlanningEntryForm({
     if (planningCategoryFor(sessionType) !== next) {
       const nextType = defaultPlanningSessionType(next);
       setSessionType(nextType);
+      // A custom exam kind only belongs to the exam tab; leaving it (or opening
+      // another tab) drops it, and the submit payload clears the column.
+      setCustomTypeMode(false);
+      setCustomSessionType("");
       // Online is the only type with a platform location; switching away from
       // it restores a real classroom so the room select is never locked empty.
       if (nextType === "Online") {
@@ -300,6 +400,18 @@ export default function PlanningEntryForm({
       } else if (roomName === ONLINE_SESSION_LOCATION) {
         setRoomName(DEFAULT_PLANNING_CLASSROOM);
       }
+      if (!isOnlineSessionType(nextType)) setMeetingUrl("");
+    }
+    // The exam tab schedules a matière, so switching to it re-scopes the field
+    // to the class already picked. Re-clicking the active tab is a no-op: the
+    // stored subject of an entry being edited must survive.
+    if (next === "exam" && next !== category) {
+      // Forced: the previous tab's field was a session title, not a matière, so
+      // the exam subject starts from the class's assignment.
+      scopeExamSubjectTo(
+        classes.find((entry) => entry.label === className)?.materials,
+        true,
+      );
     }
   };
 
@@ -321,8 +433,15 @@ export default function PlanningEntryForm({
   const timeInvalid = Boolean(startTime && endTime && endTime < startTime);
   const teacherMissing = Boolean(teacherOptions && !teacherId);
   const contentMissing = requireContent && content.trim() === "";
+  const customTypeMissing =
+    isExamTab && customTypeMode && customSessionType.trim() === "";
   const valid =
-    !contentMissing && !timeInvalid && !teacherMissing && !uploading;
+    !contentMissing &&
+    !timeInvalid &&
+    !teacherMissing &&
+    !uploading &&
+    !meetingUrlInvalid &&
+    !customTypeMissing;
 
   const isGrid = layout === "grid";
   // The teacher dialog: two columns, tabs pinned at the top and the submit bar
@@ -443,13 +562,22 @@ export default function PlanningEntryForm({
           <div className={fieldClass}>
             <Label>{t("Class")}</Label>
             <Select
-              value={className || NO_CLASS}
+              // No sentinel value: an empty string is "nothing selected", so
+              // the trigger shows the localized placeholder instead of an
+              // internal `__none` token leaking into the dropdown.
+              value={className}
+              items={classes.map((c) => ({ value: c.label, label: c.label }))}
               onValueChange={(value) => {
-                const nextClass = value === NO_CLASS ? "" : (value ?? "");
+                const nextClass = value ?? "";
                 setClassName(nextClass);
                 const found = classes.find((c) => c.label === nextClass);
-                if (found?.materials && found.materials.length > 0 && !course) {
-                  setCourse(found.materials[0]);
+                const materials = found?.materials ?? [];
+                if (isExamTab) {
+                  // An exam is sat in one class for one matière, so the subject
+                  // follows the class instead of keeping the old one.
+                  scopeExamSubjectTo(materials);
+                } else if (materials.length > 0 && !course) {
+                  setCourse(materials[0]);
                 }
               }}
             >
@@ -463,7 +591,6 @@ export default function PlanningEntryForm({
                 />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_CLASS}>{t("No class")}</SelectItem>
                 {classes.map((c) => (
                   <SelectItem key={c.label} value={c.label}>
                     {c.label}
@@ -474,26 +601,81 @@ export default function PlanningEntryForm({
           </div>
         )}
 
-        <div className={fieldClass}>
-          <Label htmlFor="planning-course-input">
-            {t(subjects ? "Subject" : "Course")}
-          </Label>
-          <Input
-            id="planning-course-input"
-            list="planning-course-suggestions"
-            value={course}
-            onChange={(e) => setCourse(e.target.value)}
-            placeholder={t(
-              "Course or session title (e.g. Introduction SAP ERP, Practical workshop...)",
+        {isExamTab ? (
+          // Exam Planning: the field is the matière of the exam, scoped to the
+          // class it is sat in — not the free session title of Course &
+          // Materials. The chosen subject is still stored in `planning.course`,
+          // which is what the schedule cards and the student week read.
+          <div className={fieldClass}>
+            <Label htmlFor="planning-exam-subject">{t("Subject")}</Label>
+            {/* Editable, not a closed picker: a module the operator never
+                assigned in `branch_materials` can still be typed here. */}
+            <Input
+              id="planning-exam-subject"
+              list="planning-exam-subject-suggestions"
+              value={course}
+              onChange={(e) => setCourse(e.target.value)}
+              placeholder={t("Type a subject, or pick one below")}
+              className={controlClass}
+            />
+            <datalist id="planning-exam-subject-suggestions">
+              {examSubjectOptions.map((option) => (
+                <option key={option} value={option} />
+              ))}
+            </datalist>
+            {examSubjectOptions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {examSubjectOptions.slice(0, 8).map((option) => {
+                  const active = materialNamesMatch(option, course);
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setCourse(option)}
+                      className={cn(
+                        "inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                        active
+                          ? "border-zinc-400 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                          : "border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-100",
+                      )}
+                    >
+                      <span className="truncate">{option}</span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-            className={controlClass}
-          />
-          <datalist id="planning-course-suggestions">
-            {courseSuggestions.map((suggestion) => (
-              <option key={suggestion} value={suggestion} />
-            ))}
-          </datalist>
-        </div>
+            <p className={hintClass}>
+              {examSubjectOptions.length > 0
+                ? t(
+                  "Your assigned subjects in this class — or type any other module.",
+                )
+                : t("Type the subject of the exam.")}
+            </p>
+          </div>
+        ) : isPfeTab ? null : (
+          <div className={fieldClass}>
+            <Label htmlFor="planning-course-input">
+              {t(subjects ? "Subject" : "Course")}
+            </Label>
+            <Input
+              id="planning-course-input"
+              list="planning-course-suggestions"
+              value={course}
+              onChange={(e) => setCourse(e.target.value)}
+              placeholder={t(
+                "Course or session title (e.g. Introduction SAP ERP, Practical workshop...)",
+              )}
+              className={controlClass}
+            />
+            <datalist id="planning-course-suggestions">
+              {courseSuggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+          </div>
+        )}
 
         {effectiveTeacherOptions ? (
           <div className={fieldClass}>
@@ -540,18 +722,32 @@ export default function PlanningEntryForm({
                 ? category === "exam"
                   ? "Exam Type"
                   : category === "pfe"
-                    ? "PFE Milestone"
+                    ? "Type"
                     : "Session Type"
                 : "Session Type",
             )}
           </Label>
           <Select
-            value={sessionType}
-            items={categoryTypes.map((type) => ({
-              value: type,
-              label: t(planningSessionTypeKey(type)),
-            }))}
+            value={customTypeMode ? CUSTOM_EXAM_TYPE : sessionType}
+            items={[
+              ...categoryTypes.map((type) => ({
+                value: type as string,
+                label: t(planningSessionTypeKey(type)),
+              })),
+              // "Other / Text" only exists on the exam tab: the stored kind
+              // stays `Exam` and the typed value goes in its own column.
+              ...(isExamTab
+                ? [{ value: CUSTOM_EXAM_TYPE, label: t("Other / Text") }]
+                : []),
+            ]}
             onValueChange={(value) => {
+              if (value === CUSTOM_EXAM_TYPE) {
+                setCustomTypeMode(true);
+                setSessionType(PLANNING_CUSTOM_EXAM_TYPE);
+                return;
+              }
+              setCustomTypeMode(false);
+              setCustomSessionType("");
               if (!isPlanningSessionType(value)) return;
               setSessionType(value);
               // Switching to Online stamps the meeting platform as the location
@@ -561,6 +757,8 @@ export default function PlanningEntryForm({
               } else if (roomName === ONLINE_SESSION_LOCATION) {
                 setRoomName(DEFAULT_PLANNING_CLASSROOM);
               }
+              // An in-person session cannot keep a meeting link.
+              if (!isOnlineSessionType(value)) setMeetingUrl("");
             }}
           >
             <SelectTrigger className={controlClass}>
@@ -572,11 +770,45 @@ export default function PlanningEntryForm({
                   {t(planningSessionTypeKey(type))}
                 </SelectItem>
               ))}
+              {isExamTab && (
+                <SelectItem value={CUSTOM_EXAM_TYPE}>
+                  {t("Other / Text")}
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
 
-        {sessionType === "Online" ? (
+        {isExamTab && customTypeMode ? (
+          <div className={fieldClass}>
+            <Label htmlFor="planning-custom-exam-type">
+              {t("Custom exam type")}
+            </Label>
+            <Input
+              id="planning-custom-exam-type"
+              className={controlClass}
+              placeholder={t("e.g. Rattrapage, Contrôle continu…")}
+              aria-invalid={customTypeMissing || undefined}
+              value={customSessionType}
+              onChange={(e) => setCustomSessionType(e.target.value)}
+            />
+            {customTypeMissing ? (
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100"
+              >
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0">{t("Enter the exam type.")}</span>
+              </div>
+            ) : (
+              <p className={hintClass}>
+                {t("Stored as the exam type of this session.")}
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {isOnlineSessionType(sessionType) ? (
           <div className={fieldClass}>
             <Label>{t("Session location")}</Label>
             <div className="flex h-8 min-w-0 items-center gap-1.5 rounded-lg border bg-muted/40 px-2.5 text-sm">
@@ -615,6 +847,41 @@ export default function PlanningEntryForm({
             </p>
           </div>
         )}
+
+        {isOnlineSessionType(sessionType) ? (
+          <div className={fieldClass}>
+            <Label htmlFor="log-meeting-url">
+              {t("Microsoft Teams link")}
+            </Label>
+            <Input
+              id="log-meeting-url"
+              type="url"
+              inputMode="url"
+              className={controlClass}
+              placeholder="https://teams.microsoft.com/l/meetup-join/..."
+              aria-invalid={meetingUrlInvalid || undefined}
+              value={meetingUrl}
+              onChange={(e) => setMeetingUrl(e.target.value)}
+            />
+            {meetingUrlInvalid ? (
+              <div
+                role="alert"
+                className="flex items-center gap-2 rounded-lg border border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100"
+              >
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0">
+                  {t("Enter a valid link starting with https://.")}
+                </span>
+              </div>
+            ) : (
+              <p className={hintClass}>
+                {t(
+                  "Optional. Students get a Join Teams button on their schedule.",
+                )}
+              </p>
+            )}
+          </div>
+        ) : null}
 
         <div className={fieldClass}>
           <Label>{t("Time")}</Label>
@@ -840,7 +1107,9 @@ export default function PlanningEntryForm({
             // stored scope, but only while the label itself is unchanged.
             const keepsExisting = className === (initial?.className ?? "");
             onSubmit({
-              course: course || undefined,
+              // A PFE session carries no course: the field is hidden on that
+              // tab and the write drops any value a legacy row carried.
+              course: isPfeTab ? undefined : course || undefined,
               sessionType,
               className: className || undefined,
               programId:
@@ -871,8 +1140,18 @@ export default function PlanningEntryForm({
                     category === "course" ? materialUrl.trim() : "",
                   materialName:
                     category === "course" ? materialName.trim() : "",
+                  // Empty on every other tab, so switching an exam entry to
+                  // Course/PFE clears a previously typed custom kind.
+                  customSessionType:
+                    isExamTab && customTypeMode
+                      ? customSessionType.trim()
+                      : "",
                 }
                 : {}),
+              // Empty for an in-person session, which nulls any stored link.
+              meetingUrl: isOnlineSessionType(sessionType)
+                ? (normalizeMeetingUrl(meetingUrl) ?? "")
+                : "",
               ...(teacherOptions ? { teacherId: teacherId || undefined } : {}),
             });
           }}

@@ -4345,6 +4345,19 @@ export async function listGrades(): Promise<GradeRecord[]> {
   return (await rows<GradeRow>("grades")).map(gradeFromRow);
 }
 
+/**
+ * One exam's recorded scores, filtered in the database. The grading page reads
+ * a single exam at a time, so it must not pull the whole `grades` table.
+ */
+export async function listGradesForExam(
+  examId: string,
+): Promise<GradeRecord[]> {
+  if (!examId) return [];
+  return (
+    await rows<GradeRow>("grades", { eq: { exam_id: examId } })
+  ).map(gradeFromRow);
+}
+
 /** The signed-in student's own grades, filtered in the database. */
 export async function listStudentGrades(
   studentId: string,
@@ -4367,16 +4380,30 @@ export async function countGradesForExam(examId: string): Promise<number> {
 }
 
 /**
- * Replaces all grades of one exam with the given scores (a blank input in
- * the grades table simply omits the student, which clears their grade).
+ * Writes the score matrix of one exam: every `(exam_id, student_id)` pair is
+ * scoped to the exam, and a blank input in the grades table simply omits the
+ * student, which clears their grade.
+ *
+ * `studentIds` is the roster that was just on screen. Passing it keeps the
+ * rewrite inside that roster: a grade recorded for a student of another class
+ * (or a stale row from a previous roster) is left untouched instead of being
+ * silently deleted. Omitting it keeps the old "replace every grade of the
+ * exam" behaviour. `grades` has no unique `(exam_id, student_id)` constraint on
+ * live databases, so this is a delete-then-insert rather than an upsert.
  */
 export async function saveGradesForExam(
   examId: string,
   scores: { studentId: string; score: number }[],
+  studentIds?: readonly string[],
 ): Promise<void> {
-  const { error: deleteError } = await withTimeout(
-    supabase.from("grades").delete().eq("exam_id", examId),
-  );
+  const scoped =
+    studentIds && studentIds.length > 0
+      ? supabase.from("grades").delete().eq("exam_id", examId).in(
+          "student_id",
+          [...studentIds],
+        )
+      : supabase.from("grades").delete().eq("exam_id", examId);
+  const { error: deleteError } = await withTimeout(scoped);
   if (deleteError) throw new Error(deleteError.message);
   if (scores.length === 0) return;
   const { error } = await withTimeout(
@@ -4923,6 +4950,10 @@ interface PlanningRow {
   /** Daily lesson material attached by the teacher (Course & Materials). */
   material_url?: string | null;
   material_name?: string | null;
+  /** Microsoft Teams join link of an online session. */
+  meeting_url?: string | null;
+  /** Free-text exam kind typed in the entry form's "Other / Text" option. */
+  custom_session_type?: string | null;
 }
 
 function planningFromRow(row: PlanningRow): PlanningRecord {
@@ -4948,6 +4979,8 @@ function planningFromRow(row: PlanningRow): PlanningRecord {
         : undefined,
     materialUrl: row.material_url ?? undefined,
     materialName: row.material_name ?? undefined,
+    meetingUrl: row.meeting_url ?? undefined,
+    customSessionType: row.custom_session_type ?? undefined,
   };
 }
 
@@ -5388,6 +5421,41 @@ function hasPlanningMaterialColumns(): Promise<boolean> {
   return planningMaterialColumnsPromise;
 }
 
+// `meeting_url` is the Microsoft Teams join link of an online session. Same
+// rule as the material: a database without the migration keeps saving ordinary
+// sessions, but a save that carries a link fails with the hint instead of
+// silently dropping it.
+const PLANNING_MEETING_URL_MISSING =
+  "Planning Teams links are not set up yet. Run supabase/planning-meeting-url-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningMeetingUrlColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningMeetingUrlColumn(): Promise<boolean> {
+  if (!planningMeetingUrlColumnPromise) {
+    planningMeetingUrlColumnPromise = hasColumn("planning", "meeting_url");
+  }
+  return planningMeetingUrlColumnPromise;
+}
+
+// `custom_session_type` holds the exam kind a teacher typed instead of picking
+// one of the fixed session types. Same rule as the other optional columns: a
+// database without the migration keeps saving exams, but a save that carries a
+// custom type fails with the hint instead of silently dropping it.
+const PLANNING_CUSTOM_SESSION_TYPE_MISSING =
+  "Custom exam types are not set up yet. Run supabase/planning-custom-session-type-migration.sql in the Supabase SQL Editor, reload the page, then try again.";
+
+let planningCustomSessionTypeColumnPromise: Promise<boolean> | null = null;
+
+function hasPlanningCustomSessionTypeColumn(): Promise<boolean> {
+  if (!planningCustomSessionTypeColumnPromise) {
+    planningCustomSessionTypeColumnPromise = hasColumn(
+      "planning",
+      "custom_session_type",
+    );
+  }
+  return planningCustomSessionTypeColumnPromise;
+}
+
 export async function insertPlanning(record: PlanningRecord): Promise<void> {
   if (!(await hasPlanningSessionTypeColumn())) {
     throw new Error(PLANNING_SESSION_TYPE_MISSING);
@@ -5418,6 +5486,16 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
   const supportsMaterial = await hasPlanningMaterialColumns();
   if (!supportsMaterial && record.materialUrl) {
     throw new Error(PLANNING_MATERIAL_MISSING);
+  }
+  // An empty value is only a no-op on insert, so it is dropped silently on a
+  // database without the column; a carried link must not be lost.
+  const supportsMeetingUrl = await hasPlanningMeetingUrlColumn();
+  if (!supportsMeetingUrl && record.meetingUrl) {
+    throw new Error(PLANNING_MEETING_URL_MISSING);
+  }
+  const supportsCustomType = await hasPlanningCustomSessionTypeColumn();
+  if (!supportsCustomType && record.customSessionType) {
+    throw new Error(PLANNING_CUSTOM_SESSION_TYPE_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -5456,6 +5534,12 @@ export async function insertPlanning(record: PlanningRecord): Promise<void> {
             material_name: record.materialName || null,
           }
         : {}),
+      ...(supportsMeetingUrl
+        ? { meeting_url: record.meetingUrl || null }
+        : {}),
+      ...(supportsCustomType
+        ? { custom_session_type: record.customSessionType || null }
+        : {}),
     }),
   );
   if (error) throw new Error(error.message);
@@ -5478,6 +5562,8 @@ export async function updatePlanning(
     | "juryTeacherIds"
     | "materialUrl"
     | "materialName"
+    | "meetingUrl"
+    | "customSessionType"
   > & {
     /** Operator editor only: reassign the session to another teacher. */
     teacherId?: string;
@@ -5512,6 +5598,14 @@ export async function updatePlanning(
   const supportsMaterial = await hasPlanningMaterialColumns();
   if (!supportsMaterial && values.materialUrl) {
     throw new Error(PLANNING_MATERIAL_MISSING);
+  }
+  const supportsMeetingUrl = await hasPlanningMeetingUrlColumn();
+  if (!supportsMeetingUrl && values.meetingUrl) {
+    throw new Error(PLANNING_MEETING_URL_MISSING);
+  }
+  const supportsCustomType = await hasPlanningCustomSessionTypeColumn();
+  if (!supportsCustomType && values.customSessionType) {
+    throw new Error(PLANNING_CUSTOM_SESSION_TYPE_MISSING);
   }
 
   const { error } = await withTimeout(
@@ -5556,6 +5650,17 @@ export async function updatePlanning(
               material_url: values.materialUrl || null,
               material_name: values.materialName || null,
             }
+          : {}),
+        // Always written when the caller sends it, so switching a session back
+        // to In-class really clears the link (empty → null). Callers that do
+        // not touch the field (exam/PFE dialogs) leave a stored link alone.
+        ...(supportsMeetingUrl && values.meetingUrl !== undefined
+          ? { meeting_url: values.meetingUrl || null }
+          : {}),
+        // Always written by the entry form, so picking a fixed exam kind again
+        // clears the custom text instead of leaving it on the row.
+        ...(supportsCustomType && values.customSessionType !== undefined
+          ? { custom_session_type: values.customSessionType || null }
           : {}),
         // Only written when the caller moves the session, so a normal edit
         // never shifts its day.

@@ -42,8 +42,27 @@ export type PlanningCategory = "course" | "exam" | "pfe";
 
 export const PLANNING_CATEGORIES = ["course", "exam", "pfe"] as const;
 
-/** Exam kinds the teacher entry form offers (stored as `session_type`). */
-export const PLANNING_EXAM_ENTRY_TYPES = ["DS", "Exam", "TP"] as const;
+/**
+ * Exam kinds the teacher entry form offers (stored as `session_type`). Every
+ * kind the operator exam tab understands is here; a type outside this list is
+ * typed as text and stored in `planning.custom_session_type` next to `Exam`.
+ */
+export const PLANNING_EXAM_ENTRY_TYPES = [
+  "TD",
+  "TP",
+  "Principale",
+  "DS",
+  "Exam",
+  "SYNTHESE",
+] as const;
+
+/**
+ * `session_type` the form stores when the teacher picks "Other / Text" and
+ * types their own exam kind. The custom text itself goes in
+ * `planning.custom_session_type`, so the row still classifies as an exam in the
+ * operator tabs, the schedule and the badges.
+ */
+export const PLANNING_CUSTOM_EXAM_TYPE: PlanningSessionType = "Exam";
 
 /**
  * PFE milestones, stored on the existing PFE session types: supervision maps
@@ -127,7 +146,7 @@ export function planningSessionTypeKey(
     case "TD":
       return "TD";
     case "Principale":
-      return "Principale";
+      return "Principal exam";
     case "SYNTHESE":
       return "SYNTHESIS";
     case "Online":
@@ -230,6 +249,30 @@ export const DEFAULT_PLANNING_CLASSROOM = "B11";
 export const ONLINE_SESSION_LOCATION = "MS Teams";
 
 /**
+ * True for the session kinds that meet remotely. They are the only ones the
+ * entry form asks a Microsoft Teams link for; switching back to an in-person
+ * kind clears it so a classroom session cannot keep a stale meeting link.
+ */
+export function isOnlineSessionType(
+  sessionType: PlanningSessionType | null | undefined,
+): boolean {
+  return sessionType === "Online";
+}
+
+/**
+ * Trims a hand-typed Teams link and keeps only absolute http(s) URLs, so an
+ * invalid value can neither be stored nor rendered as a clickable href.
+ * Returns null when the value is empty or malformed.
+ */
+export function normalizeMeetingUrl(
+  value: string | null | undefined,
+): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
+/**
  * The timetable rows the operator branch grid is built from: five standardised
  * 2-hour blocks. A session is placed in a slot by matching its stored window
  * ("08:00 - 10:00"); sessions that keep another window become rows of their
@@ -317,6 +360,17 @@ export interface PlanningRecord {
   materialUrl?: string;
   /** Display name of the attached material (`planning.material_name`). */
   materialName?: string;
+  /**
+   * Microsoft Teams join link of an online session (`planning.meeting_url`).
+   * Only ever set on an Online entry; cards render it as a "Join Teams" link.
+   */
+  meetingUrl?: string;
+  /**
+   * Free-text exam kind typed by the teacher ("Rattrapage", "Contrôle
+   * continu") stored in `planning.custom_session_type`. When set, it replaces
+   * the stored session type in the badges; the row itself stays `Exam`.
+   */
+  customSessionType?: string;
   /** Class / branch the entry belongs to (`planning.branch_id`). */
   branchId?: string;
 }
@@ -349,6 +403,18 @@ export interface PlanningEntryValues {
   /** Daily lesson material attached to a Course & Materials entry. */
   materialUrl?: string;
   materialName?: string;
+  /**
+   * Microsoft Teams join link. The entry form always sends it (empty string
+   * when the session is in person), so switching an entry back to In-class
+   * clears the stored link instead of keeping it.
+   */
+  meetingUrl?: string;
+  /**
+   * Exam tab only: the custom exam kind typed in "Other / Text". Always sent by
+   * the entry form (empty string otherwise), so picking a fixed kind again
+   * clears a previously stored custom type.
+   */
+  customSessionType?: string;
   /**
    * Operator only: the teacher the session belongs to after saving. The teacher
    * portal never sets it, so its entries always stay on the signed-in teacher.

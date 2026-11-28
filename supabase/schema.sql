@@ -704,6 +704,11 @@ create table if not exists public.planning (
   -- session's lead teacher; this array adds the panel (supervisor, president,
   -- examiner). NULL on every other session kind.
   jury_teacher_ids uuid[],
+  -- Microsoft Teams join link, only set on an Online session.
+  meeting_url text,
+  -- Exam kind typed by the teacher when it is not one of the fixed session
+  -- types ("Rattrapage"); session_type stays 'Exam' for such rows.
+  custom_session_type text,
   created_at timestamptz not null default now()
 );
 
@@ -713,7 +718,9 @@ alter table if exists public.planning
   add column if not exists training_id uuid references public.trainings(id),
   add column if not exists room_name text,
   add column if not exists notes text,
-  add column if not exists jury_teacher_ids uuid[];
+  add column if not exists jury_teacher_ids uuid[],
+  add column if not exists meeting_url text,
+  add column if not exists custom_session_type text;
 
 -- An older planning table was constrained to the four original session types,
 -- which refuses the exam (DS, TP, TD, Principale, SYNTHESE) and PFE kinds.

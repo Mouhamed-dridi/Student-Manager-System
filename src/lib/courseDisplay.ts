@@ -98,6 +98,32 @@ export function subjectNamesMatch(
   return new RegExp(`(^| )${shorter}( |$)`).test(longer);
 }
 
+/**
+ * Alias-folded key for a branch material, one step stricter than
+ * `subjectAliasKey()`: ERP and SAP name the same discipline in a class file
+ * ("ERP Consulting" / "SAP consulting"), so a subject option list offers it
+ * once. Deliberately separate from `subjectAliasKey()` — class names are
+ * compared with that one, and folding SAP into ERP there would make two
+ * genuinely different classes look identical.
+ */
+export function materialAliasKey(value: string | null | undefined): string {
+  return subjectAliasKey(value)
+    .split(" ")
+    .map((token) => (token === "sap" || token === "erp" ? "erp" : token))
+    .join(" ");
+}
+
+/** Whether two branch materials / subjects are the same matière to schedule. */
+export function materialNamesMatch(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  if (materialAliasKey(a) === materialAliasKey(b)) {
+    return materialAliasKey(a) !== "";
+  }
+  return subjectNamesMatch(a, b);
+}
+
 /** `published_at` timestamp rendered as "Added Sep 25, 2026". */
 export function formatPublished(published: string): string {
   return new Date(published).toLocaleDateString(undefined, {

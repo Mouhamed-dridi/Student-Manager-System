@@ -25,14 +25,13 @@ import ExamScoreView from "./ExamScoreView";
 import MyClassPage from "./MyClassPage";
 import PlanningPage from "./PlanningPage";
 import TeacherEventsPage from "./TeacherEventsPage";
-import TeacherEventDetailPage from "./TeacherEventDetailPage";
 import TeacherSettingsPage from "./TeacherSettings";
 import UserAvatar from "@/components/UserAvatar";
 import HeaderBackButton from "@/components/HeaderBackButton";
 import LogoutButton from "@/components/LogoutButton";
 import ExitGuard from "@/components/ExitGuard";
 import ViewHistoryProvider from "@/hooks/ViewHistoryProvider";
-import { useNestedView, useViewHistory } from "@/hooks/viewHistory";
+import { useViewHistory } from "@/hooks/viewHistory";
 import { useBranding } from "@/lib/branding";
 import { subscribeTeacherProfileChanged } from "@/lib/teacherProfile";
 import {
@@ -117,10 +116,6 @@ function TeacherShell() {
   // Which collapsible sidebar sections are open. A parent with no entry yet
   // defaults to open when one of its children is active (see isSectionExpanded).
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  // An open event takes over the content area; the sidebar item stays
-  // highlighted. Sections are not routes in this portal, so the detail view is
-  // a swap rather than a navigation — hence its own state beside `active`.
-  const [openEventId, setOpenEventId] = useState<string | null>(null);
   // The mobile navigation drawer; selecting a section closes it.
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // undefined = still fetching the record; null = record is gone.
@@ -178,15 +173,6 @@ function TeacherShell() {
     navigate("/login");
   };
 
-  // The open event is a sub-page of the Events section, so it registers with the
-  // history stack: the header arrow and the page's own Back button agree.
-  useNestedView(
-    openEventId !== null,
-    "event-detail",
-    "Event details",
-    () => setOpenEventId(null),
-  );
-
   const isSectionActive = (item: TeacherMenuItem) =>
     item.children?.some((child) => child.key === active) ?? false;
 
@@ -201,13 +187,8 @@ function TeacherShell() {
       ...prev,
       [item.key]: !(prev[item.key] ?? isSectionActive(item)),
     }));
-    // Consistent with every other sidebar click: leaving Events closes it.
-    setOpenEventId(null);
   };
 
-  // Built here rather than at module level because the Events entry closes over
-  // setOpenEventId. React keys reconciliation on element type, not identity, so
-  // rebuilding the record on each render costs nothing.
   const pages: Record<PageKey, React.ReactNode> = {
     dashboard: <TeacherDashboardPage />,
     announcements: <TeacherAnnouncementsPage />,
@@ -217,7 +198,7 @@ function TeacherShell() {
     "exam-score": <ExamScoreView />,
     class: <MyClassPage />,
     planning: <PlanningPage />,
-    events: <TeacherEventsPage onOpenEvent={setOpenEventId} />,
+    events: <TeacherEventsPage />,
     settings: <TeacherSettingsPage />,
   };
 
@@ -255,8 +236,6 @@ function TeacherShell() {
                       key={child.key}
                       onClick={() => {
                         pushSection(child.key, t(child.label));
-                        // Leaving the events section closes any open event.
-                        setOpenEventId(null);
                         onNavigate?.();
                       }}
                       className={`flex w-full items-center gap-3 rounded-md py-1.5 pr-3 pl-10 text-sm font-medium transition-colors ${
@@ -279,8 +258,6 @@ function TeacherShell() {
             key={item.key}
             onClick={() => {
               pushSection(item.key, t(item.label));
-              // Leaving the events section also closes any open event.
-              setOpenEventId(null);
               onNavigate?.();
             }}
             className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
@@ -371,14 +348,7 @@ function TeacherShell() {
 
         {/* Content */}
         <main className="w-full flex-1 overflow-auto p-4 sm:p-6">
-          {openEventId ? (
-            <TeacherEventDetailPage
-              eventId={openEventId}
-              onBack={() => setOpenEventId(null)}
-            />
-          ) : (
-            pages[active]
-          )}
+          {pages[active]}
         </main>
       </div>
 

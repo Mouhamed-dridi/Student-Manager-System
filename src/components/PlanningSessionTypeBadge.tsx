@@ -1,5 +1,9 @@
-import type { PlanningSessionType } from "@/pages/teacher-portal/planning";
+import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import {
+  planningSessionTypeKey,
+  type PlanningSessionType,
+} from "@/pages/teacher-portal/planning";
 
 // Exam sessions are the ones an operator scans for in a dense grid, so each
 // exam family carries its own accent (red for the graded exams, amber for the
@@ -24,9 +28,18 @@ const SESSION_TYPE_TONES: Partial<Record<PlanningSessionType, string>> = {
 
 export function PlanningSessionTypeBadge({
   sessionType,
+  label,
 }: {
   sessionType: PlanningSessionType;
+  /**
+   * Exam entries can carry a free-text kind (`planning.custom_session_type`);
+   * it replaces the fixed label, the tone still follows the stored type.
+   */
+  label?: string;
 }) {
+  // The dictionary is keyed by the English label, so the raw enum value would
+  // leak English copy ("In-class") into the French UI.
+  const { t } = useI18n();
   return (
     <span
       className={cn(
@@ -34,7 +47,7 @@ export function PlanningSessionTypeBadge({
         SESSION_TYPE_TONES[sessionType] ?? "border-border text-muted-foreground",
       )}
     >
-      {sessionType}
+      {label?.trim() || t(planningSessionTypeKey(sessionType))}
     </span>
   );
 }

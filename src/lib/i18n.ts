@@ -367,6 +367,18 @@ const FRENCH: Record<string, string> = {
     "Changer la date déplace la séance.",
   "Fixed by the branch this timetable belongs to.":
     "Fixé par la filière à laquelle appartient cet emploi du temps.",
+  "Type a subject, or pick one below":
+    "Saisissez une matière ou choisissez-en une ci-dessous",
+  "Your assigned subjects in this class — or type any other module.":
+    "Vos matières assignées dans cette classe — ou saisissez un autre module.",
+  "Type the subject of the exam.": "Saisissez la matière de l'examen.",
+  "Other / Text": "Autre / texte",
+  "Custom exam type": "Type d'examen personnalisé",
+  "e.g. Rattrapage, Contrôle continu…":
+    "ex. Rattrapage, Contrôle continu…",
+  "Enter the exam type.": "Saisissez le type d'examen.",
+  "Stored as the exam type of this session.":
+    "Enregistré comme type d'examen de cette séance.",
   "End time must be after the start time.":
     "L'heure de fin doit être postérieure à l'heure de début.",
   "Optional. Pick a slot, or use custom times for any other window.":
@@ -382,6 +394,12 @@ const FRENCH: Record<string, string> = {
     "Affiché sous forme de badge à côté de l'horaire dans toutes les vues du planning.",
   "Online sessions meet on {platform}, so no classroom is assigned.":
     "Les séances en ligne se tiennent sur {platform}, aucune salle n'est donc assignée.",
+  "Microsoft Teams link": "Lien Microsoft Teams",
+  "Join Teams": "Rejoindre Teams",
+  "Enter a valid link starting with https://.":
+    "Saisissez un lien valide commençant par https://.",
+  "Optional. Students get a Join Teams button on their schedule.":
+    "Facultatif. Les étudiants disposent d'un bouton Rejoindre Teams dans leur emploi du temps.",
   "{count} teacher is linked to {course}. Changing this moves the session to that teacher's planning.":
     "{count} enseignant est lié à {course}. Le modifier déplace la séance dans le planning de cet enseignant.",
   "{count} teachers are linked to {course}. Changing this moves the session to that teacher's planning.":
@@ -404,7 +422,6 @@ const FRENCH: Record<string, string> = {
   "Course & Materials": "Cours & supports",
   "Exam Planning": "Planification d'examen",
   "Exam Type": "Type d'examen",
-  "PFE Milestone": "Jalon PFE",
   "Exam notes": "Notes d'examen",
   "Jury / supervision notes": "Notes du jury / suivi",
   "e.g. DS on Chapter 4 — closed book, calculators allowed":
@@ -459,7 +476,7 @@ const FRENCH: Record<string, string> = {
   "Graded practical": "TP noté",
   DS: "DS",
   TD: "TD",
-  Principale: "Principale",
+  "Principal exam": "Examen principal",
   SYNTHESIS: "SYNTHÈSE",
 
   // ------------------------------------------------------------------- events
@@ -556,6 +573,11 @@ const FRENCH: Record<string, string> = {
   "No event has been published yet.":
     "Aucun événement n'a encore été publié.",
   "No description provided.": "Aucune description fournie.",
+  Join: "Participer",
+  Attending: "Inscrit",
+  "{count} attending": "{count} participants",
+  "Gifts & awards": "Cadeaux et récompenses",
+  "Open in Google Maps": "Ouvrir dans Google Maps",
   "Events you create will be listed here, with their cover image, schedule and participants.":
     "Les événements que vous créez seront listés ici, avec leur image de couverture, leur programme et leurs participants.",
   "View Event History": "Voir l'historique des événements",

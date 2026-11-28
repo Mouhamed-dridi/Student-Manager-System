@@ -98,9 +98,17 @@ export function formatDayLabel(date: Date, locale?: string): string {
   return `${WEEKDAY_LABELS[(date.getDay() + 6) % 7]} ${date.getDate()}`;
 }
 
-/** "20 – 26 Oct 2026" (or "28 Sep – 4 Oct 2026" across a month boundary). */
-export function formatWeekRange(start: Date, locale?: string): string {
-  const end = addDays(start, 6);
+/**
+ * "20 – 26 Oct 2026" (or "28 Sep – 4 Oct 2026" across a month boundary).
+ * `days` is the number of rendered days: the student agenda shows a 6-day
+ * week (Monday–Saturday, Sunday is a day off), so it ends on Saturday.
+ */
+export function formatWeekRange(
+  start: Date,
+  locale?: string,
+  days = 7,
+): string {
+  const end = addDays(start, days - 1);
   if (locale) {
     const startLabel = start.toLocaleDateString(locale, {
       day: "numeric",

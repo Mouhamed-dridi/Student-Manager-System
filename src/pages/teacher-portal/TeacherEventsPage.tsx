@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ImagePlus } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Ticket } from "lucide-react";
 import { DataError, DataLoading } from "@/components/DataState";
 import {
   errorMessage,
   listEvents,
+  setEventAttendance,
   subscribeToTable,
   type AppEvent,
 } from "@/lib/api";
-import { formatDateRange } from "../events/eventFormat";
+import { useI18n } from "@/lib/i18n";
+import { EventCardGrid } from "@/pages/events/EventCard";
+import EventDetailsModal from "@/pages/events/EventDetailsModal";
+import { loadCurrentTeacher } from "./currentTeacher";
 
 /**
- * The teacher's event index. Read-only: an event only comes into existence
- * through the operator's New Event form, so this page shows and nothing more.
- * Opening a card hands the event id to the layout, which swaps in
- * TeacherEventDetailPage (a section, not a route — the teacher portal keeps
- * every screen behind one `/teacher` route).
+ * The teacher's event index. Read-only over `events`: an event only comes into
+ * existence through the operator's New Event form, and the only write here is
+ * the attendance toggle (`events.attendees`).
+ *
+ * Both portals share the card grid and the details dialog, so a card click
+ * opens `EventDetailsModal` instead of swapping in a full-page section.
  */
 
 /** Today's date as yyyy-mm-dd from LOCAL parts.
@@ -51,65 +55,20 @@ function byRelevance(a: AppEvent, b: AppEvent): number {
   return 0;
 }
 
-/** The poster. `object-contain` so nothing is cropped: posters are vertical
- *  documents and a cropped one loses the agenda printed at the bottom. */
-function EventPoster({ event }: { event: AppEvent }) {
-  return event.coverUrl ? (
-    <img
-      src={event.coverUrl}
-      alt=""
-      className="aspect-[3/4] w-full bg-muted object-contain"
-    />
-  ) : (
-    <div className="flex aspect-[3/4] w-full items-center justify-center bg-muted text-muted-foreground">
-      <ImagePlus className="h-5 w-5" />
-    </div>
-  );
-}
-
-function EventCard({
-  event,
-  onOpen,
-}: {
-  event: AppEvent;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="group flex flex-col overflow-hidden rounded-xl text-left ring-1 ring-foreground/10 transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-offset-2"
-    >
-      <EventPoster event={event} />
-
-      {/* Footer: hairline divider, even padding, one element per row so the
-          badge, title and date never compete for the same line. */}
-      <div className="flex flex-1 flex-col gap-2.5 border-t border-foreground/10 p-4">
-        <span className="w-fit rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {event.type}
-        </span>
-
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug">
-          <span className="group-hover:underline">{event.title}</span>
-        </h3>
-
-        <p className="mt-auto flex items-center gap-1.5 border-t border-foreground/5 pt-2.5 text-xs text-muted-foreground">
-          <CalendarDays className="h-3.5 w-3.5 shrink-0" />
-          {formatDateRange(event.startsOn, event.endsOn)}
-        </p>
-      </div>
-    </button>
-  );
-}
-
-export default function TeacherEventsPage({
-  onOpenEvent,
-}: {
-  onOpenEvent: (eventId: string) => void;
-}) {
+export default function TeacherEventsPage() {
   // null = still loading; the DataError below takes over if the load failed.
   const [events, setEvents] = useState<AppEvent[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The clicked card, kept as an id so a realtime refresh re-renders the open
+  // dialog with the newest row instead of a stale snapshot.
+  const [openEventId, setOpenEventId] = useState<string | null>(null);
+  const [teacherId, setTeacherId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  // The RSVP lives on the server, so this local list is what the Join button
+  // optimistically updates; the next realtime `events` change is authoritative.
+  const [attendees, setAttendees] = useState<string[] | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     let cancelled = false;
@@ -133,49 +92,108 @@ export default function TeacherEventsPage({
     };
   }, []);
 
-  const sorted = useMemo(() => (events ?? []).slice().sort(byRelevance), [events]);
+  useEffect(() => {
+    let cancelled = false;
+    loadCurrentTeacher()
+      .then((teacher) => !cancelled && setTeacherId(teacher?.id ?? ""))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sorted = useMemo(
+    () => (events ?? []).slice().sort(byRelevance),
+    [events],
+  );
+  const openEvent = useMemo(
+    () => sorted.find((event) => event.id === openEventId) ?? null,
+    [sorted, openEventId],
+  );
+
+  const openDetails = (event: AppEvent) => {
+    setOpenEventId(event.id);
+    setAttendees(event.attendees);
+    setActionError(null);
+  };
+
+  const closeDetails = () => {
+    setOpenEventId(null);
+    setAttendees(null);
+    setActionError(null);
+  };
+
+  const currentAttendees = attendees ?? openEvent?.attendees ?? [];
+  const joined = Boolean(teacherId) && currentAttendees.includes(teacherId);
+
+  const toggleAttendance = async () => {
+    if (!openEvent) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const next = await setEventAttendance(openEvent.id, teacherId, !joined);
+      setAttendees(next);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold">Events</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Center events and publications. Open one to see the full poster and
-        details, and to register as attending.
-      </p>
-
-      {loadError && (
-        <div className="mt-4">
-          <DataError message={loadError} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+            {t("Events")}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            {t(
+              "Hackathons, trainings and ceremonies published by the school.",
+            )}
+          </p>
         </div>
-      )}
+        {events !== null && (
+          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            {t(events.length === 1 ? "{count} event" : "{count} events", {
+              count: events.length,
+            })}
+          </span>
+        )}
+      </div>
 
-      {sorted.length === 0 ? (
-        events === null && !loadError ? (
-          <div className="mt-4">
-            <DataLoading label="Loading events…" />
+      <div className="mt-4">
+        {loadError ? (
+          <DataError message={loadError} />
+        ) : events === null ? (
+          <DataLoading label={t("Loading events…")} />
+        ) : sorted.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/60 p-8 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
+            <Ticket className="mx-auto h-6 w-6 text-zinc-400 dark:text-zinc-500" />
+            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+              {t("No event has been published yet.")}
+            </p>
           </div>
         ) : (
-          <Card className="mt-4 max-w-xl">
-            <CardContent className="py-8 text-center">
-              <p className="text-sm font-medium">No events yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Events created by the center will be listed here, with their
-                poster, schedule and partners.
-              </p>
-            </CardContent>
-          </Card>
-        )
-      ) : (
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {sorted.map((event) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              onOpen={() => onOpenEvent(event.id)}
-            />
-          ))}
-        </div>
-      )}
+          <EventCardGrid events={sorted} onOpen={openDetails} />
+        )}
+      </div>
+
+      <EventDetailsModal
+        event={openEvent}
+        onClose={closeDetails}
+        attendance={
+          openEvent
+            ? {
+                attending: joined,
+                count: currentAttendees.length,
+                busy,
+                error: actionError,
+                onToggle: () => void toggleAttendance(),
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

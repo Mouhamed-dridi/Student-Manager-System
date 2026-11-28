@@ -735,6 +735,7 @@ export default function BranchPlanningPage({
                               />
                               <PlanningSessionTypeBadge
                                 sessionType={entry.sessionType}
+                                label={entry.customSessionType}
                               />
                             </span>
                           </button>

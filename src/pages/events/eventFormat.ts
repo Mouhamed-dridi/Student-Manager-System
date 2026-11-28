@@ -1,6 +1,10 @@
-// Presentation helpers shared by the event form and the event history page.
-// Kept in one place so a partner link renders identically in the form's
-// dynamic list and in the history table.
+// Presentation helpers shared by the event form, the event history page and
+// the cards/detail dialog both portals render. Kept in one place so a partner
+// link or a gift label renders identically everywhere.
+
+import { formatPersonName } from "@/lib/format";
+import type { Translate } from "@/lib/i18n";
+import type { AppEvent } from "@/lib/api";
 
 /**
  * The gift categories offered by the event creator. Several can be picked at
@@ -125,4 +129,53 @@ export function formatDateRange(
   const start = formatDay(startsOn, locale);
   if (!endsOn || endsOn === startsOn) return start;
   return `${start} – ${formatDay(endsOn, locale)}`;
+}
+
+/**
+ * `events.type` is free text with no CHECK, so the known creator options get a
+ * dictionary key while anything else keeps its stored shape.
+ */
+const EVENT_TYPE_KEYS: Record<string, string> = {
+  event: "Event",
+  workshop: "Workshop",
+  hackathon: "Hackathon",
+  talks: "Talks",
+  publication: "Publication",
+  "new training": "New Training",
+  certification: "Certification",
+};
+
+/** Localized label for a stored event type ("talks" → "Conférence"). */
+export function eventTypeLabel(
+  type: string | null | undefined,
+  translate: Translate,
+): string {
+  const raw = (type ?? "").trim();
+  if (!raw) return "";
+  const known = EVENT_TYPE_KEYS[raw.toLowerCase()];
+  if (known) return translate(known);
+  // Only re-case values stored fully lower/upper case, so a custom type such
+  // as "AI Summit" keeps its acronym instead of becoming "Ai Summit".
+  const uniformCase = raw === raw.toLowerCase() || raw === raw.toUpperCase();
+  return uniformCase ? formatPersonName(raw) : raw;
+}
+
+/** Localized reward labels ("money, gadget" → "Argent, Gadget"). */
+export function giftLabel(value: string, translate: Translate): string {
+  return splitGifts(value)
+    .map((part) => {
+      const option = GIFT_OPTIONS.find(
+        (entry) => entry.value === part.toLowerCase(),
+      );
+      return translate(option?.label ?? part);
+    })
+    .join(", ");
+}
+
+/** Partner names, falling back to the bare link for legacy rows. */
+export function partnerNames(event: AppEvent): string {
+  return (event.partners ?? [])
+    .map((partner) => partner.name?.trim() || partner.link?.trim())
+    .filter(Boolean)
+    .join(", ");
 }

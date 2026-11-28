@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { DataError, DataLoading } from "@/components/DataState";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
+import { PlanningMeetingLink } from "@/components/PlanningMeetingLink";
+import { PlanningSessionTypeBadge } from "@/components/PlanningSessionTypeBadge";
 import { useRefetchOnFocus } from "@/hooks/useRefetchOnFocus";
 import {
   classNameFor,
@@ -28,7 +30,6 @@ import type {
 import {
   planningCategoryFor,
   planningCategoryKey,
-  planningSessionTypeKey,
 } from "@/pages/teacher-portal/planning";
 import { loadCurrentStudent } from "./currentStudent";
 import {
@@ -319,9 +320,10 @@ export default function StudentPlanningPage() {
                           >
                             <div className="flex flex-wrap items-center gap-1.5">
                               <PlanningCategoryPill category={category} />
-                              <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                                {t(planningSessionTypeKey(session.sessionType))}
-                              </span>
+                              <PlanningSessionTypeBadge
+                                sessionType={session.sessionType}
+                                label={session.customSessionType}
+                              />
                               {session.sessionTime && (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
                                   <Clock className="h-3 w-3 shrink-0" />
@@ -355,6 +357,14 @@ export default function StudentPlanningPage() {
                                     t("Lesson material")}
                                 </span>
                               </a>
+                            ) : null}
+                            {session.meetingUrl ? (
+                              <div className="mt-1.5">
+                                <PlanningMeetingLink
+                                  url={session.meetingUrl}
+                                  monochrome
+                                />
+                              </div>
                             ) : null}
                           </li>
                         );
