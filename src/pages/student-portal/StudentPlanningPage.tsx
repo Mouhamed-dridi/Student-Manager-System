@@ -3,11 +3,18 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
-  Clock,
   FileText,
   Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { DataError, DataLoading } from "@/components/DataState";
 import { PlanningLocationBadge } from "@/components/PlanningLocationBadge";
 import { PlanningMeetingLink } from "@/components/PlanningMeetingLink";
@@ -35,7 +42,6 @@ import { loadCurrentStudent } from "./currentStudent";
 import {
   addDays,
   dateKeyOf,
-  formatDayLabel,
   formatLongDate,
   formatWeekRange,
   startOfWeek,
@@ -56,11 +62,24 @@ const FILTER_OPTIONS: { value: PlanningFilter; label: string }[] = [
   { value: "pfe", label: "PFE" },
 ];
 
+/**
+ * The student agenda runs Monday–Saturday: Sunday is a day off, so it is not
+ * rendered at all (no column, no date header, no day in the week range).
+ */
+const AGENDA_DAYS = 6;
+
 function sortSessions(a: PlanningRecord, b: PlanningRecord): number {
   return (
     (a.sessionTime ?? "").localeCompare(b.sessionTime ?? "") ||
     (a.course ?? "").localeCompare(b.course ?? "")
   );
+}
+
+/** "lun."/"Mon" → "LUN"/"MON": short, dot-free weekday abbreviation. */
+function weekdayAbbr(date: Date, locale: string): string {
+  return date
+    .toLocaleDateString(locale, { weekday: "short" })
+    .replace(/\.$/, "");
 }
 
 function PlanningCategoryPill({ category }: { category: PlanningCategory }) {
@@ -69,6 +88,91 @@ function PlanningCategoryPill({ category }: { category: PlanningCategory }) {
     <span className="inline-flex shrink-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-zinc-600 uppercase dark:border-zinc-700 dark:text-zinc-400">
       {t(planningCategoryKey(category))}
     </span>
+  );
+}
+
+/**
+ * Read-only session sheet opened from an agenda card. It deliberately has no
+ * edit/delete action: the student portal never mutates planning rows.
+ */
+function SessionDetailDialog({
+  session,
+  onClose,
+}: {
+  session: PlanningRecord | null;
+  onClose: () => void;
+}) {
+  const { t, language } = useI18n();
+  const locale = language === "fr" ? "fr-FR" : "en-US";
+  if (!session) return null;
+  const category = planningCategoryFor(session.sessionType);
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PlanningCategoryPill category={category} />
+            <PlanningSessionTypeBadge
+              sessionType={session.sessionType}
+              label={session.customSessionType}
+            />
+          </div>
+          <DialogTitle className="mt-1 text-lg leading-snug break-words">
+            {session.course || t("Logged session")}
+          </DialogTitle>
+          <DialogDescription>
+            {formatLongDate(storedDateKey(session.date), locale)}
+            {session.sessionTime ? ` · ${session.sessionTime}` : ""}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <PlanningLocationBadge
+              room={session.roomName}
+              sessionType={session.sessionType}
+              monochrome
+            />
+            {session.className ? (
+              <span className="inline-flex min-w-0 items-center rounded-full border border-zinc-300 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                <span className="truncate">{session.className}</span>
+              </span>
+            ) : null}
+            <PlanningMeetingLink url={session.meetingUrl} monochrome />
+          </div>
+
+          <div>
+            <p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+              {t("Description")}
+            </p>
+            <p className="mt-1 text-sm break-words whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+              {session.content || t("No description provided.")}
+            </p>
+          </div>
+
+          {session.materialUrl ? (
+            <a
+              href={session.materialUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              <Paperclip className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">
+                {session.materialName || t("Lesson material")}
+              </span>
+            </a>
+          ) : null}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t("Close")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -89,6 +193,7 @@ export default function StudentPlanningPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<PlanningFilter>("all");
+  const [detail, setDetail] = useState<PlanningRecord | null>(null);
 
   // Promise chain (not async/await) to match MyAttendancePage: every setState
   // lands in a callback, so it never runs synchronously inside the effect.
@@ -127,7 +232,7 @@ export default function StudentPlanningPage() {
   useRefetchOnFocus(load);
 
   const weekDays = useMemo(
-    () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
+    () => Array.from({ length: AGENDA_DAYS }, (_, index) => addDays(weekStart, index)),
     [weekStart],
   );
 
@@ -186,7 +291,7 @@ export default function StudentPlanningPage() {
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <span className="min-w-40 text-center text-sm font-medium">
-          {formatWeekRange(weekStart, locale)}
+          {formatWeekRange(weekStart, locale, AGENDA_DAYS)}
         </span>
         <Button
           variant="outline"
@@ -279,124 +384,133 @@ export default function StudentPlanningPage() {
             </p>
           ) : null}
 
-          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {weekDays.map((day) => {
-              const key = dateKeyOf(day);
-              const bucket = buckets.get(key) ?? { sessions: [], exams: [] };
-              const isToday = key === todayKey;
-              return (
-                <section
-                  key={key}
-                  className={cn(
-                    "rounded-lg border bg-white p-4 dark:bg-zinc-950",
-                    isToday
-                      ? "border-zinc-900 dark:border-zinc-100"
-                      : "border-zinc-200 dark:border-zinc-800",
-                  )}
-                >
-                  <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-200 pb-2 dark:border-zinc-800">
-                    <h3 className="text-sm font-semibold tracking-wide text-zinc-900 uppercase dark:text-zinc-100">
-                      {formatDayLabel(day, locale)}
-                    </h3>
-                    <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                      {formatLongDate(key, locale)}
-                    </span>
-                  </header>
-
-                  {bucket.sessions.length === 0 && bucket.exams.length === 0 ? (
-                    <p className="mt-3 rounded-md border border-dashed border-zinc-200 px-2 py-3 text-center text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-                      {t("No sessions")}
-                    </p>
-                  ) : (
-                    <ul className="mt-3 space-y-2">
-                      {bucket.sessions.map((session) => {
-                        const category = planningCategoryFor(
-                          session.sessionType,
-                        );
-                        return (
-                          <li
-                            key={session.id}
-                            className="rounded-md border border-zinc-200 bg-zinc-50 p-2.5 dark:border-zinc-800 dark:bg-zinc-900"
-                          >
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <PlanningCategoryPill category={category} />
-                              <PlanningSessionTypeBadge
-                                sessionType={session.sessionType}
-                                label={session.customSessionType}
-                              />
-                              {session.sessionTime && (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-300 px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
-                                  <Clock className="h-3 w-3 shrink-0" />
-                                  {session.sessionTime}
-                                </span>
-                              )}
-                              <PlanningLocationBadge
-                                room={session.roomName}
-                                sessionType={session.sessionType}
-                                monochrome
-                              />
-                            </div>
-                            <p className="mt-1 text-sm font-medium break-words text-zinc-900 dark:text-zinc-100">
-                              {session.course || t("Logged session")}
-                            </p>
-                            {session.content ? (
-                              <p className="mt-0.5 text-xs break-words whitespace-pre-wrap text-zinc-600 dark:text-zinc-400">
-                                {session.content}
-                              </p>
-                            ) : null}
-                            {session.materialUrl ? (
-                              <a
-                                href={session.materialUrl}
-                                target="_blank"
-                                rel="noreferrer noopener"
-                                className="mt-1 inline-flex min-w-0 max-w-full items-center gap-1 text-xs font-medium text-zinc-800 underline-offset-2 hover:underline dark:text-zinc-200"
-                              >
-                                <Paperclip className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {session.materialName ||
-                                    t("Lesson material")}
-                                </span>
-                              </a>
-                            ) : null}
-                            {session.meetingUrl ? (
-                              <div className="mt-1.5">
-                                <PlanningMeetingLink
-                                  url={session.meetingUrl}
-                                  monochrome
-                                />
-                              </div>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-
-                      {bucket.exams.map((exam) => (
-                        <li
-                          key={exam.id}
-                          className="rounded-md border border-zinc-300 bg-white p-2.5 dark:border-zinc-700 dark:bg-zinc-950"
+          {/* Notion-style agenda: one column per working day, hairline dividers
+              produced by the gap over a bordered container. */}
+          <div className="mt-3 overflow-hidden rounded-xl border border-zinc-200 bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-800">
+            <div className="grid grid-cols-1 gap-px sm:grid-cols-2 lg:grid-cols-6">
+              {weekDays.map((day) => {
+                const key = dateKeyOf(day);
+                const bucket = buckets.get(key) ?? { sessions: [], exams: [] };
+                const isToday = key === todayKey;
+                const isEmpty =
+                  bucket.sessions.length === 0 && bucket.exams.length === 0;
+                return (
+                  <section
+                    key={key}
+                    aria-label={formatLongDate(key, locale)}
+                    className={cn(
+                      "flex min-w-0 flex-col bg-white dark:bg-zinc-950",
+                      isToday && "bg-zinc-50 dark:bg-zinc-900/60",
+                    )}
+                  >
+                    <header className="flex items-center justify-between gap-2 border-b border-zinc-200 px-2.5 py-2 dark:border-zinc-800">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          {weekdayAbbr(day, locale)}
+                        </span>
+                        <span
+                          className={cn(
+                            "flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-semibold tabular-nums",
+                            isToday
+                              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                              : "text-zinc-900 dark:text-zinc-100",
+                          )}
                         >
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <PlanningCategoryPill category="exam" />
-                            <FileText
-                              aria-hidden="true"
-                              className="h-3 w-3 shrink-0 text-zinc-500 dark:text-zinc-400"
-                            />
-                          </div>
-                          <p className="mt-1 text-sm font-medium break-words text-zinc-900 dark:text-zinc-100">
-                            {exam.title}
-                          </p>
-                          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                            {[exam.type, exam.duration, exam.semester]
-                              .filter(Boolean)
-                              .join(" · ") || "—"}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
+                          {day.getDate()}
+                        </span>
+                      </div>
+                      {isToday ? (
+                        <span className="truncate text-[9px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                          {t("Today")}
+                        </span>
+                      ) : null}
+                    </header>
+
+                    <div className="flex min-h-28 flex-1 flex-col gap-1.5 p-1.5 lg:min-h-40">
+                      {isEmpty ? (
+                        <p className="flex flex-1 items-center justify-center rounded-md border border-dashed border-zinc-200 px-2 py-3 text-center text-[11px] text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
+                          {t("No sessions")}
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5">
+                          {bucket.sessions.map((session) => {
+                            const category = planningCategoryFor(
+                              session.sessionType,
+                            );
+                            return (
+                              <li
+                                key={session.id}
+                                className="overflow-hidden rounded-md border border-zinc-200 bg-white transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+                              >
+                                {/* The Teams link lives outside the button: an
+                                    anchor cannot be nested in a button. */}
+                                <button
+                                  type="button"
+                                  onClick={() => setDetail(session)}
+                                  className="block w-full min-w-0 p-2 text-left"
+                                >
+                                  <span className="flex items-center justify-between gap-1">
+                                    <span className="text-[10px] font-semibold text-zinc-500 tabular-nums dark:text-zinc-400">
+                                      {session.sessionTime ?? ""}
+                                    </span>
+                                    <PlanningCategoryPill category={category} />
+                                  </span>
+                                  <span className="mt-1 block text-xs leading-snug font-medium break-words text-zinc-900 dark:text-zinc-100">
+                                    {session.course || t("Logged session")}
+                                  </span>
+                                  <span className="mt-1 flex flex-wrap items-center gap-1">
+                                    <PlanningSessionTypeBadge
+                                      sessionType={session.sessionType}
+                                      label={session.customSessionType}
+                                    />
+                                    <PlanningLocationBadge
+                                      room={session.roomName}
+                                      sessionType={session.sessionType}
+                                      monochrome
+                                    />
+                                  </span>
+                                </button>
+                                {session.meetingUrl ? (
+                                  <div className="border-t border-zinc-100 px-2 py-1 dark:border-zinc-800">
+                                    <PlanningMeetingLink
+                                      url={session.meetingUrl}
+                                      monochrome
+                                    />
+                                  </div>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+
+                          {bucket.exams.map((exam) => (
+                            <li
+                              key={exam.id}
+                              className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/60"
+                            >
+                              <span className="flex items-center justify-between gap-1">
+                                <PlanningCategoryPill category="exam" />
+                                <FileText
+                                  aria-hidden="true"
+                                  className="h-3 w-3 shrink-0 text-zinc-400 dark:text-zinc-500"
+                                />
+                              </span>
+                              <p className="mt-1 text-xs leading-snug font-medium break-words text-zinc-900 dark:text-zinc-100">
+                                {exam.title}
+                              </p>
+                              <p className="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+                                {[exam.type, exam.duration, exam.semester]
+                                  .filter(Boolean)
+                                  .join(" · ") || "—"}
+                              </p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
           </div>
 
           <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -407,6 +521,8 @@ export default function StudentPlanningPage() {
           </p>
         </>
       )}
+
+      <SessionDetailDialog session={detail} onClose={() => setDetail(null)} />
     </div>
   );
 }
